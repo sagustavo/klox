@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+html.light {
+  --bg-primary: #FAFAFA;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: #F4F4F5;
+  --border-hairline: #E4E4E7;
+  --text-primary: #09090B;
+  --text-muted: #71717A;
+  --accent-telemetry: #3B82F6;
+}
+
+html.dark {
+  --bg-primary: #050505;
+  --bg-elevated: #0C0C0E;
+  --bg-hover: #141417;
+  --border-hairline: #222226;
+  --text-primary: #FAFAFA;
+  --text-muted: #8E8E93;
+  --accent-telemetry: #3B82F6;
+}
+
+@layer base {
+  html {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.015em;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+  }
+}
+
+/* Mandatory telemetry numeric discipline (GEMINI.md §4) */
+.tabular-telemetry {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
