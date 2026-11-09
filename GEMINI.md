@@ -1,6 +1,6 @@
-# MASTER CONTEXT HANDOFF: KLOX (`klox.dev`) — AI-Native Time & Execution Management Platform
+# MASTER CONTEXT HANDOFF: Klox (`klox.dev`) — AI-Native Time & Execution Management Platform
 
-You are acting as my Principal Software & Solutions Architect and Lead Full-Stack Engineer. Use this document as the persistent source of truth for our project, **KLOX (`klox.dev`)**.
+You are acting as my Principal Software & Solutions Architect and Lead Full-Stack Engineer. Use this document as the persistent source of truth for our project, **Klox (`klox.dev`)**.
 
 Below is the complete context of everything we have already designed, decided, and validated. Read and internalize every section carefully.
 
@@ -8,13 +8,13 @@ Below is the complete context of everything we have already designed, decided, a
 
 ## 1. PROJECT IDENTITY, FOUNDER CONTEXT & VISION
 
-- **App Name & Domain:** **KLOX** (`https://klox.dev` — domain already purchased on Hostinger).
+- **App Name & Domain:** **Klox** (`https://klox.dev` — domain already purchased on Hostinger).
 - **Founder Profile:** Software Engineer at **XP Inc.** (Brazil).
 - **Academic Context:** This project serves both as a real SaaS product (User #001 is my wife!) and as the Capstone Project for my **Post-Graduation in Software and Solutions Architecture with Artificial Intelligence** at **XP Educação**.
 - **Product Vision (POC -> Full Platform):**
   - **Phase 1 (Current POC):** An ultra-fast, keyboard-first, AI-augmented Time Tracking & Analytics application with seamless bi-directional Toggl Track CSV compatibility.
   - **Phase 2 (Strategic Evolution):** A complete **Time & Execution Management Platform** for both **Work** and **Personal Mastery** (studies, workouts, reading, personal goals).
-  - **Enterprise Killer Feature (Azure DevOps Sync):** At XP Inc., engineers must log hours on Azure DevOps Work Items in the `Completed Work` (`Microsoft.VSTS.Scheduling.CompletedWork`) field. KLOX is architected so `TimeLog` entries can link to a `Task`, and a `Task` can either be created manually (for personal goals) or synced with an **Azure DevOps Work Item**. With user approval (Human-in-the-Loop AI workflow), KLOX will automatically calculate and push accumulated hours to update existing Azure DevOps Work Items or create new Work Items for unplanned tasks.
+  - **Enterprise Killer Feature (Azure DevOps Sync):** At XP Inc., engineers must log hours on Azure DevOps Work Items in the `Completed Work` (`Microsoft.VSTS.Scheduling.CompletedWork`) field. Klox is architected so `TimeLog` entries can link to a `Task`, and a `Task` can either be created manually (for personal goals) or synced with an **Azure DevOps Work Item**. With user approval (Human-in-the-Loop AI workflow), Klox will automatically calculate and push accumulated hours to update existing Azure DevOps Work Items or create new Work Items for unplanned tasks.
 
 ---
 
@@ -33,7 +33,14 @@ We follow strict Domain-Driven Design nomenclature. Do NOT confuse `Timer` with 
    - **Resilience Invariant:** Persisted in both Firestore (`users/{uid}.activeTimer`) and `localStorage`. Elapsed seconds are ALWAYS calculated as `Math.floor((Date.now() - Date.parse(startTimeUTC)) / 1000)` (never via naive `elapsed++` counters) so page refreshes, browser crashes, or tab throttling never lose time.
    - **Single Active Timer Constraint:** Starting a new `Timer` while one is running must automatically stop and commit the running `Timer` into a `TimeLog` first.
 5. **`TimeLog`:** A persisted historical record of time spent (created by stopping a `Timer`, manual time logging, or Toggl CSV import).
-   - Fields: `id`, `userId`, `description`, `normalizedDescription`, `projectId`, `projectNameSnapshot`, `projectColorSnapshot`, `taskId?`, `taskNameSnapshot?`, `tagIds: string[]`, `tagNamesSnapshot: string[]`, `isBillable: boolean`, `startTime` (UTC ISO), `endTime` (UTC ISO), `durationSeconds: number`, `dateKey` (`"YYYY-MM-DD"` in local timezone).
+   - Fields: `id`, `userId`, `description`, `normalizedDescription`, `projectId`, `projectNameSnapshot`, `projectColorSnapshot`, `taskId?`, `taskNameSnapshot?`, `tagIds: string[]`, `tagNamesSnapshot: string[]`, `isBillable: boolean`, `startTime` (UTC ISO), `endTime` (UTC ISO), `durationSeconds: number`, `timeZone` (IANA snapshot at write time, e.g. `"America/Sao_Paulo"`), `dateKey` (`"YYYY-MM-DD"` computed from `startTime` in the **user's preferred IANA timezone** — `UserPreferences.timeZone` — not the browser's current timezone).
+6. **`UserPreferences`:** Regional settings stored at `users/{uid}.preferences` (`locale`, `timeZone`, `weekStartsOn: 0 | 1 | 6`, `dateFormat`, `hourCycle: 'h12' | 'h23'`). Auto-detected from the browser on first visit and editable in Settings (FR-3).
+7. **`OnboardingState`:** Per-user onboarding progress stored at `users/{uid}.onboarding` (`version`, `wizardStatus: 'pending' | 'completed' | 'skipped'`, `profile?: 'work' | 'personal' | 'both'`, `tutorialCompletedAt?`, `checklist: Record<ChecklistItemId, completedAt>`) (FR-2).
+8. **`DomainEvent`:** Typed in-app events published by stores (`TimerStarted`, `TimerStopped`, `TimeLogCreated{source}`, `RecallTemplateSelected`, `AiAutofillUsed`, `DashboardViewed`, `CsvImported`, `CsvExported`). Consumers (onboarding checklist, future Azure DevOps sync, analytics) subscribe; producers never know their consumers (ADR D10).
+
+**System entities & identifiers:**
+- The fallback project carries `systemKey: 'unassigned'`; its label is rendered via i18n (never stored as a translated string). User-created names are never translated.
+- Entity IDs come from an `IdGenerator` port (ADR D8): Firestore random auto-IDs (no monotonic IDs → no hotspots), deterministic SHA-256-based IDs for Toggl CSV imports (idempotent re-import), UUIDv7 reserved for a future relational adapter.
 
 ---
 
@@ -90,6 +97,35 @@ Must strictly follow official Toggl Track CSV specifications:
   - Calculates `endTime = startTime + durationSeconds` if `End time` is omitted, normalizes `Billable` (`Yes`/`No`/`TRUE`/`FALSE`), deduplicates identical logs, shows a dry-run preview, and batch-writes to Firestore.
 - **CSV Export:**
   - Exports filtered or all `TimeLogs` into a UTF-8 CSV (with `\uFEFF` BOM for Excel compatibility) using the exact Toggl Track headers so users can migrate to/from Toggl Track or back up data locally.
+- **Interop contract:** CSV headers and date/time formats always stay in Toggl's English spec regardless of UI language; only the preview UI and error messages are localized.
+
+### 3.6 Landing Page (FR-1)
+
+- **Purpose:** Product showcase with open sign-up. Routes `/` (en) and `/pt-br` — **prerendered** static HTML (SEO + link previews), no Firebase SDK in the landing bundle.
+- **CTAs:** Primary `Get started free` → `/login?mode=signup`; secondary `Sign in` and `Try the live demo` (demo mode, no sign-up). Signed-in visitors see `Open app →`.
+- **Sections:** Header (logo, anchors, locale + theme switch) → **Hero with a self-playing Command Bar demo** (types a description, recall dropdown, `✨` AI fill, `[Enter]` start, ticking JetBrains Mono digits; built from the real presentational components; honors `prefers-reduced-motion`) → **Feature grid** (Keyboard-first, Two-tier AI recall/auto-fill, Analytics, Toggl import/export) → **Azure DevOps sync teaser** ("Coming soon") → **Pricing** (Free / Pro "coming soon" placeholder, no billing) → **FAQ** (native `<details>`) → Footer.
+- **Targets:** Lighthouse mobile Performance ≥ 95, SEO = 100, Accessibility ≥ 95, LCP < 2.0 s; per-locale meta, canonical, `hreflang` + `x-default`, OG images, `sitemap.xml`, `robots.txt` disallowing `/app/**`.
+
+### 3.7 Onboarding (FR-2)
+
+- **Setup wizard** (`/app/welcome`, first sign-in, fully keyboard navigable, skippable at every step):
+  1. Welcome + confirm auto-detected regional preferences (language, timezone, week start, date format, 12/24h).
+  2. Profile: Work / Personal / Both (drives localized project templates, translated at creation time and then stored as plain user data).
+  3. Starting point: Create first project + tags · Import from Toggl · Start empty (no fake/sample data is ever seeded).
+  4. Interactive tutorial (below).
+- **Interactive keyboard tutorial (spotlight tour):** each step advances only on the **real action** — `N` → type → `Tab` cycle → `⌘I`/`Ctrl+I` (skippable if AI unavailable) → `Enter` (timer starts) → `S` (stops; offer keep/delete the log). Touch devices (`pointer: coarse`) get a tap-flow variant for the bottom dock. Steps anchor on `data-tour` attributes.
+- **Getting-started checklist** (dismissible, progress ring): first timer · reuse a recall template · try AI auto-fill · manual log · open dashboard · Toggl import/export. Items complete via `DomainEvent`s.
+- **Replay & help:** Help menu + global `?` shortcut (same input-focus guard as `N`/`S`) opens a command sheet: shortcuts cheat-sheet, replay tutorial, show checklist, re-run wizard (non-destructive).
+- Accounts created before onboarding shipped default to `wizardStatus: 'skipped'`.
+
+### 3.8 Internationalization (FR-3)
+
+- **Launch locales:** `en` (default + source of truth) and `pt-BR` (`es` deferred to post-POC backlog). Adding a locale = one JSON file + one config entry, no code changes. **RTL is out of scope.**
+- **Four separate concerns:** UI language (`@nuxtjs/i18n`, lazy-loaded) · regional formatting (`Intl.*` via a single `useFormat()` composable) · time semantics (`UserPreferences.timeZone` + `weekStartsOn` in the domain layer; dashboard presets respect them) · user content (never translated).
+- **Telemetry exception:** live timers and durations always render `HH:MM:SS` in Latin digits, JetBrains Mono, `tabular-nums`, in every locale.
+- **Boundaries:** server/API returns error **codes** (`AI_RATE_LIMITED`, `AI_UNAVAILABLE`, `AUTH_INVALID`), translated client-side. Gemini returns IDs only. Firebase Auth `languageCode` follows the user locale.
+- **Quality gates (lean POC):** typed message keys from `en.json`. Key convention `feature.component.element`. Heavy i18n lint rules, CI check scripts, and pseudo-locale generation are deferred to the post-POC backlog to keep token spend and setup minimal.
+- **Rule from Phase 1 onward:** every UI string goes through `$t()`; every interactive element relevant to onboarding gets a `data-tour` attribute.
 
 ---
 
@@ -108,24 +144,54 @@ Must strictly follow official Toggl Track CSV specifications:
 
 ---
 
-## 5. TECH STACK OPTIONS
+## 5. TECH STACK
 
-**Primary Stack (Local Development via Claude Code / Gemini CLI):**
+**Primary Stack (Local Development via Claude Code / Gemini CLI / Antigravity):**
 
-- **Frontend + BFF:** **Nuxt 3** (Vue 3 Composition API, TypeScript Strict, `ssr: false` SPA mode + Nuxt Nitro Server Routes `server/api/*` for Gemini AI calls), `Pinia`, `@vueuse/core`, `@nuxtjs/tailwindcss`, `@nuxtjs/color-mode`.
-- **Backend:** **Firebase v11** (Authentication + Cloud Firestore).
-- **Libraries:** `chart.js` + `vue-chartjs`, `fuse.js`, `papaparse`, `date-fns`, `lucide-vue-next`, `@google/genai` (`gemini-2.5-flash`).
+- **Frontend + BFF:** **Nuxt 4** (`app/` directory, Vue 3 Composition API, TypeScript Strict) with **hybrid rendering** — prerendered marketing routes + client-only `/app/**` SPA (`routeRules`) — and Nuxt Nitro Server Routes `server/api/*` for Gemini AI calls. `Pinia`, `@vueuse/core`, `@nuxtjs/tailwindcss`, `@nuxtjs/color-mode`, `@nuxtjs/i18n`.
+- **Backend:** **Firebase (latest modular SDK, v12+)** — Authentication + Cloud Firestore; `firebase-admin` on the server for ID-token verification.
+- **Libraries:** `chart.js` + `vue-chartjs`, `fuse.js`, `papaparse`, `date-fns` + `@date-fns/tz`, `lucide-vue-next`, `@google/genai` (model from `GEMINI_MODEL` env var; default = current Flash GA model).
+- **Tooling (lean POC):** `pnpm`, TypeScript (`nuxt typecheck`), optional lightweight `Vitest` only for pure tricky logic (duration math, CSV parsing) when fast and cheap to write. No Playwright, no Firestore emulator test suite, no heavy CI scripts during POC.
+- **Hosting:** Firebase App Hosting (alternative: Vercel); `klox.dev` DNS on Hostinger.
 
 ---
 
-## 7. 7-PHASE IMPLEMENTATION ROADMAP
+## 6. ARCHITECTURE DECISIONS (ADR SUMMARY)
 
-We are executing the build in 7 sequential, verified phases:
+> **POC Pragmatism Principle:** Priority #1 is proving platform feasibility fast with minimal token spend. Keep boundaries clean where it is free (pure `app/domain/` functions, simple store interfaces), and skip heavy test harnesses, ceremonial abstractions, and over-engineering until post-POC.
 
-- **Phase 1:** Project Scaffolding, `types/domain.ts` (`Project`, `ProjectTag`, `Task`, `ActiveTimer`, `TimeLog`, `DashboardFilters`), Musk-Tech Design System (`#050505` dark / light mode), `KloxLogo`, and `KeycapBadge`.
-- **Phase 2:** Firebase Auth (Email/Password + Google OAuth), route protection middleware, demo fallback mode, and `firestore.rules`.
-- **Phase 3:** Catalog Store (`Projects`, `Project-Owned Tags`, and foundational `Tasks` support) + Project & Scoped Tag CRUD UI with custom hex color picker and default `isBillable` toggle.
-- **Phase 4:** High-Velocity Command Timer Bar (`N`, `S`, `Tab` cycle, `Esc`), resilient `startTimeUTC` delta calculation, `Fuse.js` Top-10 past task recall dropdown, and `@google/genai` (`gemini-2.5-flash`) `[✨ AI Auto-Fill]` endpoint.
-- **Phase 5:** Reactive Analytical Dashboard (`FilterBar`, `PizzaChartCard` sliceable by Tag/Project/Description, `DailyDurationChartCard` breakable by Tag/Project/Description, and `TasksBreakdownTable` groupable by Tag).
-- **Phase 6:** Bi-Directional Toggl Track CSV Import & Export Studio (`useTogglCsv`, dry-run preview, automatic Project/Scoped-Tag entity resolution, sample CSV generator, and UTF-8 BOM exporter).
-- **Phase 7:** Mobile bottom-dock polish, realistic Musk-tech demo data seeder, and the **XP Educação Post-Graduation Software & AI Architecture README** (with ADRs and Mermaid C4 diagrams).
+| # | Decision |
+|---|---|
+| D1 | Nuxt 4 instead of Nuxt 3 (Nuxt 3 is end-of-life). |
+| D2 | Latest Firebase modular SDK (v12+). |
+| D3 | Gemini model configured via `GEMINI_MODEL` env var (model IDs get deprecated). |
+| D4 | Firebase App Hosting for SSR/prerender + Nitro API (static Hosting can't run server routes). |
+| D5 | Every `/api/ai/*` call verifies the Firebase ID token (`firebase-admin`) and is rate-limited per user. The server re-validates that AI-returned `tagIds` belong to the predicted project. |
+| D6 | **Lean verification:** `pnpm`, `pnpm typecheck`, manual browser check. Optional tiny Vitest tests only for tricky pure functions (`duration`, `toggl`). Playwright, rules-emulator suites, and i18n CI scripts are deferred to post-POC. |
+| D7 | Demo mode: `localStorage` fallback when Firebase env is missing. |
+| D8 | Entity IDs: Firestore random auto-IDs (UUIDv7 rejected for Firestore — monotonic keys cause write hotspots and give no B-tree benefit there); deterministic SHA-256 hash IDs for idempotent Toggl CSV import; UUIDv7 noted for any future SQL store. |
+| D9 | Hybrid rendering: prerendered landing (`/`, `/pt-br`), client-only `/app/**` and `/login`; Firebase loaded only on app routes. |
+| D10 | Lightweight typed in-app event helper (~20 lines) so onboarding checklist items react to user actions without coupling stores. |
+| D11 | 8-phase roadmap with a dedicated Onboarding & i18n completion phase before launch. |
+| D12 | **Browser support policy:** Baseline *Widely available* features may be used freely; Baseline *Newly available* features only when feature-detected with a graceful fallback. Consult `modern-web-guidance` before building UI patterns (dialogs, popovers, anchor positioning, motion). |
+
+**Layering rule:** `app/domain/` is pure TypeScript (no Vue/Firebase imports). Keep adapters simple.
+
+**Living backlog:** `docs/product/backlog.md`.
+
+**ADRs are written on demand, never batched at the end:** every architectural decision is recorded in `docs/adr/NNNN-kebab-title.md` (template `docs/adr/0000-template.md`, index `docs/adr/README.md`) **in the same change that introduces it** — during planning if decided in planning, or in the feature's PR if decided during development. Keep each ADR concise (1 short page). Superseded ADRs are kept and marked `Superseded by ADR-NNNN`. The table above is a summary; the ADR files are authoritative.
+
+---
+
+## 7. 8-PHASE IMPLEMENTATION ROADMAP
+
+We are executing the build in 8 sequential phases. Every phase ends with `pnpm typecheck` green, a quick manual check, any new ADRs written, and `docs/product/backlog.md` updated.
+
+- **Phase 1 — Foundation:** Nuxt 4 scaffold with hybrid `routeRules`, Tailwind, color-mode, `@nuxtjs/i18n` (`en` wired, `pt-BR` locale file stubbed), `domain/types.ts`, `domain/duration.ts`, `domain/preferences.ts` + `useFormat`, Musk-Tech Design System (`#050505` dark / light mode), `KloxLogo`, `KeycapBadge`, `TimerDigits`, `marketing` + `app` layouts, and a **minimal landing page** (hero + CTAs).
+- **Phase 2 — Auth & Isolation:** Firebase Auth (Email/Password + Google OAuth) on app routes only, `auth` middleware for `/app/**`, Firestore + Demo data access, `firestore.rules`, tiny domain event helper, **`/app/settings`** (regional preferences), Firebase Auth `languageCode`.
+- **Phase 3 — Catalog:** Catalog Store (`Projects`, `Project-Owned Tags`, foundational `Tasks`) + Project & Scoped Tag CRUD UI with custom hex color picker and default `isBillable` toggle; `systemKey: 'unassigned'` with translated label.
+- **Phase 4 — Command Timer Bar & AI:** `N`, `S`, `Tab` cycle, `Esc`, `?`; resilient `startTimeUTC` delta calculation; manual log CRUD; `Fuse.js` Top-10 recall; `@google/genai` `[✨ AI Auto-Fill]` endpoint returning error codes; domain events published.
+- **Phase 5 — Analytics Dashboard:** `FilterBar` (timezone + week-start aware presets), `PizzaChartCard` and `DailyDurationChartCard` (Tag/Project/Description), `TasksBreakdownTable` groupable by Tag; locale-formatted axes/legends.
+- **Phase 6 — Toggl CSV Studio:** `useTogglCsv`, dry-run preview, automatic Project/Scoped-Tag resolution, deterministic import IDs, UTF-8 BOM exporter.
+- **Phase 7 — Onboarding & i18n Completion:** Setup wizard, profile templates, `SpotlightTour` (keyboard + touch), getting-started checklist, help sheet; full `pt-BR` translation; localized Auth email templates.
+- **Phase 8 — Polish, Landing & Launch:** Mobile bottom-dock polish, full landing page in `en` and `pt-BR` (SEO/OG/hreflang/sitemap), the **XP Educação Post-Graduation Software & AI Architecture README** (consolidating the already-written ADRs + Mermaid C4 diagrams), production deploy to `klox.dev`.
