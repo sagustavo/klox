@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { Plus, Trash2, Tag, CheckSquare } from 'lucide-vue-next';
-import { PROJECT_COLOR_PALETTE, UNASSIGNED_PROJECT_ID } from '~/domain/invariants';
+import { Plus, Trash2, Tag, CheckSquare, Play, CornerDownRight } from 'lucide-vue-next';
+import { MAX_TASK_DEPTH, PROJECT_COLOR_PALETTE, UNASSIGNED_PROJECT_ID } from '~/domain/invariants';
+import { renderBasicMarkdown } from '~/domain/markdown';
 import type { EntityId, Project, TaskStatus } from '~/domain/types';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
+import { useTimerStore } from '~/stores/timer';
 
 definePageMeta({
   layout: 'app',
@@ -11,8 +13,10 @@ definePageMeta({
 });
 
 const { t } = useI18n();
+const localePath = useLocalePath();
 const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
+const timerStore = useTimerStore();
 
 const selectedProjectId = ref<EntityId>(UNASSIGNED_PROJECT_ID);
 
@@ -26,15 +30,21 @@ const editName = ref('');
 const editColor = ref('#3B82F6');
 const editBillable = ref(false);
 
-// New Tag & Task form state
+// New Tag & Hierarchical Task form state
 const newTagName = ref('');
 const newTaskName = ref('');
+const newTaskDescription = ref('');
+const newTaskParentId = ref<EntityId>('');
 const newTaskTargetHours = ref('');
 const newTaskAdoId = ref('');
+const taskNameInputRef = ref<HTMLInputElement | null>(null);
 
 onMounted(async () => {
   if (authStore.user) {
-    await catalogStore.hydrate(authStore.user.uid, authStore.isDemoMode);
+    await Promise.all([
+      catalogStore.hydrate(authStore.user.uid, authStore.isDemoMode),
+      timerStore.hydrate(authStore.user.uid, authStore.isDemoMode),
+    ]);
     const first = catalogStore.sortedProjects[0];
     if (first) {
       selectProject(first);
@@ -50,8 +60,12 @@ const scopedTags = computed(() =>
   catalogStore.getTagsForProject(selectedProjectId.value)
 );
 
-const scopedTasks = computed(() =>
-  catalogStore.getTasksForProject(selectedProjectId.value)
+const flattenedTasks = computed(() =>
+  catalogStore.getFlattenedTasksForProject(selectedProjectId.value)
+);
+
+const eligibleParentTasks = computed(() =>
+  flattenedTasks.value.filter((node) => node.depth < MAX_TASK_DEPTH)
 );
 
 function displayProjectName(project: Project): string {
@@ -63,6 +77,7 @@ function selectProject(project: Project) {
   editName.value = project.name;
   editColor.value = project.color;
   editBillable.value = project.isBillableDefault;
+  newTaskParentId.value = '';
 }
 
 async function handleCreateProject() {
@@ -132,13 +147,34 @@ async function handleCreateTask() {
     uid: authStore.user.uid,
     isDemo: authStore.isDemoMode,
     projectId: selectedProject.value.id,
+    parentTaskId: newTaskParentId.value || null,
     name: newTaskName.value,
+    description: newTaskDescription.value,
     targetHours: Number.isFinite(hours) && hours > 0 ? hours : undefined,
     externalWorkItemId: newTaskAdoId.value,
   });
   newTaskName.value = '';
+  newTaskDescription.value = '';
+  newTaskParentId.value = '';
   newTaskTargetHours.value = '';
   newTaskAdoId.value = '';
+}
+
+function prefillParentForSubtask(parentId: EntityId) {
+  newTaskParentId.value = parentId;
+  nextTick(() => {
+    taskNameInputRef.value?.focus();
+  });
+}
+
+async function handleStartTimerFromTask(taskId: EntityId) {
+  if (!authStore.user) return;
+  await timerStore.startTimerFromTask({
+    uid: authStore.user.uid,
+    isDemo: authStore.isDemoMode,
+    taskId,
+  });
+  await navigateTo(localePath('/app'));
 }
 
 async function handleCycleTaskStatus(taskId: EntityId, current: TaskStatus) {
@@ -404,97 +440,170 @@ async function handleDeleteTask(taskId: EntityId) {
           </div>
         </div>
 
-        <!-- Project-Scoped Tasks & Goals -->
+        <!-- Project-Scoped Tasks, Subtasks & Sub-subtasks (FR-4) -->
         <div class="border border-border-hairline bg-bg-elevated p-5">
           <div class="flex items-center gap-2 border-b border-border-hairline pb-3 text-xs font-mono uppercase tracking-wider text-accent">
             <CheckSquare class="h-3.5 w-3.5" />
-            <span>{{ $t('catalog.tasksTitle') }} ({{ scopedTasks.length }})</span>
+            <span>{{ $t('catalog.tasksTitle') }} ({{ flattenedTasks.length }})</span>
           </div>
           <p class="mt-2 text-xs text-text-muted">
             {{ $t('catalog.tasksHint') }}
           </p>
 
-          <form class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-12" @submit.prevent="handleCreateTask">
-            <input
-              v-model="newTaskName"
-              type="text"
-              required
-              :placeholder="$t('catalog.newTaskPlaceholder')"
-              class="sm:col-span-6 h-9 border border-border-hairline bg-bg-primary px-3 text-xs text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
-            />
-            <input
-              v-model="newTaskTargetHours"
-              type="number"
-              min="0"
-              step="0.5"
-              :placeholder="$t('catalog.targetHoursPlaceholder')"
-              class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
-            />
-            <input
-              v-model="newTaskAdoId"
-              type="text"
-              :placeholder="$t('catalog.adoWorkItemPlaceholder')"
-              class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
-            />
-            <button
-              type="submit"
-              class="sm:col-span-2 inline-flex h-9 items-center justify-center gap-1 bg-accent px-2.5 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors"
-            >
-              <Plus class="h-3.5 w-3.5" />
-              <span>{{ $t('catalog.addTask') }}</span>
-            </button>
+          <form class="mt-3 space-y-2.5" @submit.prevent="handleCreateTask">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-12">
+              <input
+                ref="taskNameInputRef"
+                v-model="newTaskName"
+                type="text"
+                required
+                :placeholder="$t('catalog.newTaskPlaceholder')"
+                class="sm:col-span-5 h-9 border border-border-hairline bg-bg-primary px-3 text-xs text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+              />
+              <select
+                v-model="newTaskParentId"
+                :aria-label="$t('catalog.parentTaskLabel')"
+                class="sm:col-span-3 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+              >
+                <option value="">{{ $t('catalog.parentTaskNone') }}</option>
+                <option
+                  v-for="parentNode in eligibleParentTasks"
+                  :key="parentNode.task.id"
+                  :value="parentNode.task.id"
+                >
+                  {{ parentNode.depth === 1 ? '↳ ' : '' }}{{ parentNode.task.name }}
+                </option>
+              </select>
+              <input
+                v-model="newTaskTargetHours"
+                type="number"
+                min="0"
+                step="0.5"
+                :placeholder="$t('catalog.targetHoursPlaceholder')"
+                class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+              />
+              <input
+                v-model="newTaskAdoId"
+                type="text"
+                :placeholder="$t('catalog.adoWorkItemPlaceholder')"
+                class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+              />
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-2">
+              <textarea
+                v-model="newTaskDescription"
+                rows="2"
+                :placeholder="$t('catalog.taskDescriptionPlaceholder')"
+                class="flex-1 border border-border-hairline bg-bg-primary p-2.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+              />
+              <button
+                type="submit"
+                class="inline-flex h-9 sm:h-auto sm:w-36 shrink-0 items-center justify-center gap-1 bg-accent px-3 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors"
+              >
+                <Plus class="h-3.5 w-3.5" />
+                <span>{{ $t('catalog.addTask') }}</span>
+              </button>
+            </div>
           </form>
 
-          <div v-if="scopedTasks.length === 0" class="mt-4 text-xs font-mono text-text-muted">
+          <div v-if="flattenedTasks.length === 0" class="mt-4 text-xs font-mono text-text-muted">
             {{ $t('catalog.noTasksYet') }}
           </div>
 
           <ul v-else class="mt-4 divide-y divide-border-hairline border border-border-hairline bg-bg-primary">
             <li
-              v-for="task in scopedTasks"
-              :key="task.id"
-              class="flex items-center justify-between gap-3 px-3 py-2 text-xs"
+              v-for="node in flattenedTasks"
+              :key="node.task.id"
+              class="px-3 py-2.5 text-xs transition-colors hover:bg-bg-hover/40"
+              :class="{
+                'pl-7': node.depth === 1,
+                'pl-12': node.depth === 2,
+              }"
             >
-              <div class="flex items-center gap-2.5 min-w-0">
-                <button
-                  type="button"
-                  class="tabular-telemetry border px-1.5 py-0.5 text-[10px] font-mono uppercase"
-                  :class="{
-                    'border-border-hairline text-text-muted': task.status === 'todo',
-                    'border-accent/40 bg-accent/10 text-accent': task.status === 'in_progress',
-                    'border-emerald-500/40 bg-emerald-500/10 text-emerald-400': task.status === 'done',
-                  }"
-                  @click="handleCycleTaskStatus(task.id, task.status)"
-                >
-                  {{
-                    task.status === 'todo'
-                      ? $t('catalog.statusTodo')
-                      : task.status === 'in_progress'
-                        ? $t('catalog.statusInProgress')
-                        : $t('catalog.statusDone')
-                  }}
-                </button>
-                <span class="truncate font-medium text-text-primary">{{ task.name }}</span>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <CornerDownRight
+                    v-if="node.depth > 0"
+                    class="h-3.5 w-3.5 shrink-0 text-text-muted"
+                  />
+                  <button
+                    type="button"
+                    class="tabular-telemetry border px-1.5 py-0.5 text-[10px] font-mono uppercase shrink-0"
+                    :class="{
+                      'border-border-hairline text-text-muted': node.task.status === 'todo',
+                      'border-accent/40 bg-accent/10 text-accent': node.task.status === 'in_progress',
+                      'border-emerald-500/40 bg-emerald-500/10 text-emerald-400': node.task.status === 'done',
+                    }"
+                    @click="handleCycleTaskStatus(node.task.id, node.task.status)"
+                  >
+                    {{
+                      node.task.status === 'todo'
+                        ? $t('catalog.statusTodo')
+                        : node.task.status === 'in_progress'
+                          ? $t('catalog.statusInProgress')
+                          : $t('catalog.statusDone')
+                    }}
+                  </button>
+                  <span class="truncate font-medium text-text-primary">{{ node.task.name }}</span>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 shrink-0 font-mono text-[11px] text-text-muted">
+                  <span v-if="node.task.targetHours" class="tabular-telemetry">
+                    {{ node.task.targetHours }}h
+                  </span>
+                  <span
+                    v-if="node.task.externalWorkItemId"
+                    class="tabular-telemetry border border-border-hairline px-1.5 py-0.5 text-[10px]"
+                  >
+                    ADO #{{ node.task.externalWorkItemId }}
+                  </span>
+
+                  <!-- + Subtask / + Sub-subtask button for depth 0 and depth 1 -->
+                  <button
+                    v-if="node.depth < MAX_TASK_DEPTH"
+                    type="button"
+                    class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-[10px] text-text-muted hover:border-accent hover:text-text-primary transition-colors"
+                    @click="prefillParentForSubtask(node.task.id)"
+                  >
+                    {{ node.depth === 0 ? $t('catalog.addSubtask') : $t('catalog.addSubSubtask') }}
+                  </button>
+
+                  <!-- Direct [▶ Start] Timer Button (FR-4.3) -->
+                  <span
+                    v-if="timerStore.isRunning && timerStore.taskId === node.task.id"
+                    class="inline-flex items-center gap-1 border border-accent bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent"
+                  >
+                    <span class="h-1.5 w-1.5 bg-accent animate-pulse" />
+                    <span>{{ $t('catalog.runningTaskBadge') }}</span>
+                  </span>
+                  <button
+                    v-else
+                    type="button"
+                    class="inline-flex items-center gap-1 border border-accent/50 bg-accent/10 px-2 py-0.5 text-[10px] uppercase text-accent hover:bg-accent hover:text-white transition-colors"
+                    @click="handleStartTimerFromTask(node.task.id)"
+                  >
+                    <Play class="h-2.5 w-2.5 fill-current" />
+                    <span>{{ $t('catalog.startTaskTimer') }}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="text-text-muted hover:text-red-400 px-1"
+                    @click="handleDeleteTask(node.task.id)"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
 
-              <div class="flex items-center gap-2 shrink-0 font-mono text-[11px] text-text-muted">
-                <span v-if="task.targetHours" class="tabular-telemetry">
-                  {{ task.targetHours }}h
-                </span>
-                <span
-                  v-if="task.externalWorkItemId"
-                  class="tabular-telemetry border border-border-hairline px-1.5 py-0.5 text-[10px]"
-                >
-                  ADO #{{ task.externalWorkItemId }}
-                </span>
-                <button
-                  type="button"
-                  class="text-text-muted hover:text-red-400"
-                  @click="handleDeleteTask(task.id)"
-                >
-                  ×
-                </button>
-              </div>
+              <!-- Rendered Basic Markdown Description (FR-4.2) -->
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <div
+                v-if="node.task.description"
+                class="mt-1.5 border-l-2 border-border-hairline pl-2.5 text-xs text-text-muted space-y-1"
+                v-html="renderBasicMarkdown(node.task.description)"
+              />
             </li>
           </ul>
         </div>

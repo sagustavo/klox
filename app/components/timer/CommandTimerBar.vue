@@ -31,6 +31,10 @@ const scopedTags = computed(() =>
   catalogStore.getTagsForProject(timerStore.projectId)
 );
 
+const scopedTaskNodes = computed(() =>
+  catalogStore.getFlattenedTasksForProject(timerStore.projectId)
+);
+
 function displayProjectName(project: Project): string {
   return project.systemKey === 'unassigned' ? t('catalog.unassigned') : project.name;
 }
@@ -324,13 +328,13 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 2. Project Selector -->
-      <div class="lg:col-span-2">
+      <!-- 2. Project Selector (+ Optional Project-Scoped Task Selector) -->
+      <div class="lg:col-span-2 flex gap-1.5">
         <select
           :value="timerStore.projectId"
           data-tour="timer-project"
           :aria-label="$t('timer.projectLabel')"
-          class="h-10 w-full border border-border-hairline bg-bg-primary px-2.5 text-xs font-medium text-text-primary focus:border-accent focus:outline-none"
+          class="h-10 w-full border border-border-hairline bg-bg-primary px-2 text-xs font-medium text-text-primary focus:border-accent focus:outline-none"
           @change="timerStore.selectProject(($event.target as HTMLSelectElement).value)"
         >
           <option
@@ -339,6 +343,24 @@ onUnmounted(() => {
             :value="proj.id"
           >
             {{ displayProjectName(proj) }}
+          </option>
+        </select>
+
+        <select
+          v-if="scopedTaskNodes.length > 0"
+          :value="timerStore.taskId ?? ''"
+          data-tour="timer-task"
+          :aria-label="$t('timer.taskSelectorPlaceholder')"
+          class="h-10 w-full border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+          @change="timerStore.selectTask(($event.target as HTMLSelectElement).value || undefined)"
+        >
+          <option value="">{{ $t('timer.taskSelectorPlaceholder') }}</option>
+          <option
+            v-for="node in scopedTaskNodes"
+            :key="node.task.id"
+            :value="node.task.id"
+          >
+            {{ node.depth === 1 ? '↳ ' : node.depth === 2 ? '↳↳ ' : '' }}{{ node.task.name }}
           </option>
         </select>
       </div>

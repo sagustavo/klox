@@ -146,6 +146,60 @@ export const useTimerStore = defineStore('timer', () => {
     }
   }
 
+  function selectTask(nextTaskId: EntityId | undefined) {
+    const catalogStore = useCatalogStore();
+    if (!nextTaskId) {
+      taskId.value = undefined;
+      return;
+    }
+    const task = catalogStore.getTaskById(nextTaskId);
+    if (!task) {
+      taskId.value = undefined;
+      return;
+    }
+    if (task.projectId !== projectId.value) {
+      selectProject(task.projectId);
+    }
+    taskId.value = task.id;
+    if (!description.value.trim()) {
+      description.value = catalogStore.getTaskHierarchicalLabel(task.id) || task.name;
+    }
+  }
+
+  /**
+   * Direct Task-to-Timer Execution (FR-4.3 / ADR-0007):
+   * Starts a live ActiveTimer directly from any Task, Subtask, or Sub-subtask,
+   * stopping any running timer first and transitioning 'todo' -> 'in_progress'.
+   */
+  async function startTimerFromTask(params: {
+    uid: string;
+    isDemo: boolean;
+    taskId: EntityId;
+  }): Promise<void> {
+    const catalogStore = useCatalogStore();
+    const task = catalogStore.getTaskById(params.taskId);
+    if (!task) return;
+
+    if (activeTimer.value) {
+      await stopTimer({ uid: params.uid, isDemo: params.isDemo });
+    }
+
+    selectProject(task.projectId);
+    taskId.value = task.id;
+    description.value = catalogStore.getTaskHierarchicalLabel(task.id) || task.name;
+
+    await startTimer({ uid: params.uid, isDemo: params.isDemo });
+
+    if (task.status === 'todo') {
+      await catalogStore.updateTaskStatus({
+        uid: params.uid,
+        isDemo: params.isDemo,
+        taskId: task.id,
+        status: 'in_progress',
+      });
+    }
+  }
+
   /**
    * Single Active Timer Constraint (GEMINI.md §2.4):
    * Starting a new Timer while one is running automatically stops and commits the running Timer first.
@@ -222,8 +276,10 @@ export const useTimerStore = defineStore('timer', () => {
     currentElapsedSeconds,
     hydrate,
     selectProject,
+    selectTask,
     toggleTag,
     startTimer,
+    startTimerFromTask,
     stopTimer,
   };
 });

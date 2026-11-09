@@ -45,7 +45,10 @@ rules_version = '2';
 //   - id: string (required, immutable, must equal taskId, 1..128 chars)
 //   - userId: string (required, immutable, must equal userId)
 //   - projectId: string (required, 1..128 chars)
+//   - parentTaskId: string | null (optional, <= 128 chars, must not equal taskId)
+//   - depth: int | null (optional, in [0, 1, 2])
 //   - name: string (required, 1..200 chars)
+//   - description: string | null (optional, <= 4000 chars, Markdown)
 //   - completedWorkHours: number (required, >= 0 and <= 100000)
 //   - status: string (required, in ['todo', 'in_progress', 'done'])
 //   - createdAt: string (required, immutable, UTC ISO string 10..64 chars)
@@ -173,10 +176,19 @@ service cloud.firestore {
       return timer == null || (
         timer is map &&
         timer.keys().hasAll(['description', 'projectId', 'tagIds', 'isBillable', 'startTimeUTC']) &&
-        timer.keys().hasOnly(['description', 'projectId', 'taskId', 'tagIds', 'isBillable', 'startTimeUTC']) &&
+        timer.keys().hasOnly([
+          'description',
+          'projectId',
+          'taskId',
+          'taskNameSnapshot',
+          'tagIds',
+          'isBillable',
+          'startTimeUTC'
+        ]) &&
         isBoundedString(timer.description, 500) &&
         isNonEmptyString(timer.projectId, 128) &&
         isOptionalBoundedString(timer, 'taskId', 128) &&
+        isOptionalBoundedString(timer, 'taskNameSnapshot', 200) &&
         isValidList(timer.tagIds, 25) &&
         timer.isBillable is bool &&
         isNonEmptyString(timer.startTimeUTC, 64)
@@ -228,7 +240,10 @@ service cloud.firestore {
           'id',
           'userId',
           'projectId',
+          'parentTaskId',
+          'depth',
           'name',
+          'description',
           'completedWorkHours',
           'status',
           'createdAt',
@@ -239,7 +254,11 @@ service cloud.firestore {
         data.id is string && data.id == taskId && data.id.size() >= 1 && data.id.size() <= 128 &&
         data.userId is string && data.userId == userId &&
         isNonEmptyString(data.projectId, 128) &&
+        isOptionalBoundedString(data, 'parentTaskId', 128) &&
+        (!('parentTaskId' in data) || data.parentTaskId == null || data.parentTaskId != taskId) &&
+        (!('depth' in data) || data.depth == null || (data.depth is int && data.depth in [0, 1, 2])) &&
         isNonEmptyString(data.name, 200) &&
+        isOptionalBoundedString(data, 'description', 4000) &&
         data.completedWorkHours is number && data.completedWorkHours >= 0 && data.completedWorkHours <= 100000 &&
         data.status in ['todo', 'in_progress', 'done'] &&
         isNonEmptyString(data.createdAt, 64) &&

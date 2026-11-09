@@ -16,6 +16,7 @@ export function useTogglCsv() {
   const timeLogsStore = useTimeLogsStore();
 
   const isCommitting = ref(false);
+  const importProgress = ref<{ completed: number; total: number } | null>(null);
 
   async function buildPreview(csvText: string): Promise<TogglDryRunPreview> {
     return parseAndPreviewTogglCsv({
@@ -36,30 +37,37 @@ export function useTogglCsv() {
     const isDemo = authStore.isDemoMode;
 
     isCommitting.value = true;
+    importProgress.value = { completed: 0, total: preview.newLogsCount };
+
     try {
       let createdProjects = 0;
       let createdTags = 0;
-      let importedLogs = 0;
       let skippedDuplicates = 0;
 
-      // 1. Ensure all projects exist
+      // 1. Ensure all projects exist (in parallel if multiple new projects)
       const projectByLower = new Map<string, Project>();
       for (const p of catalogStore.projects) {
         projectByLower.set(p.name.trim().toLowerCase(), p);
       }
 
-      for (const projName of preview.newProjectNames) {
-        const lower = projName.trim().toLowerCase();
-        if (!projectByLower.has(lower)) {
-          const created = await catalogStore.createProject({
+      const missingProjNames = preview.newProjectNames.filter(
+        (name) => !projectByLower.has(name.trim().toLowerCase())
+      );
+
+      const createdProjList = await Promise.all(
+        missingProjNames.map((projName) =>
+          catalogStore.createProject({
             uid,
             isDemo,
             name: projName,
             isBillableDefault: false,
-          });
-          projectByLower.set(lower, created);
-          createdProjects += 1;
-        }
+          })
+        )
+      );
+
+      for (const created of createdProjList) {
+        projectByLower.set(created.name.trim().toLowerCase(), created);
+        createdProjects += 1;
       }
 
       const resolveProjectId = (rawName: string): EntityId => {
@@ -70,28 +78,37 @@ export function useTogglCsv() {
         return projectByLower.get(trimmed.toLowerCase())?.id ?? UNASSIGNED_PROJECT_ID;
       };
 
-      // 2. Ensure all project-scoped tags exist
+      // 2. Ensure all project-scoped tags exist (in parallel)
       const tagByProjAndLower = new Map<string, ProjectTag>();
       for (const t of catalogStore.tags) {
         tagByProjAndLower.set(`${t.projectId}::${t.name.trim().toLowerCase()}`, t);
       }
 
-      for (const scopedTag of preview.newScopedTags) {
-        const projectId = resolveProjectId(scopedTag.projectName);
-        const key = `${projectId}::${scopedTag.tagName.trim().toLowerCase()}`;
-        if (!tagByProjAndLower.has(key)) {
-          const created = await catalogStore.createTag({
+      const missingScopedTags = preview.newScopedTags.filter((st) => {
+        const projectId = resolveProjectId(st.projectName);
+        return !tagByProjAndLower.has(`${projectId}::${st.tagName.trim().toLowerCase()}`);
+      });
+
+      const createdTagList = await Promise.all(
+        missingScopedTags.map((st) =>
+          catalogStore.createTag({
             uid,
             isDemo,
-            projectId,
-            name: scopedTag.tagName,
-          });
-          tagByProjAndLower.set(key, created);
-          createdTags += 1;
-        }
+            projectId: resolveProjectId(st.projectName),
+            name: st.tagName,
+          })
+        )
+      );
+
+      for (const created of createdTagList) {
+        tagByProjAndLower.set(
+          `${created.projectId}::${created.name.trim().toLowerCase()}`,
+          created
+        );
+        createdTags += 1;
       }
 
-      // 3. Commit non-duplicate TimeLog rows
+      // 3. Filter non-duplicate TimeLog rows and batch-commit via writeBatch (450/chunk, parallel)
       const existingIds = new Set(timeLogsStore.logs.map((l) => l.id));
       const existingComposites = new Set(
         timeLogsStore.logs.map(
@@ -99,6 +116,17 @@ export function useTogglCsv() {
             `${l.startTime}|${l.durationSeconds}|${l.normalizedDescription}|${l.projectNameSnapshot.trim().toLowerCase()}`
         )
       );
+
+      const batchItems: Array<{
+        id: EntityId;
+        description: string;
+        projectId: EntityId;
+        tagIds: EntityId[];
+        isBillable: boolean;
+        startTimeUTC: string;
+        endTimeUTC: string;
+        durationSeconds: number;
+      }> = [];
 
       for (const row of preview.logRows) {
         const composite = `${row.startTimeUTC}|${row.durationSeconds}|${row.normalizedDescription}|${(row.projectName || 'General / Unassigned').trim().toLowerCase()}`;
@@ -114,10 +142,8 @@ export function useTogglCsv() {
           if (tag) tagIds.push(tag.id);
         }
 
-        await timeLogsStore.createTimeLog({
+        batchItems.push({
           id: row.deterministicId,
-          uid,
-          isDemo,
           description: row.description,
           projectId,
           tagIds,
@@ -125,13 +151,25 @@ export function useTogglCsv() {
           startTimeUTC: row.startTimeUTC,
           endTimeUTC: row.endTimeUTC,
           durationSeconds: row.durationSeconds,
-          source: 'import',
         });
 
         existingIds.add(row.deterministicId);
         existingComposites.add(composite);
-        importedLogs += 1;
       }
+
+      importProgress.value = { completed: 0, total: batchItems.length };
+
+      await timeLogsStore.createTimeLogsBatch({
+        uid,
+        isDemo,
+        items: batchItems,
+        source: 'import',
+        onProgress: (completed, total) => {
+          importProgress.value = { completed, total };
+        },
+      });
+
+      const importedLogs = batchItems.length;
 
       publishDomainEvent({
         type: 'CsvImported',
@@ -147,6 +185,7 @@ export function useTogglCsv() {
       };
     } finally {
       isCommitting.value = false;
+      importProgress.value = null;
     }
   }
 
@@ -182,6 +221,7 @@ export function useTogglCsv() {
 
   return {
     isCommitting,
+    importProgress,
     buildPreview,
     commitPreview,
     exportCsvDownload,

@@ -27,12 +27,16 @@ export interface ProjectTag {
 
 export type ExternalWorkItemProvider = 'azure_devops' | null;
 export type TaskStatus = 'todo' | 'in_progress' | 'done';
+export type TaskDepth = 0 | 1 | 2; // 0 = Task, 1 = Subtask, 2 = Sub-subtask
 
 export interface Task {
   id: EntityId;
   userId: string;
   projectId: EntityId;
+  parentTaskId?: EntityId | null; // Optional parent Task/Subtask within the same Project
+  depth?: TaskDepth; // 0 = Task, 1 = Subtask, 2 = Sub-subtask
   name: string;
+  description?: string; // Basic Markdown description (<= 4000 chars)
   targetHours?: number;
   externalProvider?: ExternalWorkItemProvider;
   externalWorkItemId?: string;
@@ -49,6 +53,7 @@ export interface ActiveTimer {
   description: string;
   projectId: EntityId;
   taskId?: EntityId;
+  taskNameSnapshot?: string;
   tagIds: EntityId[];
   isBillable: boolean;
   startTimeUTC: string; // UTC ISO

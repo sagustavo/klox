@@ -112,6 +112,8 @@ export async function parseAndPreviewTogglCsv(params: {
   const errors: TogglRowError[] = [];
   const seenDeterministicIds = new Set<string>();
 
+  const candidateRows: Array<Omit<ParsedTogglLogRow, 'deterministicId'>> = [];
+
   for (let i = 0; i < parsed.data.length; i++) {
     const row = parsed.data[i] ?? {};
     const rowNumber = i + 2; // 1-indexed + header row
@@ -176,21 +178,8 @@ export async function parseAndPreviewTogglCsv(params: {
     const finalDesc = description || taskName || projectName || 'Imported entry';
     const normalizedDesc = normalizeDescription(finalDesc);
 
-    const detId = await deterministicLogId({
-      startTimeUTC,
-      durationSeconds,
-      normalizedDescription: normalizedDesc,
-      projectName: projectName || 'General / Unassigned',
-    });
-
-    if (seenDeterministicIds.has(detId)) {
-      continue;
-    }
-    seenDeterministicIds.add(detId);
-
-    logRows.push({
+    candidateRows.push({
       rowNumber,
-      deterministicId: detId,
       description: finalDesc,
       normalizedDescription: normalizedDesc,
       projectName,
@@ -204,10 +193,34 @@ export async function parseAndPreviewTogglCsv(params: {
     });
   }
 
+  // Compute all SHA-256 deterministic IDs in parallel
+  const computedIds = await Promise.all(
+    candidateRows.map((c) =>
+      deterministicLogId({
+        startTimeUTC: c.startTimeUTC,
+        durationSeconds: c.durationSeconds,
+        normalizedDescription: c.normalizedDescription,
+        projectName: c.projectName || 'General / Unassigned',
+      })
+    )
+  );
+
+  for (let i = 0; i < candidateRows.length; i++) {
+    const detId = computedIds[i]!;
+    if (seenDeterministicIds.has(detId)) continue;
+    seenDeterministicIds.add(detId);
+    logRows.push({
+      ...candidateRows[i]!,
+      deterministicId: detId,
+    });
+  }
+
   // Compute new projects & new project-scoped tags that will be created
   const existingProjectsByLower = new Map<string, Project>();
+  const existingProjectsById = new Map<string, Project>();
   for (const p of params.existingProjects) {
     existingProjectsByLower.set(p.name.trim().toLowerCase(), p);
+    existingProjectsById.set(p.id, p);
   }
 
   const newProjectNamesSet = new Set<string>();
@@ -215,7 +228,7 @@ export async function parseAndPreviewTogglCsv(params: {
 
   const existingTagsByProjAndName = new Set<string>();
   for (const t of params.existingTags) {
-    const owner = params.existingProjects.find((p) => p.id === t.projectId);
+    const owner = existingProjectsById.get(t.projectId);
     const ownerNameLower = (owner?.name ?? 'General / Unassigned').trim().toLowerCase();
     existingTagsByProjAndName.add(`${ownerNameLower}::${t.name.trim().toLowerCase()}`);
   }

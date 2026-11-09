@@ -14,9 +14,15 @@ import {
 import { deterministicLogId, generateRandomId } from '../../app/domain/ids';
 import {
   applyProjectSwitch,
+  buildTaskTree,
+  collectDescendantTaskIds,
   createUnassignedProject,
+  flattenTaskTree,
+  formatTaskHierarchyLabel,
   tagsForProject,
+  validateTaskParent,
 } from '../../app/domain/invariants';
+import { renderBasicMarkdown } from '../../app/domain/markdown';
 import {
   applyDomainEventToOnboarding,
   createDefaultOnboardingState,
@@ -358,5 +364,84 @@ describe('domain/onboarding (DomainEvent Checklist & Localized Starter Templates
     expect(ptBoth[0]?.tags.length).toBeGreaterThan(0);
   });
 });
+
+describe('domain/invariants & markdown (FR-4 Hierarchical Tasks & Markdown Descriptions)', () => {
+  it('enforces 3-level hierarchy (Task -> Subtask -> Sub-subtask) and rejects depth > 2 or cross-project parenting', () => {
+    const rootTask = {
+      id: 't-root',
+      userId: 'u1',
+      projectId: 'p1',
+      depth: 0 as const,
+      name: 'Auth Module',
+      completedWorkHours: 0,
+      status: 'todo' as const,
+      createdAt: '2026-11-09T01:00:00.000Z',
+    };
+    const subtask = {
+      id: 't-sub',
+      userId: 'u1',
+      projectId: 'p1',
+      parentTaskId: 't-root',
+      depth: 1 as const,
+      name: 'OAuth Flow',
+      completedWorkHours: 0,
+      status: 'todo' as const,
+      createdAt: '2026-11-09T02:00:00.000Z',
+    };
+    const subSubtask = {
+      id: 't-subsub',
+      userId: 'u1',
+      projectId: 'p1',
+      parentTaskId: 't-sub',
+      depth: 2 as const,
+      name: 'Write unit tests',
+      completedWorkHours: 0,
+      status: 'todo' as const,
+      createdAt: '2026-11-09T03:00:00.000Z',
+    };
+
+    const allTasks = [rootTask, subtask, subSubtask];
+
+    expect(
+      validateTaskParent({ projectId: 'p1', parentTaskId: 't-root', allTasks })
+    ).toEqual({ valid: true, depth: 1 });
+    expect(
+      validateTaskParent({ projectId: 'p1', parentTaskId: 't-sub', allTasks })
+    ).toEqual({ valid: true, depth: 2 });
+    expect(
+      validateTaskParent({ projectId: 'p1', parentTaskId: 't-subsub', allTasks }).valid
+    ).toBe(false);
+    expect(
+      validateTaskParent({ projectId: 'p2', parentTaskId: 't-root', allTasks }).valid
+    ).toBe(false);
+
+    const flat = flattenTaskTree(buildTaskTree(allTasks, 'p1'));
+    expect(flat.map((n) => [n.task.id, n.depth])).toEqual([
+      ['t-root', 0],
+      ['t-sub', 1],
+      ['t-subsub', 2],
+    ]);
+    expect(formatTaskHierarchyLabel(subSubtask, allTasks)).toBe(
+      'Auth Module / OAuth Flow / Write unit tests'
+    );
+    expect(collectDescendantTaskIds('t-root', allTasks)).toEqual([
+      't-root',
+      't-sub',
+      't-subsub',
+    ]);
+  });
+
+  it('renders basic Markdown safely while escaping raw HTML/XSS', () => {
+    const html = renderBasicMarkdown(
+      '# Title\n**bold** and `code` and <script>alert(1)</script>\n- [x] Done item\n- [ ] Todo item'
+    );
+    expect(html).toContain('<strong class="font-semibold text-text-primary">bold</strong>');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('☑');
+    expect(html).toContain('☐');
+  });
+});
+
 
 

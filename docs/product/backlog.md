@@ -19,6 +19,9 @@ Living backlog for **Klox (`klox.dev`)**. Source of truth for context and domain
 | **FR-1** | **Landing page:** prerendered showcase (`/`, `/pt-br`), open sign-up, self-playing Command Bar hero demo, feature grid, ADO sync teaser, pricing placeholder, FAQ, SEO/OG | 1 (minimal) → 8 (full) | Done | GEMINI.md §3.6 |
 | **FR-2** | **Onboarding:** `/app/welcome` setup wizard (regional prefs → Work/Personal/Both profile → create project / import Toggl / start empty — **never fake sample data**), interactive keyboard tutorial (with touch variant), getting-started checklist, `?` help & replay sheet | seams 2–4 → 7 | Done | GEMINI.md §3.7 |
 | **FR-3** | **Internationalization:** `en` and `pt-BR` at launch; locale-agnostic setup; `UserPreferences` (timezone, week start, date format, 12/24h); timezone-aware `dateKey` + per-log `timeZone` snapshot; `useFormat()` via `Intl.*`; timers always `HH:MM:SS` in Latin digits | 1 → 7 | Done | GEMINI.md §3.8 |
+| **FR-4.1** | **Hierarchical Tasks (`Task` → `Subtask` → `Sub-subtask`):** tasks support up to 3 hierarchy levels (`parentTaskId`, `depth: 0 \| 1 \| 2`) strictly scoped within the same `Project`, with cascade delete and rolled-up tracked hours | 3 → 4 | Done | ADR-0007, GEMINI.md §2 |
+| **FR-4.2** | **Task Markdown Descriptions:** tasks support an optional `description` field with XSS-safe basic Markdown rendering (`**bold**`, `*italic*`, `` `code` ``, lists, links, `- [ ]` checklists, headings) | 3 → 4 | Done | ADR-0007, GEMINI.md §2 |
+| **FR-4.3** | **Task-Driven Timer & TimeLog Execution:** start a live `ActiveTimer` (`[▶ Start]`) or log time directly from any Task, Subtask, or Sub-subtask (auto-binding `projectId`, `taskId`, hierarchical `description`, and `isBillable`), plus Task selector in Command Timer Bar | 4 | Done | ADR-0007, GEMINI.md §3.2 |
 
 ---
 

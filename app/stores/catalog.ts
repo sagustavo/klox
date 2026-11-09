@@ -2,9 +2,15 @@ import { generateRandomId } from '~/domain/ids';
 import {
   PROJECT_COLOR_PALETTE,
   UNASSIGNED_PROJECT_ID,
+  buildTaskTree,
+  collectDescendantTaskIds,
   createUnassignedProject,
+  flattenTaskTree,
+  formatTaskHierarchyLabel,
   isValidHexColor,
   tagsForProject,
+  validateTaskParent,
+  type TaskTreeNode,
 } from '~/domain/invariants';
 import type { EntityId, Project, ProjectTag, Task, TaskStatus } from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
@@ -42,6 +48,25 @@ export const useCatalogStore = defineStore('catalog', () => {
     return tasks.value
       .filter((t) => t.projectId === projectId)
       .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function getTaskById(taskId: EntityId | null | undefined): Task | undefined {
+    if (!taskId) return undefined;
+    return tasks.value.find((t) => t.id === taskId);
+  }
+
+  function getTaskTreeForProject(projectId: EntityId | null | undefined): TaskTreeNode[] {
+    return buildTaskTree(tasks.value, projectId);
+  }
+
+  function getFlattenedTasksForProject(projectId: EntityId | null | undefined): TaskTreeNode[] {
+    return flattenTaskTree(buildTaskTree(tasks.value, projectId));
+  }
+
+  function getTaskHierarchicalLabel(taskId: EntityId | null | undefined): string {
+    const task = getTaskById(taskId);
+    if (!task) return '';
+    return formatTaskHierarchyLabel(task, tasks.value);
   }
 
   function persistLocal() {
@@ -291,18 +316,34 @@ export const useCatalogStore = defineStore('catalog', () => {
     uid: string;
     isDemo: boolean;
     projectId: EntityId;
+    parentTaskId?: EntityId | null;
     name: string;
+    description?: string;
     targetHours?: number;
     externalWorkItemId?: string;
   }): Promise<Task> {
     const trimmed = params.name.trim();
     if (!trimmed) throw new Error('Task name is required');
 
+    const parentCheck = validateTaskParent({
+      projectId: params.projectId,
+      parentTaskId: params.parentTaskId ?? null,
+      allTasks: tasks.value,
+    });
+    if (!parentCheck.valid) {
+      throw new Error(parentCheck.error ?? 'Invalid parent task');
+    }
+
+    const cleanDesc = params.description?.trim().slice(0, 4000);
+
     const task: Task = {
       id: generateRandomId(),
       userId: params.uid,
       projectId: params.projectId,
+      ...(params.parentTaskId ? { parentTaskId: params.parentTaskId } : {}),
+      depth: parentCheck.depth,
       name: trimmed,
+      ...(cleanDesc ? { description: cleanDesc } : {}),
       ...(params.targetHours && params.targetHours > 0 ? { targetHours: params.targetHours } : {}),
       ...(params.externalWorkItemId?.trim()
         ? {
@@ -327,6 +368,60 @@ export const useCatalogStore = defineStore('catalog', () => {
     }
 
     return task;
+  }
+
+  async function updateTask(params: {
+    uid: string;
+    isDemo: boolean;
+    taskId: EntityId;
+    name: string;
+    description?: string;
+    targetHours?: number | null;
+    externalWorkItemId?: string | null;
+  }): Promise<void> {
+    const target = tasks.value.find((t) => t.id === params.taskId);
+    if (!target) return;
+
+    const cleanDesc = params.description?.trim().slice(0, 4000);
+    const updated: Task = {
+      ...target,
+      name: params.name.trim() || target.name,
+    };
+
+    if (cleanDesc) {
+      updated.description = cleanDesc;
+    } else {
+      delete updated.description;
+    }
+
+    if (params.targetHours !== undefined) {
+      if (params.targetHours && params.targetHours > 0) {
+        updated.targetHours = params.targetHours;
+      } else {
+        delete updated.targetHours;
+      }
+    }
+
+    if (params.externalWorkItemId !== undefined) {
+      if (params.externalWorkItemId?.trim()) {
+        updated.externalProvider = 'azure_devops';
+        updated.externalWorkItemId = params.externalWorkItemId.trim();
+      } else {
+        delete updated.externalProvider;
+        delete updated.externalWorkItemId;
+      }
+    }
+
+    tasks.value = tasks.value.map((t) => (t.id === updated.id ? updated : t));
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, setDoc } = await import('firebase/firestore');
+        await setDoc(doc(fb.db, 'users', params.uid, 'tasks', updated.id), updated);
+      }
+    }
   }
 
   async function updateTaskStatus(params: {
@@ -355,14 +450,20 @@ export const useCatalogStore = defineStore('catalog', () => {
     isDemo: boolean;
     taskId: EntityId;
   }): Promise<void> {
-    tasks.value = tasks.value.filter((t) => t.id !== params.taskId);
+    const idsToDelete = collectDescendantTaskIds(params.taskId, tasks.value);
+    const deleteSet = new Set(idsToDelete);
+    tasks.value = tasks.value.filter((t) => !deleteSet.has(t.id));
     persistLocal();
 
     if (!params.isDemo) {
       const fb = await getFirebaseClient();
       if (fb) {
-        const { deleteDoc, doc } = await import('firebase/firestore');
-        await deleteDoc(doc(fb.db, 'users', params.uid, 'tasks', params.taskId));
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const batch = writeBatch(fb.db);
+        for (const id of idsToDelete) {
+          batch.delete(doc(fb.db, 'users', params.uid, 'tasks', id));
+        }
+        await batch.commit();
       }
     }
   }
@@ -377,12 +478,17 @@ export const useCatalogStore = defineStore('catalog', () => {
     getProjectById,
     getTagsForProject,
     getTasksForProject,
+    getTaskById,
+    getTaskTreeForProject,
+    getFlattenedTasksForProject,
+    getTaskHierarchicalLabel,
     createProject,
     updateProject,
     deleteProject,
     createTag,
     deleteTag,
     createTask,
+    updateTask,
     updateTaskStatus,
     deleteTask,
   };

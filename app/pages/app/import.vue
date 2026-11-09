@@ -17,7 +17,7 @@ const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 const timeLogsStore = useTimeLogsStore();
 const prefsStore = usePreferencesStore();
-const { isCommitting, buildPreview, commitPreview, exportCsvDownload } = useTogglCsv();
+const { isCommitting, importProgress, buildPreview, commitPreview, exportCsvDownload } = useTogglCsv();
 
 const csvText = ref('');
 const preview = ref<TogglDryRunPreview | null>(null);
@@ -145,7 +145,15 @@ function handleExport() {
           @click="handleCommit"
         >
           <FileSpreadsheet class="h-3.5 w-3.5" />
-          <span>{{ isCommitting ? $t('csv.committing') : $t('csv.commitButton') }}</span>
+          <span class="tabular-telemetry">
+            {{
+              isCommitting
+                ? importProgress
+                  ? `${$t('csv.committing')} (${importProgress.completed}/${importProgress.total})`
+                  : $t('csv.committing')
+                : $t('csv.commitButton')
+            }}
+          </span>
         </button>
       </div>
     </div>
