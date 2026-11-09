@@ -18,9 +18,23 @@ function toggleLocale() {
   <div class="min-h-screen flex flex-col bg-bg-primary text-text-primary">
     <header class="sticky top-0 z-30 border-b border-border-hairline bg-bg-primary/90 backdrop-blur-md">
       <div class="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <NuxtLink :to="localePath('/')" class="flex items-center gap-2">
-          <BrandKloxLogo size="md" />
-        </NuxtLink>
+        <div class="flex items-center gap-6">
+          <NuxtLink :to="localePath('/')" class="flex items-center gap-2">
+            <BrandKloxLogo size="md" />
+          </NuxtLink>
+
+          <nav class="hidden md:flex items-center gap-5 text-xs font-mono uppercase tracking-wider text-text-muted">
+            <a href="#features" class="hover:text-text-primary transition-colors">
+              {{ $t('nav.features') }}
+            </a>
+            <a href="#pricing" class="hover:text-text-primary transition-colors">
+              {{ $t('nav.pricing') }}
+            </a>
+            <a href="#faq" class="hover:text-text-primary transition-colors">
+              {{ $t('nav.faq') }}
+            </a>
+          </nav>
+        </div>
 
         <div class="flex items-center gap-2 sm:gap-3">
           <button
@@ -69,13 +83,13 @@ function toggleLocale() {
       <slot />
     </main>
 
-    <footer class="border-t border-border-hairline py-6">
+    <footer class="border-t border-border-hairline py-8">
       <div class="mx-auto flex max-w-6xl flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 text-xs text-text-muted font-mono">
         <div class="flex items-center gap-3">
           <BrandKloxLogo size="sm" />
           <span>— {{ $t('brand.tagline') }}</span>
         </div>
-        <div class="tabular-telemetry">klox.dev · v0.1.0</div>
+        <div class="tabular-telemetry">klox.dev · v0.1.0 · XP Educação Architecture Capstone</div>
       </div>
     </footer>
   </div>

@@ -1,0 +1,18 @@
+# Firebase App Hosting Configuration (ADR-0001 & D4)
+runConfig:
+  minInstances: 0
+  maxInstances: 4
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: NUXT_GEMINI_MODEL
+    value: gemini-3.8-flash
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NUXT_GEMINI_API_KEY
+    secret: GEMINI_API_KEY
+    availability:
+      - RUNTIME

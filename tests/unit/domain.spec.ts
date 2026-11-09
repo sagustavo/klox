@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aggregatePizzaSlices,
+  filterTimeLogs,
+  groupLogsByTag,
+} from '../../app/domain/aggregation';
+import {
   elapsedSeconds,
   formatHMS,
   normalizeDescription,
@@ -7,6 +12,23 @@ import {
   toDateKey,
 } from '../../app/domain/duration';
 import { deterministicLogId, generateRandomId } from '../../app/domain/ids';
+import {
+  applyProjectSwitch,
+  createUnassignedProject,
+  tagsForProject,
+} from '../../app/domain/invariants';
+import {
+  applyDomainEventToOnboarding,
+  createDefaultOnboardingState,
+  getStarterProjectTemplates,
+} from '../../app/domain/onboarding';
+import { buildRecallTemplates, validateAiPrediction } from '../../app/domain/recall';
+import {
+  TOGGL_CSV_HEADERS,
+  parseAndPreviewTogglCsv,
+  serializeTogglCsv,
+} from '../../app/domain/toggl';
+import type { Project, ProjectTag, TimeLog } from '../../app/domain/types';
 
 describe('domain/duration', () => {
   it('calculates elapsedSeconds resiliently from UTC delta', () => {
@@ -65,3 +87,276 @@ describe('domain/ids', () => {
     expect(id1).not.toBe(id3);
   });
 });
+
+describe('domain/invariants (Project-Scoped Tags)', () => {
+  const projA: Project = {
+    id: 'proj-a',
+    userId: 'u1',
+    name: 'XP Core API',
+    color: '#3B82F6',
+    isBillableDefault: true,
+    createdAt: '2026-11-09T00:00:00.000Z',
+  };
+  const projB: Project = {
+    id: 'proj-b',
+    userId: 'u1',
+    name: 'Marathon Prep',
+    color: '#10B981',
+    isBillableDefault: false,
+    createdAt: '2026-11-09T00:00:00.000Z',
+  };
+  const tags: ProjectTag[] = [
+    { id: 't1', userId: 'u1', projectId: 'proj-a', name: 'backend', createdAt: '' },
+    { id: 't2', userId: 'u1', projectId: 'proj-a', name: 'security', createdAt: '' },
+    { id: 't3', userId: 'u1', projectId: 'proj-b', name: 'cardio', createdAt: '' },
+  ];
+
+  it('returns only tags belonging to the selected project', () => {
+    expect(tagsForProject(tags, 'proj-a').map((t) => t.id)).toEqual(['t1', 't2']);
+    expect(tagsForProject(tags, 'proj-b').map((t) => t.id)).toEqual(['t3']);
+    expect(tagsForProject(tags, null)).toEqual([]);
+  });
+
+  it('clears incompatible tags and resets isBillable on project switch', () => {
+    const switched = applyProjectSwitch({
+      nextProject: projB,
+      currentTagIds: ['t1', 't3'],
+      allTags: tags,
+    });
+    expect(switched.projectId).toBe('proj-b');
+    expect(switched.tagIds).toEqual(['t3']);
+    expect(switched.isBillable).toBe(false);
+  });
+
+  it('provisions fallback unassigned project with systemKey="unassigned"', () => {
+    const unassigned = createUnassignedProject('u1');
+    expect(unassigned.systemKey).toBe('unassigned');
+    expect(unassigned.isBillableDefault).toBe(false);
+  });
+
+  it('deduplicates recall templates by normalizedDescription + projectId and ranks by frequency', () => {
+    const logs: TimeLog[] = [
+      {
+        id: '1',
+        userId: 'u1',
+        description: 'Architect Core API',
+        normalizedDescription: 'architect core api',
+        projectId: 'proj-a',
+        projectNameSnapshot: 'XP Core API',
+        projectColorSnapshot: '#3B82F6',
+        tagIds: ['t1'],
+        tagNamesSnapshot: ['backend'],
+        isBillable: true,
+        startTime: '2026-11-08T10:00:00.000Z',
+        endTime: '2026-11-08T11:00:00.000Z',
+        durationSeconds: 3600,
+        timeZone: 'UTC',
+        dateKey: '2026-11-08',
+      },
+      {
+        id: '2',
+        userId: 'u1',
+        description: '  architect   core api ',
+        normalizedDescription: 'architect core api',
+        projectId: 'proj-a',
+        projectNameSnapshot: 'XP Core API',
+        projectColorSnapshot: '#3B82F6',
+        tagIds: ['t1', 't2'],
+        tagNamesSnapshot: ['backend', 'security'],
+        isBillable: true,
+        startTime: '2026-11-09T10:00:00.000Z',
+        endTime: '2026-11-09T11:00:00.000Z',
+        durationSeconds: 3600,
+        timeZone: 'UTC',
+        dateKey: '2026-11-09',
+      },
+    ];
+
+    const templates = buildRecallTemplates(logs);
+    expect(templates).toHaveLength(1);
+    expect(templates[0]?.frequency).toBe(2);
+    expect(templates[0]?.tagIds).toEqual(['t1', 't2']);
+  });
+
+  it('re-validates AI predictions on the server so cross-project tagIds are stripped', () => {
+    const validated = validateAiPrediction({
+      raw: {
+        projectId: 'proj-a',
+        tagIds: ['t1', 't3', 'hallucinated-tag'],
+        isBillable: true,
+      },
+      projects: [projA, projB],
+      tags,
+    });
+    expect(validated.projectId).toBe('proj-a');
+    expect(validated.tagIds).toEqual(['t1']);
+    expect(validated.isBillable).toBe(true);
+  });
+});
+
+describe('domain/aggregation (Analytics Dashboard)', () => {
+  const sampleLogs: TimeLog[] = [
+    {
+      id: 'l1',
+      userId: 'u1',
+      description: 'Core API Auth',
+      normalizedDescription: 'core api auth',
+      projectId: 'proj-a',
+      projectNameSnapshot: 'XP Core API',
+      projectColorSnapshot: '#3B82F6',
+      tagIds: ['t1'],
+      tagNamesSnapshot: ['backend'],
+      isBillable: true,
+      startTime: '2026-11-09T10:00:00.000Z',
+      endTime: '2026-11-09T11:00:00.000Z',
+      durationSeconds: 3600,
+      timeZone: 'UTC',
+      dateKey: '2026-11-09',
+    },
+    {
+      id: 'l2',
+      userId: 'u1',
+      description: 'Long Run',
+      normalizedDescription: 'long run',
+      projectId: 'proj-b',
+      projectNameSnapshot: 'Marathon Prep',
+      projectColorSnapshot: '#10B981',
+      tagIds: [],
+      tagNamesSnapshot: [],
+      isBillable: false,
+      startTime: '2026-11-09T12:00:00.000Z',
+      endTime: '2026-11-09T12:30:00.000Z',
+      durationSeconds: 1800,
+      timeZone: 'UTC',
+      dateKey: '2026-11-09',
+    },
+  ];
+
+  it('filters logs by projectId and slices Pizza chart by project or tag', () => {
+    const filtered = filterTimeLogs({
+      logs: sampleLogs,
+      filters: {
+        preset: 'all_time',
+        projectIds: ['proj-a'],
+        taskIds: [],
+        tagIds: [],
+        searchQuery: '',
+      },
+      timeZone: 'UTC',
+      weekStartsOn: 1,
+    });
+    expect(filtered).toHaveLength(1);
+
+    const pizza = aggregatePizzaSlices({
+      logs: sampleLogs,
+      dimension: 'project',
+    });
+    expect(pizza.totalTrackedSeconds).toBe(5400);
+    expect(pizza.slices).toHaveLength(2);
+
+    const tagBuckets = groupLogsByTag(sampleLogs, 'Untagged');
+    expect(tagBuckets.map((g) => g.tagLabel)).toEqual(['#backend', 'Untagged']);
+  });
+});
+
+describe('domain/toggl (Bi-Directional Toggl CSV Studio)', () => {
+  it('serializes TimeLogs with UTF-8 BOM + official English headers and round-trips idempotently', async () => {
+    const existingLog: TimeLog = {
+      id: 'initial-id',
+      userId: 'u1',
+      description: 'Design Firestore security rules',
+      normalizedDescription: 'design firestore security rules',
+      projectId: 'proj-a',
+      projectNameSnapshot: 'XP Core API',
+      projectColorSnapshot: '#3B82F6',
+      tagIds: ['t1', 't2'],
+      tagNamesSnapshot: ['architecture', 'security'],
+      isBillable: true,
+      startTime: '2026-11-09T09:00:00.000Z',
+      endTime: '2026-11-09T10:30:00.000Z',
+      durationSeconds: 5400,
+      timeZone: 'UTC',
+      dateKey: '2026-11-09',
+    };
+
+    const csv = serializeTogglCsv({
+      logs: [existingLog],
+      userName: 'Gustavo',
+      userEmail: 'gustavo@klox.dev',
+    });
+
+    expect(csv.startsWith('\uFEFF')).toBe(true);
+    expect(csv).toContain(TOGGL_CSV_HEADERS.join(','));
+
+    // First import against empty state -> 1 new log, 1 new project, 2 new scoped tags
+    const firstPreview = await parseAndPreviewTogglCsv({
+      csvText: csv,
+      existingProjects: [],
+      existingTags: [],
+      existingLogs: [],
+    });
+
+    expect(firstPreview.errors).toHaveLength(0);
+    expect(firstPreview.newLogsCount).toBe(1);
+    expect(firstPreview.duplicateLogsCount).toBe(0);
+    expect(firstPreview.newProjectNames).toEqual(['XP Core API']);
+    expect(firstPreview.newScopedTags).toEqual([
+      { projectName: 'XP Core API', tagName: 'architecture' },
+      { projectName: 'XP Core API', tagName: 'security' },
+    ]);
+
+    // Second import against existing log -> 0 new logs, 1 duplicate skipped
+    const secondPreview = await parseAndPreviewTogglCsv({
+      csvText: csv,
+      existingProjects: [
+        {
+          id: 'proj-a',
+          userId: 'u1',
+          name: 'XP Core API',
+          color: '#3B82F6',
+          isBillableDefault: true,
+          createdAt: '',
+        },
+      ],
+      existingTags: [],
+      existingLogs: [
+        {
+          ...existingLog,
+          id: firstPreview.logRows[0]!.deterministicId,
+        },
+      ],
+    });
+
+    expect(secondPreview.newLogsCount).toBe(0);
+    expect(secondPreview.duplicateLogsCount).toBe(1);
+  });
+});
+
+describe('domain/onboarding (DomainEvent Checklist & Localized Starter Templates)', () => {
+  it('completes checklist items reactively when matching DomainEvents fire', () => {
+    let state = createDefaultOnboardingState();
+    expect(state.checklist.firstTimer).toBeUndefined();
+
+    state = applyDomainEventToOnboarding(state, {
+      type: 'TimerStopped',
+      at: '2026-11-09T10:00:00.000Z',
+    });
+    expect(state.checklist.firstTimer).toBe('2026-11-09T10:00:00.000Z');
+
+    state = applyDomainEventToOnboarding(state, {
+      type: 'AiAutofillUsed',
+      at: '2026-11-09T10:05:00.000Z',
+    });
+    expect(state.checklist.aiAutofill).toBe('2026-11-09T10:05:00.000Z');
+  });
+
+  it('returns localized starter project templates without any sample time logs', () => {
+    const enWork = getStarterProjectTemplates('work', 'en');
+    const ptBoth = getStarterProjectTemplates('both', 'pt-br');
+    expect(enWork).toHaveLength(2);
+    expect(ptBoth).toHaveLength(4);
+    expect(ptBoth[0]?.tags.length).toBeGreaterThan(0);
+  });
+});
+
+

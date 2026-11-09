@@ -1,5 +1,20 @@
 import type { SupportedLocale, UserPreferences, WeekStartDay } from './types';
 
+export const COMMON_IANA_TIMEZONES: readonly string[] = [
+  'America/Sao_Paulo',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'UTC',
+  'Europe/London',
+  'Europe/Lisbon',
+  'Europe/Berlin',
+  'Asia/Tokyo',
+  'Asia/Singapore',
+  'Australia/Sydney',
+];
+
 export const DEFAULT_PREFERENCES: UserPreferences = {
   locale: 'en',
   timeZone: 'UTC',

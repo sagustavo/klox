@@ -10,15 +10,15 @@ Living backlog for **Klox (`klox.dev`)**. Source of truth for context and domain
 
 | ID | Requirement | Phase | Status | Notes |
 |---|---|---|---|---|
-| FR-0.1 | Firebase Auth (Email/Password + Google OAuth) & strict `users/{uid}` tenant isolation | 2 | POC | GEMINI.md §3.1 |
-| FR-0.2 | Keyboard-first Command Timer Bar (`N`, `S`, `Esc`, `?`, `Tab` cycle), resilient `startTimeUTC` elapsed math, single active timer, manual log CRUD | 4 | POC | GEMINI.md §3.2 |
-| FR-0.3 | Catalog: `Projects` (hex color, `isBillableDefault`), project-scoped `Tags` (domain invariant), foundational `Tasks`, `systemKey: 'unassigned'` | 3 | POC | GEMINI.md §2 |
-| FR-0.4 | Two-tier hybrid search & AI auto-fill: Tier 1 `Fuse.js` Top-10 recall + Tier 2 Gemini structured JSON (`⌘I` / `Ctrl+I`) with server-side tag/project validation | 4 | POC | GEMINI.md §3.3 |
-| FR-0.5 | Analytical Dashboard: reactive filter bar, Pizza chart, Daily stacked bar chart, Tag-grouped breakdown table | 5 | POC | GEMINI.md §3.4 |
-| FR-0.6 | Bi-directional Toggl Track CSV import (dry-run, auto-resolve entities, deterministic hash IDs) & UTF-8 BOM export | 6 | POC | GEMINI.md §3.5 |
-| **FR-1** | **Landing page:** prerendered showcase (`/`, `/pt-br`), open sign-up, self-playing Command Bar hero demo, feature grid, ADO sync teaser, pricing placeholder, FAQ, SEO/OG | 1 (minimal) → 8 (full) | POC | GEMINI.md §3.6 |
-| **FR-2** | **Onboarding:** `/app/welcome` setup wizard (regional prefs → Work/Personal/Both profile → create project / import Toggl / start empty — **never fake sample data**), interactive keyboard tutorial (with touch variant), getting-started checklist, `?` help & replay sheet | seams 2–4 → 7 | POC | GEMINI.md §3.7 |
-| **FR-3** | **Internationalization:** `en` and `pt-BR` at launch; locale-agnostic setup; `UserPreferences` (timezone, week start, date format, 12/24h); timezone-aware `dateKey` + per-log `timeZone` snapshot; `useFormat()` via `Intl.*`; timers always `HH:MM:SS` in Latin digits | 1 → 7 | POC | GEMINI.md §3.8 |
+| FR-0.1 | Firebase Auth (Email/Password + Google OAuth) & strict `users/{uid}` tenant isolation | 2 | Done | GEMINI.md §3.1 |
+| FR-0.2 | Keyboard-first Command Timer Bar (`N`, `S`, `Esc`, `?`, `Tab` cycle), resilient `startTimeUTC` elapsed math, single active timer, manual log CRUD | 4 | Done | GEMINI.md §3.2 |
+| FR-0.3 | Catalog: `Projects` (hex color, `isBillableDefault`), project-scoped `Tags` (domain invariant), foundational `Tasks`, `systemKey: 'unassigned'` | 3 | Done | GEMINI.md §2 |
+| FR-0.4 | Two-tier hybrid search & AI auto-fill: Tier 1 `Fuse.js` Top-10 recall + Tier 2 Gemini structured JSON (`⌘I` / `Ctrl+I`) with server-side tag/project validation | 4 | Done | GEMINI.md §3.3 |
+| FR-0.5 | Analytical Dashboard: reactive filter bar, Pizza chart, Daily stacked bar chart, Tag-grouped breakdown table | 5 | Done | GEMINI.md §3.4 |
+| FR-0.6 | Bi-directional Toggl Track CSV import (dry-run, auto-resolve entities, deterministic hash IDs) & UTF-8 BOM export | 6 | Done | GEMINI.md §3.5 |
+| **FR-1** | **Landing page:** prerendered showcase (`/`, `/pt-br`), open sign-up, self-playing Command Bar hero demo, feature grid, ADO sync teaser, pricing placeholder, FAQ, SEO/OG | 1 (minimal) → 8 (full) | Done | GEMINI.md §3.6 |
+| **FR-2** | **Onboarding:** `/app/welcome` setup wizard (regional prefs → Work/Personal/Both profile → create project / import Toggl / start empty — **never fake sample data**), interactive keyboard tutorial (with touch variant), getting-started checklist, `?` help & replay sheet | seams 2–4 → 7 | Done | GEMINI.md §3.7 |
+| **FR-3** | **Internationalization:** `en` and `pt-BR` at launch; locale-agnostic setup; `UserPreferences` (timezone, week start, date format, 12/24h); timezone-aware `dateKey` + per-log `timeZone` snapshot; `useFormat()` via `Intl.*`; timers always `HH:MM:SS` in Latin digits | 1 → 7 | Done | GEMINI.md §3.8 |
 
 ---
 

@@ -66,9 +66,12 @@ export default defineNuxtConfig({
     lazy: true,
     langDir: 'locales',
     locales: [
-      { code: 'en', language: 'en-US', name: 'English', file: 'en.json' },
-      { code: 'pt-br', language: 'pt-BR', name: 'Português (BR)', file: 'pt-BR.json' },
+      { code: 'en', language: 'en-US', name: 'English', file: 'en.ts' },
+      { code: 'pt-br', language: 'pt-BR', name: 'Português (BR)', file: 'pt-BR.ts' },
     ],
+    bundle: {
+      optimizeTranslationDirective: false,
+    },
     detectBrowserLanguage: {
       useCookie: true,
       cookieKey: 'klox_locale',
@@ -77,15 +80,15 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    geminiApiKey: process.env.GEMINI_API_KEY || '',
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    geminiApiKey: '',
+    geminiModel: 'gemini-3.8-flash',
     public: {
-      firebaseApiKey: process.env.NUXT_PUBLIC_FIREBASE_API_KEY || '',
-      firebaseAuthDomain: process.env.NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
-      firebaseProjectId: process.env.NUXT_PUBLIC_FIREBASE_PROJECT_ID || '',
-      firebaseStorageBucket: process.env.NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
-      firebaseMessagingSenderId: process.env.NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
-      firebaseAppId: process.env.NUXT_PUBLIC_FIREBASE_APP_ID || '',
+      firebaseApiKey: '',
+      firebaseAuthDomain: '',
+      firebaseProjectId: '',
+      firebaseStorageBucket: '',
+      firebaseMessagingSenderId: '',
+      firebaseAppId: '',
     },
   },
 

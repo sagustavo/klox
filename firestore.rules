@@ -1,0 +1,363 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — Klox (klox.dev)
+// ===============================================================
+//
+// Strict per-user tenant isolation: all application documents live
+// under `users/{userId}/...`. An authenticated user may only read
+// and write documents where `request.auth.uid == userId`.
+// Cross-tenant access and unauthenticated access are denied everywhere.
+//
+// Collection: users/{userId}
+// Document ID: {userId} (Firebase Auth UID)
+// Fields:
+//   - displayName: string | null (optional, <= 120 chars)
+//   - email: string | null (optional, <= 254 chars, PII — owner-only read)
+//   - activeTimer: map | null (optional, singleton live stopwatch state)
+//   - preferences: map (optional, regional settings: locale, timeZone, weekStartsOn, dateFormat, hourCycle)
+//   - onboarding: map (optional, wizardStatus, version, profile, checklist, timestamps)
+//   - updatedAt: string (optional, UTC ISO timestamp <= 64 chars)
+//
+// Collection: users/{userId}/projects/{projectId}
+// Document ID: {projectId}
+// Fields:
+//   - id: string (required, immutable, must equal projectId, 1..128 chars)
+//   - userId: string (required, immutable, must equal userId)
+//   - name: string (required, 1..120 chars)
+//   - color: string (required, hex color #RRGGBB)
+//   - isBillableDefault: bool (required)
+//   - createdAt: string (required, immutable, UTC ISO string 10..64 chars)
+//   - systemKey: string | null (optional, allowed value: 'unassigned')
+//
+// Collection: users/{userId}/tags/{tagId}
+// Document ID: {tagId}
+// Fields:
+//   - id: string (required, immutable, must equal tagId, 1..128 chars)
+//   - userId: string (required, immutable, must equal userId)
+//   - projectId: string (required, immutable, 1..128 chars)
+//   - name: string (required, 1..80 chars)
+//   - createdAt: string (required, immutable, UTC ISO string 10..64 chars)
+//
+// Collection: users/{userId}/tasks/{taskId}
+// Document ID: {taskId}
+// Fields:
+//   - id: string (required, immutable, must equal taskId, 1..128 chars)
+//   - userId: string (required, immutable, must equal userId)
+//   - projectId: string (required, 1..128 chars)
+//   - name: string (required, 1..200 chars)
+//   - completedWorkHours: number (required, >= 0 and <= 100000)
+//   - status: string (required, in ['todo', 'in_progress', 'done'])
+//   - createdAt: string (required, immutable, UTC ISO string 10..64 chars)
+//   - targetHours: number | null (optional, >= 0 and <= 100000)
+//   - externalProvider: string | null (optional, 'azure_devops' or null)
+//   - externalWorkItemId: string | null (optional, <= 128 chars)
+//
+// Collection: users/{userId}/timeLogs/{logId}
+// Document ID: {logId}
+// Fields:
+//   - id: string (required, immutable, must equal logId, 1..128 chars)
+//   - userId: string (required, immutable, must equal userId)
+//   - description: string (required, 0..500 chars)
+//   - normalizedDescription: string (required, 0..500 chars)
+//   - projectId: string (required, 1..128 chars)
+//   - projectNameSnapshot: string (required, 1..120 chars)
+//   - projectColorSnapshot: string (required, 1..32 chars)
+//   - taskId: string | null (optional, <= 128 chars)
+//   - taskNameSnapshot: string | null (optional, <= 200 chars)
+//   - tagIds: list<string> (required, max 25 items)
+//   - tagNamesSnapshot: list<string> (required, max 25 items)
+//   - isBillable: bool (required)
+//   - startTime: string (required, UTC ISO string 10..64 chars)
+//   - endTime: string (required, UTC ISO string 10..64 chars)
+//   - durationSeconds: number (required, >= 0 and <= 31536000)
+//   - timeZone: string (required, IANA timezone 1..100 chars)
+//   - dateKey: string (required, 10 chars YYYY-MM-DD)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isNonEmptyString(val, maxLen) {
+      return val is string && val.size() >= 1 && val.size() <= maxLen;
+    }
+
+    function isBoundedString(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isOptionalBoundedString(data, field, maxLen) {
+      return !(field in data) || data[field] == null || isBoundedString(data[field], maxLen);
+    }
+
+    function isValidHexColor(color) {
+      return color is string && color.matches('^#[0-9A-Fa-f]{6}$');
+    }
+
+    function isValidDateKey(dateKey) {
+      return dateKey is string &&
+        dateKey.size() == 10 &&
+        dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidList(listVal, maxSize) {
+      return listVal is list && listVal.size() <= maxSize;
+    }
+
+    // ===============================================================
+    // Domain Validators (Invoked on BOTH create and update)
+    // ===============================================================
+
+    function isValidPreferences(prefs) {
+      return prefs is map &&
+        prefs.keys().hasAll(['locale', 'timeZone', 'weekStartsOn', 'dateFormat', 'hourCycle']) &&
+        prefs.keys().hasOnly(['locale', 'timeZone', 'weekStartsOn', 'dateFormat', 'hourCycle']) &&
+        prefs.locale in ['en', 'pt-br'] &&
+        isNonEmptyString(prefs.timeZone, 100) &&
+        prefs.weekStartsOn in [0, 1, 6] &&
+        prefs.dateFormat in ['locale', 'YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'] &&
+        prefs.hourCycle in ['h12', 'h23'];
+    }
+
+    function isValidOnboarding(onboarding) {
+      return onboarding is map &&
+        onboarding.keys().hasAll(['version', 'wizardStatus']) &&
+        onboarding.keys().hasOnly([
+          'version',
+          'wizardStatus',
+          'profile',
+          'tutorialCompletedAt',
+          'checklist',
+          'checklistDismissedAt'
+        ]) &&
+        onboarding.version is int &&
+        onboarding.version >= 1 &&
+        onboarding.version <= 100 &&
+        onboarding.wizardStatus in ['pending', 'completed', 'skipped'] &&
+        (!('profile' in onboarding) || onboarding.profile == null || onboarding.profile in ['work', 'personal', 'both']) &&
+        isOptionalBoundedString(onboarding, 'tutorialCompletedAt', 64) &&
+        isOptionalBoundedString(onboarding, 'checklistDismissedAt', 64) &&
+        (!('checklist' in onboarding) || (onboarding.checklist is map && onboarding.checklist.size() <= 20));
+    }
+
+    function isValidActiveTimer(timer) {
+      return timer == null || (
+        timer is map &&
+        timer.keys().hasAll(['description', 'projectId', 'tagIds', 'isBillable', 'startTimeUTC']) &&
+        timer.keys().hasOnly(['description', 'projectId', 'taskId', 'tagIds', 'isBillable', 'startTimeUTC']) &&
+        isBoundedString(timer.description, 500) &&
+        isNonEmptyString(timer.projectId, 128) &&
+        isOptionalBoundedString(timer, 'taskId', 128) &&
+        isValidList(timer.tagIds, 25) &&
+        timer.isBillable is bool &&
+        isNonEmptyString(timer.startTimeUTC, 64)
+      );
+    }
+
+    function isValidUserProfile(data) {
+      return hasOnlyAllowedFields([
+          'displayName',
+          'email',
+          'activeTimer',
+          'preferences',
+          'onboarding',
+          'updatedAt'
+        ]) &&
+        isOptionalBoundedString(data, 'displayName', 120) &&
+        isOptionalBoundedString(data, 'email', 254) &&
+        isOptionalBoundedString(data, 'updatedAt', 64) &&
+        (!('activeTimer' in data) || isValidActiveTimer(data.activeTimer)) &&
+        (!('preferences' in data) || isValidPreferences(data.preferences)) &&
+        (!('onboarding' in data) || isValidOnboarding(data.onboarding));
+    }
+
+    function isValidProject(data, userId, projectId) {
+      return hasRequiredFields(['id', 'userId', 'name', 'color', 'isBillableDefault', 'createdAt']) &&
+        hasOnlyAllowedFields(['id', 'userId', 'name', 'color', 'isBillableDefault', 'createdAt', 'systemKey']) &&
+        data.id is string && data.id == projectId && data.id.size() >= 1 && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId &&
+        isNonEmptyString(data.name, 120) &&
+        isValidHexColor(data.color) &&
+        data.isBillableDefault is bool &&
+        isNonEmptyString(data.createdAt, 64) &&
+        (!('systemKey' in data) || data.systemKey == null || data.systemKey == 'unassigned');
+    }
+
+    function isValidTag(data, userId, tagId) {
+      return hasRequiredFields(['id', 'userId', 'projectId', 'name', 'createdAt']) &&
+        hasOnlyAllowedFields(['id', 'userId', 'projectId', 'name', 'createdAt']) &&
+        data.id is string && data.id == tagId && data.id.size() >= 1 && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId &&
+        isNonEmptyString(data.projectId, 128) &&
+        isNonEmptyString(data.name, 80) &&
+        isNonEmptyString(data.createdAt, 64);
+    }
+
+    function isValidTask(data, userId, taskId) {
+      return hasRequiredFields(['id', 'userId', 'projectId', 'name', 'completedWorkHours', 'status', 'createdAt']) &&
+        hasOnlyAllowedFields([
+          'id',
+          'userId',
+          'projectId',
+          'name',
+          'completedWorkHours',
+          'status',
+          'createdAt',
+          'targetHours',
+          'externalProvider',
+          'externalWorkItemId'
+        ]) &&
+        data.id is string && data.id == taskId && data.id.size() >= 1 && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId &&
+        isNonEmptyString(data.projectId, 128) &&
+        isNonEmptyString(data.name, 200) &&
+        data.completedWorkHours is number && data.completedWorkHours >= 0 && data.completedWorkHours <= 100000 &&
+        data.status in ['todo', 'in_progress', 'done'] &&
+        isNonEmptyString(data.createdAt, 64) &&
+        (!('targetHours' in data) || data.targetHours == null || (data.targetHours is number && data.targetHours >= 0 && data.targetHours <= 100000)) &&
+        (!('externalProvider' in data) || data.externalProvider == null || data.externalProvider == 'azure_devops') &&
+        isOptionalBoundedString(data, 'externalWorkItemId', 128);
+    }
+
+    function isValidTimeLog(data, userId, logId) {
+      return hasRequiredFields([
+          'id',
+          'userId',
+          'description',
+          'normalizedDescription',
+          'projectId',
+          'projectNameSnapshot',
+          'projectColorSnapshot',
+          'tagIds',
+          'tagNamesSnapshot',
+          'isBillable',
+          'startTime',
+          'endTime',
+          'durationSeconds',
+          'timeZone',
+          'dateKey'
+        ]) &&
+        hasOnlyAllowedFields([
+          'id',
+          'userId',
+          'description',
+          'normalizedDescription',
+          'projectId',
+          'projectNameSnapshot',
+          'projectColorSnapshot',
+          'taskId',
+          'taskNameSnapshot',
+          'tagIds',
+          'tagNamesSnapshot',
+          'isBillable',
+          'startTime',
+          'endTime',
+          'durationSeconds',
+          'timeZone',
+          'dateKey'
+        ]) &&
+        data.id is string && data.id == logId && data.id.size() >= 1 && data.id.size() <= 128 &&
+        data.userId is string && data.userId == userId &&
+        isBoundedString(data.description, 500) &&
+        isBoundedString(data.normalizedDescription, 500) &&
+        isNonEmptyString(data.projectId, 128) &&
+        isNonEmptyString(data.projectNameSnapshot, 120) &&
+        isNonEmptyString(data.projectColorSnapshot, 32) &&
+        isOptionalBoundedString(data, 'taskId', 128) &&
+        isOptionalBoundedString(data, 'taskNameSnapshot', 200) &&
+        isValidList(data.tagIds, 25) &&
+        isValidList(data.tagNamesSnapshot, 25) &&
+        data.isBillable is bool &&
+        isNonEmptyString(data.startTime, 64) &&
+        isNonEmptyString(data.endTime, 64) &&
+        data.durationSeconds is number && data.durationSeconds >= 0 && data.durationSeconds <= 31536000 &&
+        isNonEmptyString(data.timeZone, 100) &&
+        isValidDateKey(data.dateKey);
+    }
+
+    // ===============================================================
+    // Tenant-Isolated User Tree: users/{userId}
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow delete: if isOwner(userId);
+
+      match /projects/{projectId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidProject(request.resource.data, userId, projectId);
+        allow update: if isOwner(userId) &&
+          isDocOwner() &&
+          isValidProject(request.resource.data, userId, projectId) &&
+          areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+        allow delete: if isOwner(userId) && isDocOwner();
+      }
+
+      match /tags/{tagId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidTag(request.resource.data, userId, tagId);
+        allow update: if isOwner(userId) &&
+          isDocOwner() &&
+          isValidTag(request.resource.data, userId, tagId) &&
+          areImmutableFieldsUnchanged(['id', 'userId', 'projectId', 'createdAt']);
+        allow delete: if isOwner(userId) && isDocOwner();
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidTask(request.resource.data, userId, taskId);
+        allow update: if isOwner(userId) &&
+          isDocOwner() &&
+          isValidTask(request.resource.data, userId, taskId) &&
+          areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+        allow delete: if isOwner(userId) && isDocOwner();
+      }
+
+      match /timeLogs/{logId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidTimeLog(request.resource.data, userId, logId);
+        allow update: if isOwner(userId) &&
+          isDocOwner() &&
+          isValidTimeLog(request.resource.data, userId, logId) &&
+          areImmutableFieldsUnchanged(['id', 'userId']);
+        allow delete: if isOwner(userId) && isDocOwner();
+      }
+    }
+
+    // Default deny for all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

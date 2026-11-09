@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Allow: /pt-br
+Disallow: /app/
+Disallow: /pt-br/app/
+Disallow: /api/
+
+Sitemap: https://klox.dev/sitemap.xml
