@@ -112,28 +112,3 @@ pnpm test
 # 5. Build production hybrid bundle (prerenders / and /pt-br, builds Nitro server)
 pnpm build
 ```
-
-# Improvements to make
-- When deleting a given time log, project, tag or anything else, necessarily a component must be shown asking for confirmation, because this is a data destructive action
-- A tag must be editable and renameable
-- A performance tuning and optimization must be implemented on massive batch toggl track importing
-- The font size is too small and only gets comfortable on 110% of screen scale 
-- Dashboard
-  - The table must be groupable by two different levels. For example: by project and by tag; by tag and by description
-    - There is always the possibility to group things basead on Project, Task, Tag or Description
-    - That means the pizza chart and the histogram chart should be sliceable by any of that
-  - Regarding filtering, There should be separate inputs for each type of filtering:
-    - 1 multiselect input for project, another for task, another for tag and other for log description.
-    - the multiselect should allow a "select all" option, which means filtering by all the options being shown in the input
-    - there must be pagination to show the big table down there, which might show thousands of logs
-    - on histogram, there must be an option of grouping per day, week, month, quarter and year
-- While running the timer, it should be possible to adjust its start time, for cases where I took too long to start logging on Klox
-- Remove Gemini references from the text shown to the user
-- Remove the bunch of software engineering references shown to the user, such as the ones related to DDD, UTF-8 BOM, etc
-- There must be a pagination in the main page, because it is currently showing all the thousands records that I imported. This makes my browser crash
-  - Each page should contains only 7 days of logs
-- Every log entry with same characteristics (description, tag, project) recorded in the same day, must be grouped together
-  - Then it should be possible to expand down the group and see each log timing individually
-  - When editing a given log timing, first: there should not be an edit button. Instead, when cliking directly in the timing, it should be shown the start time and stop time inputs. Both times should be changeable.
-- On login page, the Google button should have a colored google icon
-- At least on landing page, there should be the `contact@klox.dev` email address, saying that we are open for feedbacks and happy to help in case of bugs. Maybe it makes sense adding it on the help component (shortcuts) too

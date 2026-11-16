@@ -10,7 +10,7 @@ Below is the complete context of everything we have already designed, decided, a
 
 - **App Name & Domain:** **Klox** (`https://klox.dev` — domain already purchased on Hostinger).
 - **Founder Profile:** Software Engineer at **XP Inc.** (Brazil).
-- **Academic Context:** This project serves both as a real SaaS product (User #001 is my wife!) and as the Capstone Project for my **Post-Graduation in Software and Solutions Architecture with Artificial Intelligence** at **XP Educação**.
+- **Academic Context:** This project serves both as a real SaaS product (User #001 is me) and as the Capstone Project for my **Post-Graduation in Software and Solutions Architecture with Artificial Intelligence** at **XP Educação**.
 - **Product Vision (POC -> Full Platform):**
   - **Phase 1 (Current POC):** An ultra-fast, keyboard-first, AI-augmented Time Tracking & Analytics application with seamless bi-directional Toggl Track CSV compatibility.
   - **Phase 2 (Strategic Evolution):** A complete **Time & Execution Management Platform** for both **Work** and **Personal Mastery** (studies, workouts, reading, personal goals).
