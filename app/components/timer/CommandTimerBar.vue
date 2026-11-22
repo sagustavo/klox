@@ -40,6 +40,7 @@ const highlightedRecallIdx = ref(-1);
 // Live ActiveTimer startTimeUTC backdating / adjustment state (FR-5.2)
 const showStartAdjustPopover = ref(false);
 const draftStartDateKey = ref('');
+const isDraftStartDateValid = ref(true);
 const draftStartTimeHMS = ref('');
 
 const aiLoading = ref(false);
@@ -80,7 +81,12 @@ function closeMenusAndBlur() {
 const activeTimeZone = computed(() => prefsStore.preferences.timeZone || 'UTC');
 
 const draftAdjustedPreview = computed(() => {
-  if (!showStartAdjustPopover.value || !draftStartDateKey.value || !draftStartTimeHMS.value) {
+  if (
+    !showStartAdjustPopover.value ||
+    !isDraftStartDateValid.value ||
+    !draftStartDateKey.value ||
+    !draftStartTimeHMS.value
+  ) {
     return null;
   }
   return resolveAdjustedTimerStartUtc({
@@ -94,6 +100,7 @@ function syncDraftFromActiveTimer() {
   if (!timerStore.activeTimer) return;
   const tz = activeTimeZone.value;
   draftStartDateKey.value = toDateKey(timerStore.activeTimer.startTimeUTC, tz);
+  isDraftStartDateValid.value = true;
   draftStartTimeHMS.value = toLocalTimeInputValue(
     timerStore.activeTimer.startTimeUTC,
     tz,
@@ -573,14 +580,14 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div class="grid grid-cols-2 gap-1.5">
-            <input
+          <div class="space-y-1.5">
+            <UiDateInput
               v-model="draftStartDateKey"
-              type="date"
-              required
-              data-testid="active-timer-start-date"
+              v-model:valid="isDraftStartDateValid"
+              calendar-placement="inline"
+              size="sm"
               :aria-label="$t('timer.liveStart.dateLabel')"
-              class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+              test-id="active-timer-start-date"
             />
             <input
               ref="liveStartTimeInputRef"
@@ -590,7 +597,7 @@ onUnmounted(() => {
               required
               data-testid="active-timer-start-time"
               :aria-label="$t('timer.liveStart.timeLabel')"
-              class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+              class="tabular-telemetry h-8 w-full border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
 

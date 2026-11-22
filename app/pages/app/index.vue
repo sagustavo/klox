@@ -57,6 +57,7 @@ const manualTaskId = ref<EntityId | undefined>(undefined);
 const manualTagIds = ref<EntityId[]>([]);
 const manualBillable = ref(false);
 const manualDate = ref(toDateKey(new Date(), 'UTC'));
+const isManualDateValid = ref(true);
 const manualStartHM = ref('09:00');
 const manualEndHM = ref('10:00');
 const manualDurationHMS = ref('01:00:00');
@@ -168,7 +169,7 @@ function handleManualDurationInput() {
 }
 
 async function handleSaveManualLog() {
-  if (!authStore.user) return;
+  if (!authStore.user || !isManualDateValid.value) return;
   const tz = activeTimeZone.value;
   const durFromInput = parseHMS(manualDurationHMS.value);
 
@@ -519,14 +520,17 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           </option>
         </select>
 
-        <input
-          v-model="manualDate"
-          type="date"
-          required
-          :aria-label="$t('timer.manualDateLabel')"
-          class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
-          @change="handleManualRangeChange"
-        />
+        <div class="sm:col-span-2">
+          <UiDateInput
+            v-model="manualDate"
+            v-model:valid="isManualDateValid"
+            calendar-placement="popover"
+            size="md"
+            :aria-label="$t('timer.manualDateLabel')"
+            test-id="manual-log-date"
+            @update:model-value="handleManualRangeChange"
+          />
+        </div>
 
         <input
           v-model="manualStartHM"

@@ -1,5 +1,6 @@
 import { TZDate } from '@date-fns/tz';
 import { format } from 'date-fns';
+import type { DateFormatPreset, SupportedLocale, WeekStartDay } from './types';
 
 /**
  * Resilient stopwatch elapsed calculation (GEMINI.md §2.4):
@@ -333,4 +334,169 @@ export function doTimeRangesOverlap(
     return false;
   }
   return aStart < bEnd && bStart < aEnd;
+}
+
+export type DateComponentOrder = 'YMD' | 'DMY' | 'MDY';
+
+function isValidCalendarYMD(year: number, month: number, day: number): boolean {
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    year < 1970 ||
+    year > 2100 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return false;
+  }
+  const check = new Date(Date.UTC(year, month - 1, day));
+  return (
+    check.getUTCFullYear() === year &&
+    check.getUTCMonth() === month - 1 &&
+    check.getUTCDate() === day
+  );
+}
+
+function toCanonicalDateKey(year: number, month: number, day: number): string {
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * Resolves the preferred component ordering (`YMD`, `DMY`, `MDY`) from `UserPreferences`.
+ */
+export function resolvePreferredDateOrder(
+  dateFormat: DateFormatPreset,
+  locale: SupportedLocale = 'en'
+): DateComponentOrder {
+  if (dateFormat === 'DD/MM/YYYY') return 'DMY';
+  if (dateFormat === 'MM/DD/YYYY') return 'MDY';
+  if (dateFormat === 'YYYY-MM-DD') return 'YMD';
+  return locale === 'pt-br' ? 'DMY' : 'YMD';
+}
+
+/**
+ * Returns the human-readable placeholder string matching the user's date format preference.
+ */
+export function getDateInputPlaceholder(
+  dateFormat: DateFormatPreset,
+  locale: SupportedLocale = 'en'
+): string {
+  const order = resolvePreferredDateOrder(dateFormat, locale);
+  if (order === 'DMY') return 'DD/MM/YYYY';
+  if (order === 'MDY') return 'MM/DD/YYYY';
+  return 'YYYY-MM-DD';
+}
+
+/**
+ * Formats a canonical `"YYYY-MM-DD"` `dateKey` into the user's preferred editable text format.
+ */
+export function formatDateKeyForInput(
+  dateKey: string,
+  dateFormat: DateFormatPreset,
+  locale: SupportedLocale = 'en'
+): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey.trim());
+  if (!match) return dateKey;
+  const [, y, m, d] = match;
+  const order = resolvePreferredDateOrder(dateFormat, locale);
+  if (order === 'DMY') return `${d}/${m}/${y}`;
+  if (order === 'MDY') return `${m}/${d}/${y}`;
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Parses normal user-typed dates (`YYYY-MM-DD`, `YYYY/MM/DD`, `DD/MM/YYYY`, `MM/DD/YYYY`,
+ * `DD-MM-YYYY`, `DD.MM.YYYY`) into a validated canonical `"YYYY-MM-DD"` `dateKey`.
+ *
+ * Unambiguous day > 12 automatically resolves `DMY` vs `MDY`; ambiguous dates (`<= 12`)
+ * follow `preferredOrder`. Returns `null` if incomplete or invalid.
+ */
+export function parseFlexibleDateInput(
+  raw: string,
+  preferredOrder: DateComponentOrder = 'YMD'
+): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // 1. Leading 4-digit year: YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+  const ymdMatch = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(trimmed);
+  if (ymdMatch) {
+    const year = Number(ymdMatch[1]);
+    const month = Number(ymdMatch[2]);
+    const day = Number(ymdMatch[3]);
+    return isValidCalendarYMD(year, month, day)
+      ? toCanonicalDateKey(year, month, day)
+      : null;
+  }
+
+  // 2. Trailing 4-digit year: DD/MM/YYYY or MM/DD/YYYY (with /, -, or .)
+  const trailingYearMatch = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(trimmed);
+  if (trailingYearMatch) {
+    const first = Number(trailingYearMatch[1]);
+    const second = Number(trailingYearMatch[2]);
+    const year = Number(trailingYearMatch[3]);
+
+    let month: number;
+    let day: number;
+
+    if (first > 12 && second <= 12) {
+      day = first;
+      month = second;
+    } else if (second > 12 && first <= 12) {
+      month = first;
+      day = second;
+    } else if (preferredOrder === 'MDY') {
+      month = first;
+      day = second;
+    } else {
+      // Both DMY and YMD fall back to DMY when user types slash-separated trailing year (e.g. 05/11/2026)
+      day = first;
+      month = second;
+    }
+
+    return isValidCalendarYMD(year, month, day)
+      ? toCanonicalDateKey(year, month, day)
+      : null;
+  }
+
+  return null;
+}
+
+export interface CalendarGridCell {
+  dateKey: string;
+  dayOfMonth: number;
+  inCurrentMonth: boolean;
+}
+
+/**
+ * Builds a 42-cell (6-week) calendar month grid respecting `weekStartsOn` (0=Sun, 1=Mon, 6=Sat).
+ */
+export function buildCalendarMonthGrid(params: {
+  year: number;
+  month: number; // 1..12
+  weekStartsOn: WeekStartDay;
+}): CalendarGridCell[] {
+  const { year, month, weekStartsOn } = params;
+  const firstOfMonthUtc = new Date(Date.UTC(year, month - 1, 1));
+  const firstWeekday = firstOfMonthUtc.getUTCDay(); // 0..6
+  const leadingDays = (firstWeekday - weekStartsOn + 7) % 7;
+
+  const cells: CalendarGridCell[] = [];
+  for (let i = 0; i < 42; i++) {
+    const dayOffset = i - leadingDays;
+    const cellUtc = new Date(Date.UTC(year, month - 1, 1 + dayOffset));
+    const cy = cellUtc.getUTCFullYear();
+    const cm = cellUtc.getUTCMonth() + 1;
+    const cd = cellUtc.getUTCDate();
+    cells.push({
+      dateKey: toCanonicalDateKey(cy, cm, cd),
+      dayOfMonth: cd,
+      inCurrentMonth: cy === year && cm === month,
+    });
+  }
+
+  return cells;
 }

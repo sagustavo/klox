@@ -35,6 +35,8 @@ const { formatDuration, formatTime } = useFormat(() => prefsStore.preferences);
 
 const open = ref(false);
 const focusTarget = ref<'start' | 'end'>('start');
+const draftDateKey = ref(props.dateKey);
+const isDateValid = ref(true);
 const draftStartHMS = ref('09:00:00');
 const draftEndHMS = ref('09:30:00');
 
@@ -44,9 +46,9 @@ const endInputRef = ref<HTMLInputElement | null>(null);
 const activeTimeZone = computed(() => prefsStore.preferences.timeZone || 'UTC');
 
 const resolvedPreview = computed(() => {
-  if (!open.value || !props.dateKey) return null;
+  if (!open.value || !isDateValid.value || !draftDateKey.value) return null;
   return resolveTimeRange({
-    dateKey: props.dateKey,
+    dateKey: draftDateKey.value,
     startTimeInput: draftStartHMS.value,
     endTimeInput: draftEndHMS.value,
     timeZone: activeTimeZone.value,
@@ -54,12 +56,17 @@ const resolvedPreview = computed(() => {
 });
 
 const isValidRange = computed(
-  () => resolvedPreview.value !== null && resolvedPreview.value.durationSeconds > 0
+  () =>
+    isDateValid.value &&
+    resolvedPreview.value !== null &&
+    resolvedPreview.value.durationSeconds > 0
 );
 
 function openWithFocus(target: 'start' | 'end') {
   focusTarget.value = target;
   const tz = activeTimeZone.value;
+  draftDateKey.value = props.dateKey;
+  isDateValid.value = true;
   draftStartHMS.value = toLocalTimeInputValue(props.startTime, tz, true);
   draftEndHMS.value = toLocalTimeInputValue(props.endTime, tz, true);
   open.value = true;
@@ -68,6 +75,8 @@ function openWithFocus(target: 'start' | 'end') {
 watch(open, (isOpen) => {
   if (isOpen) {
     const tz = activeTimeZone.value;
+    draftDateKey.value = props.dateKey;
+    isDateValid.value = true;
     draftStartHMS.value = toLocalTimeInputValue(props.startTime, tz, true);
     draftEndHMS.value = toLocalTimeInputValue(props.endTime, tz, true);
     nextTick(() => {
@@ -134,7 +143,7 @@ function handleSubmit() {
         :side-offset="6"
         :collision-padding="12"
         data-testid="tracker-time-range-popover"
-        class="z-50 w-72 border border-border-hairline bg-bg-elevated p-3 shadow-2xl focus:outline-none"
+        class="z-50 w-72 sm:w-80 border border-border-hairline bg-bg-elevated p-3 shadow-2xl focus:outline-none"
         @click.stop
       >
         <form class="space-y-2.5" @submit.prevent="handleSubmit">
@@ -148,6 +157,21 @@ function handleSubmit() {
             >
               <X class="h-3.5 w-3.5" />
             </button>
+          </div>
+
+          <!-- Editable Date Field (Typed Date + Interactive Calendar Picker) -->
+          <div class="space-y-1">
+            <span class="block text-[10px] font-mono uppercase text-text-muted">
+              {{ $t('timer.timeRangePopover.dateLabel') }}
+            </span>
+            <UiDateInput
+              v-model="draftDateKey"
+              v-model:valid="isDateValid"
+              calendar-placement="inline"
+              size="sm"
+              :aria-label="$t('timer.timeRangePopover.dateLabel')"
+              test-id="tracker-inline-date"
+            />
           </div>
 
           <div class="grid grid-cols-2 gap-1.5">
