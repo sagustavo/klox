@@ -68,9 +68,9 @@ We follow strict Domain-Driven Design nomenclature. Do NOT confuse `Timer` with 
 
 - **Tier 1 — Instant Lexical Recall (`Fuse.js`, `<2ms`):**
   - As the user types a task description, `Fuse.js` searches deduplicated historical task templates (`normalizedDescription + projectId`) ranked by fuzzy match, frequency, and recency, displaying the **Top 10 best matches** in a floating dropdown. Selecting a match auto-fills `description`, `projectId`, `tagIds`, and `isBillable`.
-- **Tier 2 — Semantic AI Auto-Fill (`@google/genai` with `gemini-4-hydrogen`):**
+- **Tier 2 — Semantic AI Auto-Fill (`@google/genai` with `gemini-3.8-flash`):**
   - Triggered via keyboard shortcut `Cmd+I` / `Ctrl+I` or clicking the `[✨ AI Auto-Fill]` button.
-  - Sends the typed description + the user's catalog of Projects and their Project-Scoped Tags to a backend endpoint using `gemini-4-hydrogen` with Structured JSON Outputs (`responseSchema`) to automatically predict and select the most appropriate `projectId`, valid `tagIds` (belonging to that project), and `isBillable` status.
+  - Sends the typed description + the user's catalog of Projects and their Project-Scoped Tags to a backend endpoint using `gemini-3.8-flash` with Structured JSON Outputs (`responseSchema`) to automatically predict and select the most appropriate `projectId`, valid `tagIds` (belonging to that project), and `isBillable` status.
 
 ### 3.4 Analytical Dashboard & Multi-Dimensional Slicing
 

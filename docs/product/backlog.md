@@ -77,7 +77,7 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | **FR-5.4** | Product Backlog Item | Dashboard Multi-Dimension Slicing, 2-Level Grouping & Time Granularity | Analytics Dashboard | 2 - High | Free | Next |
 | **FR-5.5** | Product Backlog Item | Dedicated Multi-Select Filter Inputs with "Select All" | Analytics Dashboard | 3 - Medium | Free | Next |
 | **UX-1.1** | Product Backlog Item | User-Friendly Copy & Base Typography Scaling | Copy & Accessibility | 3 - Medium | Free | Next |
-| **UX-1.2** | Product Backlog Item | Landing Page Visual Redesign, Colored Google OAuth & Support Channel | UI Polish & Brand | 3 - Medium | Free | Next |
+| **UX-1.2** | Product Backlog Item | Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency | UI Polish & Brand | 3 - Medium | Free | Next |
 
 ### 3.2 Phase 10 — Keyboard Velocity, Auth, Profile & Feedback (`Next`)
 
@@ -269,20 +269,27 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
   - [ ] Remove developer/architectural jargon (`Gemini`, `Domain-Driven Design / DDD`, `SHA-256`, `UTF-8 BOM`, `Nitro`, `Phase 2 Seam`) from UI labels, tooltips, onboarding, and landing copy, replacing them with clear, benefit-driven language in both `en` and `pt-BR`.
   - [ ] Architectural and internal engineering terminology remains documented exclusively in `README.md`, `GEMINI.md`, and `docs/adr/`.
 
-#### [UX-1.2] Landing Page Visual Redesign, Colored Google OAuth & Support Channel
+#### [UX-1.2] Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `UI Polish & Brand`
 - **Phase:** `9`
 - **Status (ADO State):** `Next` (`Approved`)
 - **Priority:** `3 - Medium`
 - **Plan Tier:** `Free`
-- **Tags:** `landing; ui-design; auth; support; phase-9`
-- **Description:** Elevate the public landing page visual craft through a dedicated design exploration before coding, polish the `/login` Google button branding, and expose a direct support email channel (`contact@klox.dev`).
+- **Tags:** `auth; design-system; landing; lovable; musk-tech; phase-9; spacex; starlink; support; ui-design`
+- **Description:** Establish an overarching **Orbital "Musk-Tech" Design System** (documented in [ADR-0008](../adr/0008-orbital-musk-tech-design-system.md)) across Klox, inspired by SpaceX, Starlink, xAI (Grok), and orbital flight telemetry. While the landing page and authentication UI are the first components being updated using the Lovable benchmark sample, the design system defines the single source of truth for the entire platform to guarantee visual and typographic consistency across in-app tracker feeds, command bars, dashboards, catalog tables, and modals.
+  - **Live Design Reference:** [Lovable Preview](https://id-preview--8692f9e9-340a-582f-ae00-1ede0103105e.lovable.app/?__lovable_receipt=mat_42jhw6tz9k91s8qve1jw7pfxc0#top)
+  - **Two-Stage Rollout Strategy:**
+    1. **Stage 1 (Sprint 3 / Phase 9 Foundation):** Implement core design tokens in `tailwind.config.ts` and `app/assets/css/tokens.css` (pure void canvas `#000000` / `#FAFAFA`, atmospheric blue signal `#3B82F6` / `#2563EB`, subtle hairline borders `rgba(255,255,255,0.08)`, and wide display typography). Redesign Landing Page (`/`, `/pt-br`) with atmospheric orbit hero (`klox-orbit.jpg`), live ticking mission clock (`T+ HH:MM:SS.ms`), 4 advantage instrument panels, and Free/Pro pricing grid. Redesign `/login` with centered `AuthPanel`, signal line, official Google `"G"` SVG button, and `contact@klox.dev` support channels.
+    2. **Stage 2 (In-App Workspaces Alignment):** Extend orbital design tokens to `app/layouts/app.vue`, Command Timer Bar, and sticky mobile dock. Style Analytics Dashboard cards and 2-level grouping breakdown tables with telemetry panels. Standardize all confirmation dialogs, catalog forms, and keycap badges (`[N]`, `[S]`, `[Tab]`, `[?]`).
 - **Acceptance Criteria:**
-  - [ ] Produce a UI/UX design exploration benchmarking modern SaaS landing pages prior to implementation.
-  - [ ] Refine visual density, soften harsh `#050505` monochrome contrast and sharp borders, improve whitespace rhythm, and add subtle depth/visual polish while preserving Dark/Light mode telemetry identity.
-  - [ ] Render the official multi-color Google `"G"` SVG mark on the Google OAuth button at `/login`.
-  - [ ] Display `contact@klox.dev` prominently in the landing page footer/FAQ and inside the in-app `?` Help / Shortcuts modal for support and bug reports.
+  - [ ] Implement atmospheric orbit hero with earth horizon background, live ticking mission clock (`T+ HH:MM:SS.ms`), and telemetry statistics strip.
+  - [ ] Build the 4 interactive advantage instrument panels (Keyboard-First velocity sequence, Two-Tier Recall with scanline, Telemetry Donut/Bars, and Toggl CSV idempotent import).
+  - [ ] Render Free vs Pro pricing cards with feature comparisons and clean CTA links (`Start Free → /login?mode=signup`).
+  - [ ] Update `/login` with clean centered `AuthPanel`, official multi-color Google `"G"` button, and seamless mode toggle between Sign In and Sign Up.
+  - [ ] Prominently surface `contact@klox.dev` in the footer, FAQ, and auth help.
+  - [ ] Align in-app layout and telemetry design tokens so future sprint components follow the exact same visual hierarchy and palette.
+  - [ ] Route all user-facing copy through `$t()` in `en` and `pt-BR`, preserving hybrid prerendering and Lighthouse performance ≥ 95.
 
 ---
 
