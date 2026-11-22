@@ -1,23 +1,46 @@
 <script setup lang="ts">
-import { Sparkles, Play, Square, Tag, DollarSign, AlertCircle } from 'lucide-vue-next';
+import {
+  AlertCircle,
+  Check,
+  Clock,
+  Play,
+  Sparkles,
+  Square,
+  X,
+} from 'lucide-vue-next';
+import {
+  formatHMS,
+  resolveAdjustedTimerStartUtc,
+  shiftTimerStartByMinutes,
+  toDateKey,
+  toLocalTimeInputValue,
+} from '~/domain/duration';
 import { publishDomainEvent } from '~/domain/events';
 import type { AiAutofillPrediction, RecallTemplate } from '~/domain/recall';
 import type { Project } from '~/domain/types';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
+import { usePreferencesStore } from '~/stores/preferences';
 import { useTimeLogsStore } from '~/stores/timeLogs';
 import { useTimerStore } from '~/stores/timer';
 
 const { t } = useI18n();
 const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
+const prefsStore = usePreferencesStore();
 const timerStore = useTimerStore();
 const timeLogsStore = useTimeLogsStore();
+const { formatTime } = useFormat(() => prefsStore.preferences);
 
 const descriptionInputRef = ref<HTMLInputElement | null>(null);
+const liveStartTimeInputRef = ref<HTMLInputElement | null>(null);
 const showRecallDropdown = ref(false);
 const highlightedRecallIdx = ref(-1);
-const showTagsPopover = ref(false);
+
+// Live ActiveTimer startTimeUTC backdating / adjustment state (FR-5.2)
+const showStartAdjustPopover = ref(false);
+const draftStartDateKey = ref('');
+const draftStartTimeHMS = ref('');
 
 const aiLoading = ref(false);
 const aiErrorCode = ref<string | null>(null);
@@ -47,12 +70,87 @@ function focusDescription() {
 
 function closeMenusAndBlur() {
   showRecallDropdown.value = false;
-  showTagsPopover.value = false;
+  showStartAdjustPopover.value = false;
   highlightedRecallIdx.value = -1;
   if (document.activeElement instanceof HTMLElement) {
     document.activeElement.blur();
   }
 }
+
+const activeTimeZone = computed(() => prefsStore.preferences.timeZone || 'UTC');
+
+const draftAdjustedPreview = computed(() => {
+  if (!showStartAdjustPopover.value || !draftStartDateKey.value || !draftStartTimeHMS.value) {
+    return null;
+  }
+  return resolveAdjustedTimerStartUtc({
+    dateKey: draftStartDateKey.value,
+    startTimeInput: draftStartTimeHMS.value,
+    timeZone: activeTimeZone.value,
+  });
+});
+
+function syncDraftFromActiveTimer() {
+  if (!timerStore.activeTimer) return;
+  const tz = activeTimeZone.value;
+  draftStartDateKey.value = toDateKey(timerStore.activeTimer.startTimeUTC, tz);
+  draftStartTimeHMS.value = toLocalTimeInputValue(
+    timerStore.activeTimer.startTimeUTC,
+    tz,
+    true
+  );
+}
+
+function toggleStartAdjustPopover() {
+  if (!timerStore.isRunning || !timerStore.activeTimer) return;
+  if (showStartAdjustPopover.value) {
+    showStartAdjustPopover.value = false;
+    return;
+  }
+  showRecallDropdown.value = false;
+  syncDraftFromActiveTimer();
+  showStartAdjustPopover.value = true;
+  nextTick(() => {
+    liveStartTimeInputRef.value?.focus();
+  });
+}
+
+async function handleQuickShiftMinutes(deltaMinutes: number) {
+  if (!authStore.user || !timerStore.activeTimer) return;
+  const nextUtc = shiftTimerStartByMinutes(timerStore.activeTimer.startTimeUTC, deltaMinutes);
+  if (!nextUtc) return;
+  await timerStore.updateActiveTimerStart({
+    uid: authStore.user.uid,
+    isDemo: authStore.isDemoMode,
+    startTimeUTC: nextUtc,
+  });
+  syncDraftFromActiveTimer();
+}
+
+async function handleApplyAdjustedStart() {
+  if (!authStore.user || !timerStore.activeTimer) return;
+  const resolved = resolveAdjustedTimerStartUtc({
+    dateKey: draftStartDateKey.value,
+    startTimeInput: draftStartTimeHMS.value,
+    timeZone: activeTimeZone.value,
+  });
+  if (!resolved) return;
+  await timerStore.updateActiveTimerStart({
+    uid: authStore.user.uid,
+    isDemo: authStore.isDemoMode,
+    startTimeUTC: resolved.startTimeUTC,
+  });
+  showStartAdjustPopover.value = false;
+}
+
+watch(
+  () => timerStore.isRunning,
+  (running) => {
+    if (!running) {
+      showStartAdjustPopover.value = false;
+    }
+  }
+);
 
 function selectRecallTemplate(tpl: RecallTemplate) {
   timerStore.description = tpl.description;
@@ -150,7 +248,7 @@ async function triggerAiAutofill() {
 async function handlePrimaryAction() {
   if (!authStore.user) return;
   showRecallDropdown.value = false;
-  showTagsPopover.value = false;
+  showStartAdjustPopover.value = false;
 
   if (timerStore.isRunning) {
     await timerStore.stopTimer({
@@ -220,7 +318,7 @@ onUnmounted(() => {
   <div class="border border-border-hairline bg-bg-elevated p-3 sm:p-5 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-40 max-md:border-x-0 max-md:border-b-0 max-md:border-t-2 max-md:border-accent/60 max-md:shadow-2xl">
     <!-- Top Telemetry Status Bar -->
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono uppercase tracking-wider text-text-muted">
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <span
           class="h-2 w-2"
           :class="timerStore.isRunning ? 'bg-accent animate-pulse' : 'bg-border-hairline'"
@@ -228,6 +326,21 @@ onUnmounted(() => {
         <span :class="timerStore.isRunning ? 'text-accent' : 'text-text-muted'">
           {{ timerStore.isRunning ? $t('timer.statusRunning') : $t('timer.statusIdle') }}
         </span>
+
+        <!-- Clickable Live Start Timestamp Trigger (FR-5.2) -->
+        <button
+          v-if="timerStore.isRunning && timerStore.activeTimer"
+          type="button"
+          data-testid="active-timer-start-trigger"
+          :title="$t('timer.liveStart.adjustTooltip')"
+          class="tabular-telemetry inline-flex items-center gap-1 border border-border-hairline bg-bg-primary px-2 py-0.5 text-[10px] normal-case tracking-normal text-text-muted hover:border-accent/60 hover:text-accent transition-colors focus:outline-none focus-visible:border-accent"
+          @click="toggleStartAdjustPopover"
+        >
+          <Clock class="h-2.5 w-2.5 text-accent" />
+          <span>
+            {{ $t('timer.liveStart.startedAt', { time: formatTime(timerStore.activeTimer.startTimeUTC) }) }}
+          </span>
+        </button>
       </div>
 
       <div class="hidden md:flex items-center gap-3">
@@ -365,71 +478,30 @@ onUnmounted(() => {
         </select>
       </div>
 
-      <!-- 3. Project-Scoped Tag Selector -->
-      <div class="relative lg:col-span-2">
-        <button
-          type="button"
+      <!-- 3. Project-Scoped Searchable Tag Multiselect -->
+      <div class="lg:col-span-2">
+        <UiTagMultiSelect
+          v-model="timerStore.tagIds"
+          :tags="scopedTags"
+          variant="field"
+          size="md"
           data-tour="timer-tags"
-          class="inline-flex h-10 w-full items-center justify-between gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary focus:border-accent focus:outline-none hover:bg-bg-hover"
-          @click="showTagsPopover = !showTagsPopover"
-        >
-          <span class="inline-flex items-center gap-1.5 truncate">
-            <Tag class="h-3.5 w-3.5 text-accent shrink-0" />
-            <span>{{ $t('timer.scopedTagsButton') }}</span>
-          </span>
-          <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px]">
-            {{ timerStore.tagIds.length }}/{{ scopedTags.length }}
-          </span>
-        </button>
-
-        <!-- Scoped Tags Popover -->
-        <div
-          v-if="showTagsPopover"
-          class="absolute left-0 right-0 top-11 z-40 border border-border-hairline bg-bg-elevated p-3 shadow-xl"
-        >
-          <div v-if="scopedTags.length === 0" class="text-[11px] font-mono text-text-muted">
-            {{ $t('timer.noScopedTags') }}
-          </div>
-          <div v-else class="flex flex-wrap gap-1.5">
-            <button
-              v-for="tag in scopedTags"
-              :key="tag.id"
-              type="button"
-              class="inline-flex items-center gap-1 border px-2 py-1 text-xs font-mono transition-colors"
-              :class="
-                timerStore.tagIds.includes(tag.id)
-                  ? 'border-accent bg-accent/15 text-accent'
-                  : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
-              "
-              @click="timerStore.toggleTag(tag.id)"
-            >
-              <span>#{{ tag.name }}</span>
-            </button>
-          </div>
-        </div>
+          test-id="command-timer-tags-trigger"
+        />
       </div>
 
       <!-- 4. Billable Toggle -->
       <div class="lg:col-span-1">
-        <button
-          type="button"
+        <UiBillableToggle
+          v-model="timerStore.isBillable"
+          variant="command"
           data-tour="timer-billable"
-          :aria-pressed="timerStore.isBillable"
-          :title="$t('timer.billableToggle')"
-          class="inline-flex h-10 w-full items-center justify-center gap-1 border text-xs font-mono transition-colors focus:border-accent focus:outline-none"
-          :class="
-            timerStore.isBillable
-              ? 'border-accent bg-accent/15 text-accent font-semibold'
-              : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
-          "
-          @click="timerStore.isBillable = !timerStore.isBillable"
-        >
-          <DollarSign class="h-3.5 w-3.5" />
-        </button>
+          test-id="command-timer-billable-toggle"
+        />
       </div>
 
       <!-- 5. Start/Stop Button + Live Telemetry Digits + [✨ AI Auto-Fill] -->
-      <div class="lg:col-span-3 flex items-center justify-between lg:justify-end gap-2">
+      <div class="relative lg:col-span-3 flex items-center justify-between lg:justify-end gap-2">
         <button
           type="button"
           data-tour="timer-ai-autofill"
@@ -444,11 +516,106 @@ onUnmounted(() => {
           </span>
         </button>
 
+        <!-- Clickable Elapsed Clock when ActiveTimer is running (FR-5.2) -->
+        <button
+          v-if="timerStore.isRunning"
+          type="button"
+          data-testid="active-timer-clock-trigger"
+          :aria-expanded="showStartAdjustPopover"
+          :title="$t('timer.liveStart.adjustTooltip')"
+          class="inline-flex h-10 items-center px-1.5 border border-transparent hover:border-accent/50 hover:bg-accent/5 transition-colors focus:outline-none focus-visible:border-accent cursor-pointer"
+          @click="toggleStartAdjustPopover"
+        >
+          <BrandTimerDigits
+            :seconds="timerStore.currentElapsedSeconds"
+            running
+            size="md"
+          />
+        </button>
         <BrandTimerDigits
+          v-else
           :seconds="timerStore.currentElapsedSeconds"
-          :running="timerStore.isRunning"
+          :running="false"
           size="md"
         />
+
+        <!-- Live Start Time Adjustment Popover (FR-5.2) -->
+        <form
+          v-if="showStartAdjustPopover && timerStore.isRunning"
+          data-testid="active-timer-adjust-popover"
+          class="absolute right-0 max-md:bottom-12 md:top-12 z-50 w-72 border border-border-hairline bg-bg-elevated p-3 shadow-2xl space-y-2.5"
+          @submit.prevent="handleApplyAdjustedStart"
+          @keydown.esc.stop="showStartAdjustPopover = false"
+        >
+          <div class="flex items-center justify-between border-b border-border-hairline pb-1.5 text-[10px] font-mono uppercase tracking-wider text-accent">
+            <span>{{ $t('timer.liveStart.popoverTitle') }}</span>
+            <button
+              type="button"
+              :aria-label="$t('timer.cancelEditButton')"
+              class="text-text-muted hover:text-text-primary"
+              @click="showStartAdjustPopover = false"
+            >
+              <X class="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <!-- Quick Backdate Pills (e.g. "started 15 minutes ago") -->
+          <div class="grid grid-cols-4 gap-1.5">
+            <button
+              v-for="mins in [-5, -15, -30, -60]"
+              :key="mins"
+              type="button"
+              :data-testid="`active-timer-shift-${Math.abs(mins)}m`"
+              class="tabular-telemetry h-7 border border-border-hairline bg-bg-primary text-[11px] font-mono text-text-primary hover:border-accent hover:text-accent transition-colors"
+              @click="handleQuickShiftMinutes(mins)"
+            >
+              {{ mins === -60 ? '-1h' : `${mins}m` }}
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5">
+            <input
+              v-model="draftStartDateKey"
+              type="date"
+              required
+              data-testid="active-timer-start-date"
+              :aria-label="$t('timer.liveStart.dateLabel')"
+              class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+            />
+            <input
+              ref="liveStartTimeInputRef"
+              v-model="draftStartTimeHMS"
+              type="time"
+              step="1"
+              required
+              data-testid="active-timer-start-time"
+              :aria-label="$t('timer.liveStart.timeLabel')"
+              class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+            />
+          </div>
+
+          <div class="flex items-center justify-between gap-2 pt-0.5">
+            <span class="tabular-telemetry text-[11px] font-mono text-text-muted">
+              {{
+                $t('timer.liveStart.previewElapsed', {
+                  duration: formatHMS(
+                    draftAdjustedPreview?.elapsedSeconds ?? timerStore.currentElapsedSeconds
+                  ),
+                })
+              }}
+            </span>
+
+            <button
+              type="submit"
+              data-testid="active-timer-apply-start"
+              :disabled="!draftAdjustedPreview"
+              class="inline-flex h-7 items-center gap-1 bg-accent px-2.5 text-[11px] font-mono uppercase text-white hover:bg-accent-hover transition-colors disabled:opacity-40"
+            >
+              <Check class="h-3 w-3" />
+              <span>{{ $t('timer.liveStart.applyButton') }}</span>
+            </button>
+          </div>
+        </form>
 
         <button
           type="button"

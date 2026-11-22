@@ -5,11 +5,18 @@ import {
   groupLogsByTag,
 } from '../../app/domain/aggregation';
 import {
+  doTimeRangesOverlap,
   elapsedSeconds,
   formatHMS,
   normalizeDescription,
   parseHMS,
+  parseTimeOfDay,
+  resolveAdjustedTimerStartUtc,
+  resolveTimeRange,
+  shiftTimerStartByMinutes,
   toDateKey,
+  toLocalTimeInputValue,
+  zonedDateAndTimeToUtcIso,
 } from '../../app/domain/duration';
 import { deterministicLogId, generateRandomId } from '../../app/domain/ids';
 import {
@@ -65,6 +72,97 @@ describe('domain/duration', () => {
 
   it('normalizes descriptions consistently for recall templates', () => {
     expect(normalizeDescription('  Review   PR #42  ')).toBe('review pr #42');
+  });
+
+  it('resolves inline Start Time & Stop Time ranges in UserPreferences.timeZone and across midnight (FR-5.2)', () => {
+    expect(parseTimeOfDay('09:30')).toEqual({ hours: 9, minutes: 30, seconds: 0 });
+    expect(parseTimeOfDay('23:59:45')).toEqual({ hours: 23, minutes: 59, seconds: 45 });
+    expect(parseTimeOfDay('25:00')).toBeNull();
+    expect(parseTimeOfDay('12:60')).toBeNull();
+
+    // America/Sao_Paulo is UTC-3 in Nov 2026: 09:15:10 -> 12:15:10Z, 10:45:25 -> 13:45:25Z
+    const sameDay = resolveTimeRange({
+      dateKey: '2026-11-22',
+      startTimeInput: '09:15:10',
+      endTimeInput: '10:45:25',
+      timeZone: 'America/Sao_Paulo',
+    });
+    expect(sameDay).toEqual({
+      startTimeUTC: '2026-11-22T12:15:10.000Z',
+      endTimeUTC: '2026-11-22T13:45:25.000Z',
+      durationSeconds: 5415, // 01:30:15
+      spansNextDay: false,
+    });
+    expect(toLocalTimeInputValue(sameDay!.startTimeUTC, 'America/Sao_Paulo', true)).toBe(
+      '09:15:10'
+    );
+    expect(toLocalTimeInputValue(sameDay!.endTimeUTC, 'America/Sao_Paulo', false)).toBe('10:45');
+
+    // Overnight range (23:30 -> 00:15 rolls Stop Time onto 2026-11-23, yielding 45m = 2700s)
+    const overnight = resolveTimeRange({
+      dateKey: '2026-11-22',
+      startTimeInput: '23:30',
+      endTimeInput: '00:15',
+      timeZone: 'UTC',
+    });
+    expect(overnight).toEqual({
+      startTimeUTC: '2026-11-22T23:30:00.000Z',
+      endTimeUTC: '2026-11-23T00:15:00.000Z',
+      durationSeconds: 2700,
+      spansNextDay: true,
+    });
+
+    // Identical start and stop times or invalid calendar dates return null
+    expect(
+      resolveTimeRange({
+        dateKey: '2026-11-22',
+        startTimeInput: '14:00',
+        endTimeInput: '14:00',
+        timeZone: 'UTC',
+      })
+    ).toBeNull();
+    expect(zonedDateAndTimeToUtcIso('2026-02-30', '10:00', 'UTC')).toBeNull();
+  });
+
+  it('backdates and adjusts live ActiveTimer startTimeUTC while clamping future instants (FR-5.2)', () => {
+    const nowMs = Date.parse('2026-11-22T18:00:00.000Z'); // 15:00 in America/Sao_Paulo
+    const currentStart = '2026-11-22T17:55:00.000Z'; // 5m elapsed
+
+    // Quick backdate "-15m": moves start 15m earlier -> 20m (1200s) elapsed
+    const shifted15m = shiftTimerStartByMinutes(currentStart, -15, nowMs);
+    expect(shifted15m).toBe('2026-11-22T17:40:00.000Z');
+    expect(elapsedSeconds(shifted15m!, nowMs)).toBe(1200);
+
+    // Positive shift exceeding nowMs clamps cleanly to nowMs (0s elapsed)
+    const clampedShift = shiftTimerStartByMinutes(currentStart, 30, nowMs);
+    expect(clampedShift).toBe('2026-11-22T18:00:00.000Z');
+    expect(elapsedSeconds(clampedShift!, nowMs)).toBe(0);
+
+    // Explicit local time input backdated to 14:30 America/Sao_Paulo (17:30Z -> 1800s elapsed)
+    const explicitBackdate = resolveAdjustedTimerStartUtc({
+      dateKey: '2026-11-22',
+      startTimeInput: '14:30:00',
+      timeZone: 'America/Sao_Paulo',
+      nowMs,
+    });
+    expect(explicitBackdate).toEqual({
+      startTimeUTC: '2026-11-22T17:30:00.000Z',
+      elapsedSeconds: 1800,
+      clampedToNow: false,
+    });
+
+    // Future local time input (16:00 America/Sao_Paulo = 19:00Z > 18:00Z) clamps to nowMs
+    const futureAttempt = resolveAdjustedTimerStartUtc({
+      dateKey: '2026-11-22',
+      startTimeInput: '16:00:00',
+      timeZone: 'America/Sao_Paulo',
+      nowMs,
+    });
+    expect(futureAttempt).toEqual({
+      startTimeUTC: '2026-11-22T18:00:00.000Z',
+      elapsedSeconds: 0,
+      clampedToNow: true,
+    });
   });
 });
 

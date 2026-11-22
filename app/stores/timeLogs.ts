@@ -15,9 +15,11 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
   const loading = ref(false);
 
   const sortedLogs = computed(() =>
-    [...logs.value].sort((a, b) =>
-      a.startTime < b.startTime ? 1 : a.startTime > b.startTime ? -1 : 0
-    )
+    [...logs.value].sort((a, b) => {
+      if (a.startTime !== b.startTime) return a.startTime < b.startTime ? 1 : -1;
+      if (a.endTime !== b.endTime) return a.endTime < b.endTime ? 1 : -1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
   );
 
   function persistLocal() {
@@ -295,21 +297,29 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     logId: EntityId;
     description: string;
     projectId: EntityId;
+    taskId?: EntityId | null;
     tagIds: readonly EntityId[];
     isBillable: boolean;
     startTimeUTC: string;
     endTimeUTC: string;
     durationSeconds?: number;
-  }): Promise<void> {
+  }): Promise<TimeLog | null> {
     const existing = logs.value.find((l) => l.id === params.logId);
-    if (!existing) return;
+    if (!existing) return null;
+
+    const resolvedTaskId =
+      params.taskId === null
+        ? undefined
+        : params.taskId !== undefined
+          ? params.taskId || undefined
+          : existing.taskId;
 
     const updated = buildTimeLogEntity({
       id: existing.id,
       uid: params.uid,
       description: params.description,
       projectId: params.projectId,
-      taskId: existing.taskId,
+      taskId: resolvedTaskId,
       tagIds: params.tagIds,
       isBillable: params.isBillable,
       startTimeUTC: params.startTimeUTC,
@@ -327,6 +337,100 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
         await setDoc(doc(fb.db, 'users', params.uid, 'timeLogs', updated.id), updated);
       }
     }
+
+    return updated;
+  }
+
+  /**
+   * Atomically patches one or multiple TimeLog records (e.g. Toggl-style inline property
+   * edit on a single row OR bulk metadata update across a collapsed same-day group).
+   * Enforces Project-Scoped Tag and Task invariants via `buildTimeLogEntity`.
+   */
+  async function updateTimeLogsBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    logIds: readonly EntityId[];
+    patch: {
+      description?: string;
+      projectId?: EntityId;
+      taskId?: EntityId | null;
+      tagIds?: readonly EntityId[];
+      isBillable?: boolean;
+      startTimeUTC?: string;
+      endTimeUTC?: string;
+      durationSeconds?: number;
+    };
+  }): Promise<TimeLog[]> {
+    if (params.logIds.length === 0) return [];
+
+    const idSet = new Set(params.logIds);
+    const updatedById = new Map<EntityId, TimeLog>();
+    const { patch } = params;
+
+    for (const existing of logs.value) {
+      if (!idSet.has(existing.id)) continue;
+
+      const resolvedTaskId =
+        patch.taskId === null
+          ? undefined
+          : patch.taskId !== undefined
+            ? patch.taskId || undefined
+            : existing.taskId;
+
+      const hasTimeBoundPatch =
+        patch.startTimeUTC !== undefined || patch.endTimeUTC !== undefined;
+
+      const rebuilt = buildTimeLogEntity({
+        id: existing.id,
+        uid: params.uid,
+        description: patch.description !== undefined ? patch.description : existing.description,
+        projectId: patch.projectId ?? existing.projectId,
+        taskId: resolvedTaskId,
+        tagIds: patch.tagIds ?? existing.tagIds,
+        isBillable: patch.isBillable ?? existing.isBillable,
+        startTimeUTC: patch.startTimeUTC ?? existing.startTime,
+        endTimeUTC: patch.endTimeUTC ?? existing.endTime,
+        durationSeconds:
+          patch.durationSeconds !== undefined
+            ? patch.durationSeconds
+            : hasTimeBoundPatch
+              ? undefined
+              : existing.durationSeconds,
+      });
+
+      updatedById.set(rebuilt.id, rebuilt);
+    }
+
+    if (updatedById.size === 0) return [];
+
+    logs.value = logs.value.map((l) => updatedById.get(l.id) ?? l);
+    persistLocal();
+
+    const updatedList = Array.from(updatedById.values());
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        if (updatedList.length === 1) {
+          const { doc, setDoc } = await import('firebase/firestore');
+          const single = updatedList[0]!;
+          await setDoc(doc(fb.db, 'users', params.uid, 'timeLogs', single.id), single);
+        } else {
+          const { doc, writeBatch } = await import('firebase/firestore');
+          const BATCH_SIZE = 450;
+          for (let i = 0; i < updatedList.length; i += BATCH_SIZE) {
+            const chunk = updatedList.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(fb.db);
+            for (const entity of chunk) {
+              batch.set(doc(fb.db, 'users', params.uid, 'timeLogs', entity.id), entity);
+            }
+            await batch.commit();
+          }
+        }
+      }
+    }
+
+    return updatedList;
   }
 
   async function deleteTimeLog(params: {
@@ -392,6 +496,7 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     createTimeLog,
     createTimeLogsBatch,
     updateTimeLog,
+    updateTimeLogsBatch,
     deleteTimeLog,
     deleteTimeLogs,
     persistLocal,

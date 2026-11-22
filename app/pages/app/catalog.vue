@@ -251,14 +251,11 @@ async function handleDeleteTask(taskId: EntityId) {
                 />
               </div>
 
-              <label class="inline-flex items-center gap-1.5 text-xs text-text-muted cursor-pointer select-none">
-                <input
-                  v-model="newProjectBillable"
-                  type="checkbox"
-                  class="accent-accent"
-                />
-                <span>{{ $t('catalog.billableDefault') }}</span>
-              </label>
+              <UiBillableToggle
+                v-model="newProjectBillable"
+                variant="pill"
+                :label="$t('catalog.billableDefault')"
+              />
             </div>
 
             <button
@@ -375,10 +372,11 @@ async function handleDeleteTask(taskId: EntityId) {
               type="color"
               class="h-8 w-8 cursor-pointer border border-border-hairline bg-bg-primary p-0.5"
             />
-            <label class="inline-flex items-center gap-1.5 text-xs text-text-muted cursor-pointer select-none">
-              <input v-model="editBillable" type="checkbox" class="accent-accent" />
-              <span>{{ $t('catalog.billableDefault') }}</span>
-            </label>
+            <UiBillableToggle
+              v-model="editBillable"
+              variant="pill"
+              :label="$t('catalog.billableDefault')"
+            />
             <button
               type="submit"
               class="inline-flex h-8 items-center border border-border-hairline bg-bg-primary px-3 text-xs font-mono uppercase text-text-primary hover:bg-bg-hover"

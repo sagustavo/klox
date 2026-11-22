@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatHMS, normalizeDescription, toDateKey } from '../../app/domain/duration';
+import {
+  doTimeRangesOverlap,
+  formatHMS,
+  normalizeDescription,
+  resolveTimeRange,
+  toDateKey,
+} from '../../app/domain/duration';
+import { applyProjectSwitch } from '../../app/domain/invariants';
 import {
   TRACKER_FEED_WINDOW_DAYS,
   buildSameDayGroupSignature,
@@ -10,7 +17,7 @@ import {
   resolveLogDateKey,
   sliceTrackerFeedWindow,
 } from '../../app/domain/trackerFeed';
-import type { TimeLog } from '../../app/domain/types';
+import type { Project, ProjectTag, TimeLog } from '../../app/domain/types';
 
 function makeLog(overrides: Partial<TimeLog> & { id: string; startTime: string }): TimeLog {
   const durationSeconds = overrides.durationSeconds ?? 1800;
@@ -498,6 +505,145 @@ describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => 
     );
     expect(remainingLogs).toHaveLength(0);
     expect(groupLogsByCalendarDay(remainingLogs, 'UTC')).toEqual([]);
+  });
+
+  it('permits overlapping manual TimeLogs and orders identical-start intervals deterministically (FR-5.2)', () => {
+    const rangeExisting = resolveTimeRange({
+      dateKey: '2026-11-22',
+      startTimeInput: '09:00',
+      endTimeInput: '10:30',
+      timeZone: 'UTC',
+    })!;
+    const rangePartialOverlap = resolveTimeRange({
+      dateKey: '2026-11-22',
+      startTimeInput: '09:45',
+      endTimeInput: '11:00',
+      timeZone: 'UTC',
+    })!;
+    const rangeExactStartOverlap = resolveTimeRange({
+      dateKey: '2026-11-22',
+      startTimeInput: '09:00',
+      endTimeInput: '11:30',
+      timeZone: 'UTC',
+    })!;
+
+    const logExisting = makeLog({
+      id: 'ov-1',
+      description: 'Sprint Planning Call',
+      projectId: 'proj-work',
+      startTime: rangeExisting.startTimeUTC,
+      endTime: rangeExisting.endTimeUTC,
+      durationSeconds: rangeExisting.durationSeconds,
+    });
+    const logPartial = makeLog({
+      id: 'ov-2',
+      description: 'Hotfix Triage',
+      projectId: 'proj-ops',
+      startTime: rangePartialOverlap.startTimeUTC,
+      endTime: rangePartialOverlap.endTimeUTC,
+      durationSeconds: rangePartialOverlap.durationSeconds,
+    });
+    const logSameStart = makeLog({
+      id: 'ov-3',
+      description: 'Incident Bridge Monitoring',
+      projectId: 'proj-ops',
+      startTime: rangeExactStartOverlap.startTimeUTC,
+      endTime: rangeExactStartOverlap.endTimeUTC,
+      durationSeconds: rangeExactStartOverlap.durationSeconds,
+    });
+
+    expect(doTimeRangesOverlap(logExisting, logPartial)).toBe(true);
+    expect(doTimeRangesOverlap(logExisting, logSameStart)).toBe(true);
+
+    const day = groupLogsByCalendarDay([logExisting, logPartial, logSameStart], 'UTC')[0]!;
+    // All 3 overlapping entries are preserved and summed in the daily feed
+    expect(day.items.map((l) => l.id)).toEqual(['ov-2', 'ov-3', 'ov-1']);
+    expect(day.entryGroups).toHaveLength(3);
+    expect(day.totalSeconds).toBe(5400 + 4500 + 9000);
+  });
+
+  it('tracks allBillable vs partial billable state and preserves cohesive groups across bulk metadata edits (FR-5.2)', () => {
+    const first = makeLog({
+      id: 'bulk-1',
+      description: 'API Contract Design',
+      projectId: 'proj-a',
+      tagIds: ['tag-a1', 'tag-a2'],
+      tagNamesSnapshot: ['backend', 'contracts'],
+      isBillable: false,
+      startTime: '2026-11-22T09:00:00.000Z',
+      durationSeconds: 1800,
+    });
+    const second = makeLog({
+      id: 'bulk-2',
+      description: 'API Contract Design',
+      projectId: 'proj-a',
+      tagIds: ['tag-a1', 'tag-a2'],
+      tagNamesSnapshot: ['backend', 'contracts'],
+      isBillable: false,
+      startTime: '2026-11-22T11:00:00.000Z',
+      durationSeconds: 2400,
+    });
+
+    // 1. Both non-billable -> isBillable=false, allBillable=false (hover-reveal $ icon on group header)
+    const nonBillableGroup = groupLogsByCalendarDay([first, second], 'UTC')[0]!.entryGroups[0]!;
+    expect(nonBillableGroup.isBillable).toBe(false);
+    expect(nonBillableGroup.allBillable).toBe(false);
+
+    // 2. Mixed billable/non-billable -> isBillable=true, allBillable=false (toggling !allBillable marks all true)
+    const mixedGroup = groupLogsByCalendarDay(
+      [first, { ...second, isBillable: true }],
+      'UTC'
+    )[0]!.entryGroups[0]!;
+    expect(mixedGroup.isBillable).toBe(true);
+    expect(mixedGroup.allBillable).toBe(false);
+
+    // 3. Bulk toggle to !allBillable (true) -> allBillable=true
+    const allTrueGroup = groupLogsByCalendarDay(
+      [
+        { ...first, isBillable: true },
+        { ...second, isBillable: true },
+      ],
+      'UTC'
+    )[0]!.entryGroups[0]!;
+    expect(allTrueGroup.isBillable).toBe(true);
+    expect(allTrueGroup.allBillable).toBe(true);
+
+    // 4. Bulk project switch enforces Project-Scoped Tag invariant and migrates groupKey deterministically
+    const nextProject: Project = {
+      id: 'proj-b',
+      userId: 'u-test',
+      name: 'Platform Infra',
+      color: '#10B981',
+      isBillableDefault: true,
+      createdAt: '2026-11-01T00:00:00.000Z',
+    };
+    const allTags: ProjectTag[] = [
+      { id: 'tag-a1', userId: 'u-test', projectId: 'proj-a', name: 'backend', createdAt: '' },
+      { id: 'tag-b1', userId: 'u-test', projectId: 'proj-b', name: 'terraform', createdAt: '' },
+    ];
+    const switched = applyProjectSwitch({
+      nextProject,
+      currentTagIds: nonBillableGroup.tagIds,
+      allTags,
+    });
+    expect(switched.tagIds).toEqual([]);
+    expect(switched.isBillable).toBe(true);
+
+    const bulkUpdatedLogs = [first, second].map((log) => ({
+      ...log,
+      projectId: switched.projectId,
+      tagIds: switched.tagIds,
+      tagNamesSnapshot: [],
+      isBillable: switched.isBillable,
+    }));
+    const regrouped = groupLogsByCalendarDay(bulkUpdatedLogs, 'UTC')[0]!.entryGroups;
+    expect(regrouped).toHaveLength(1);
+    expect(regrouped[0]!.count).toBe(2);
+    expect(regrouped[0]!.projectId).toBe('proj-b');
+    expect(regrouped[0]!.allBillable).toBe(true);
+    expect(regrouped[0]!.groupKey).toBe(
+      `2026-11-22|${buildSameDayGroupSignature(bulkUpdatedLogs[0]!)}`
+    );
   });
 });
 

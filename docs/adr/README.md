@@ -12,3 +12,4 @@ ADRs are written **on demand** in the same change that introduces a decision —
 | [ADR-0006](./0006-lean-poc-verification-and-pragmatism.md) | Lean POC Verification, Real-Data-Only Policy, and Browser Support | Accepted | Planning |
 | [ADR-0007](./0007-hierarchical-tasks-markdown-and-task-timers.md) | Hierarchical Tasks (`Task` → `Subtask` → `Sub-subtask`), Markdown Descriptions, and Task-Driven Timers | Accepted | Phase 4 / FR-4 |
 | [ADR-0008](./0008-orbital-musk-tech-design-system.md) | Orbital "Musk-Tech" Design System Evolution| Accepted | Phase 9 / UX-1.2 |
+| [ADR-0009](./0009-headless-ui-primitives-reka-ui.md) | Headless Accessible UI Primitives via `reka-ui` | Accepted | Phase 9 / FR-5.2 & FR-5.5 |

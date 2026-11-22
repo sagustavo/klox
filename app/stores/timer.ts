@@ -265,6 +265,37 @@ export const useTimerStore = defineStore('timer', () => {
     return created;
   }
 
+  /**
+   * Adjusts/backdates `startTimeUTC` on a live running `ActiveTimer` (FR-5.2),
+   * immediately recalculating `currentElapsedSeconds` and persisting to localStorage + Firestore.
+   */
+  async function updateActiveTimerStart(params: {
+    uid: string;
+    isDemo: boolean;
+    startTimeUTC: string;
+  }): Promise<boolean> {
+    const current = activeTimer.value;
+    if (!current) return false;
+
+    const parsedMs = Date.parse(params.startTimeUTC);
+    if (Number.isNaN(parsedMs)) return false;
+
+    const now = Date.now();
+    const clampedIso = new Date(Math.min(parsedMs, now)).toISOString();
+
+    const updatedTimer: ActiveTimer = {
+      ...current,
+      startTimeUTC: clampedIso,
+    };
+
+    activeTimer.value = updatedTimer;
+    nowMs.value = now;
+    startTicker();
+
+    await syncActiveTimerRemote(params.uid, params.isDemo, updatedTimer);
+    return true;
+  }
+
   return {
     activeTimer,
     description,
@@ -281,5 +312,6 @@ export const useTimerStore = defineStore('timer', () => {
     startTimer,
     startTimerFromTask,
     stopTimer,
+    updateActiveTimerStart,
   };
 });

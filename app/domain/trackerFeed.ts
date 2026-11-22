@@ -24,6 +24,8 @@ export interface TrackerLogGroup {
   tagNamesSnapshot: string[];
   /** True when at least one execution in the group is billable */
   isBillable: boolean;
+  /** True when every execution in the group is billable (drives bulk toggle target) */
+  allBillable: boolean;
   /** Number of TimeLog executions in this group */
   count: number;
   /** True when count > 1 (renders as an expandable accordion summary row) */
@@ -105,6 +107,16 @@ export function buildSameDayGroupSignature(log: TimeLog): string {
   return `${encodeSegment(normDesc)}|${encodeSegment(log.projectId)}|${encodeSegment(taskId)}|[${canonicalizeTagIds(log.tagIds)}]`;
 }
 
+function compareLogsDesc(a: TimeLog, b: TimeLog): number {
+  if (a.startTime !== b.startTime) {
+    return a.startTime < b.startTime ? 1 : -1;
+  }
+  if (a.endTime !== b.endTime) {
+    return a.endTime < b.endTime ? 1 : -1;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
 /**
  * Collapses TimeLog entries belonging to a single `dateKey` into `TrackerLogGroup` rows
  * whenever `(normalizedDescription, projectId, taskId, tagIds)` match (FR-5.1).
@@ -122,9 +134,7 @@ export function groupSameDayEntries(
   const orderedItems =
     options?.alreadySortedDesc || items.length === 1
       ? items
-      : [...items].sort((a, b) =>
-          a.startTime < b.startTime ? 1 : a.startTime > b.startTime ? -1 : 0
-        );
+      : [...items].sort(compareLogsDesc);
 
   const groupMap = new Map<string, TrackerLogGroup>();
 
@@ -148,6 +158,7 @@ export function groupSameDayEntries(
         tagIds: [...log.tagIds],
         tagNamesSnapshot: [...log.tagNamesSnapshot],
         isBillable: log.isBillable,
+        allBillable: log.isBillable,
         count: 1,
         isGrouped: false,
         totalSeconds: log.durationSeconds,
@@ -163,6 +174,8 @@ export function groupSameDayEntries(
       existing.totalSeconds += log.durationSeconds;
       if (log.isBillable) {
         existing.isBillable = true;
+      } else {
+        existing.allBillable = false;
       }
       if (log.startTime < existing.earliestStartTime) {
         existing.earliestStartTime = log.startTime;
@@ -214,9 +227,7 @@ export function groupLogsByCalendarDay(
   // Sort items within each day descending by startTime (newest first), then collapse identical metadata (FR-5.1)
   for (const day of dayList) {
     if (day.items.length > 1) {
-      day.items.sort((a, b) =>
-        a.startTime < b.startTime ? 1 : a.startTime > b.startTime ? -1 : 0
-      );
+      day.items.sort(compareLogsDesc);
     }
     day.entryGroups = groupSameDayEntries(day.items, day.dateKey, {
       alreadySortedDesc: true,

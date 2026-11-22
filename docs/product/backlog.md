@@ -72,7 +72,7 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | **NFR-1.1** | Product Backlog Item | 7-Day Windowed Tracker Feed Pagination | Performance & Scale | 2 - High | Free | Next |
 | **NFR-1.2** | Product Backlog Item | High-Volume Toggl CSV Import Optimization & Filterable Preview Table | Performance & Scale | 2 - High | Free | Next |
 | **FR-5.1** | Product Backlog Item | Same-Day Log Grouping & Expandable Accordion | Timer & Log Ergonomics | 2 - High | Free | Done |
-| **FR-5.2** | Product Backlog Item | Direct Click-to-Edit Time Range, Overlapping Logs & Live Start Adjustment | Timer & Log Ergonomics | 2 - High | Free | Next |
+| **FR-5.2** | Product Backlog Item | Direct Click-to-Edit Time Range, Overlapping Logs & Live Start Adjustment | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-5.3** | Product Backlog Item | Destructive Action Confirmation & Project Tag Renaming | Catalog & Safety | 2 - High | Free | Next |
 | **FR-5.4** | Product Backlog Item | Dashboard Multi-Dimension Slicing, 2-Level Grouping & Time Granularity | Analytics Dashboard | 2 - High | Free | Next |
 | **FR-5.5** | Product Backlog Item | Dedicated Multi-Select Filter Inputs with "Select All" | Analytics Dashboard | 3 - Medium | Free | Next |
@@ -198,19 +198,21 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
   - [x] The grouped header row displays the entry count badge and total summed duration (`HH:MM:SS` in JetBrains Mono `tabular-nums`).
   - [x] Clicking the row / chevron expands an accordion revealing all individual `TimeLog` executions for inspection, inline time editing, or deletion.
 
-#### [FR-5.2] Direct Click-to-Edit Time Range, Overlapping Logs & Live Start Adjustment
+#### [FR-5.2] Direct Click-to-Edit Time Range, Toggl-Style Activity Inline Editing, Overlapping Logs & Live Start Adjustment
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Timer & Log Ergonomics`
 - **Phase:** `9`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
-- **Tags:** `timer; inline-edit; ergonomics; phase-9`
-- **Description:** Eliminate extra clicks when adjusting tracked times. Remove dedicated `"Edit"` buttons from log rows in favor of direct click-on-time inline editing, allow overlapping manual entries, and allow adjusting `startTimeUTC` on a live running timer.
+- **Tags:** `timer; inline-edit; multiselect; billable; ergonomics; phase-9`
+- **Description:** Eliminate extra clicks when adjusting tracked activities. Enable Toggl Track-style inline editing across every `TimeLog` property (`Start Time` / `Stop Time`, `Description`, `Project` / `Task`, searchable `Tag` multiselect, and hover-reveal `Billable` toggle) on both individual rows and collapsed same-day summary groups, replace raw browser checkboxes and inline tag walls across forms with `reka-ui` Orbital components ([ADR-0009](../adr/0009-headless-ui-primitives-reka-ui.md)), allow overlapping manual entries, and allow adjusting `startTimeUTC` on a live running timer.
 - **Acceptance Criteria:**
-  - [ ] Dedicated `"Edit"` action buttons are removed from `TimeLog` rows; clicking directly on a log's start/end time or duration opens inline `Start Time` and `Stop Time` inputs that recalculate `durationSeconds` on save.
-  - [ ] Clicking the elapsed clock or start timestamp while an `ActiveTimer` is running allows backdating/adjusting `startTimeUTC` (e.g., *"started 15 minutes ago"*), immediately recalculating elapsed seconds.
-  - [ ] Manual `TimeLog` creation permits entries whose `[startTime, endTime]` interval overlaps existing historical records without blocking validation.
+  - [x] Dedicated `"Edit"` action buttons are removed from `TimeLog` rows; every `TimeLog` property (`Time Range`, `Description`, `Project` / `Task`, `Tags`, and `Billable`) is directly editable inline on individual rows and bulk-editable on collapsed same-day grouped summary rows.
+  - [x] Hovering over a non-billable log reveals the `$` billable icon for 1-click toggling, and all billable toggles across Klox (`CommandTimerBar`, Manual Time Log form, Catalog project defaults, and Tracker rows) use a polished Orbital switch/icon component instead of raw `<input type="checkbox">` controls.
+  - [x] Both creating (`CommandTimerBar` & Manual Time Log form) and editing a `TimeLog` render Project-Scoped Tags inside a collision-aware searchable multiselect popover (with `"Select all"` / `"Clear"` and a hover-reveal `Tag` icon on untagged rows) rather than dumping all tags directly into the form.
+  - [x] Clicking the elapsed clock or start timestamp while an `ActiveTimer` is running allows backdating/adjusting `startTimeUTC` (e.g., *"started 15 minutes ago"*), immediately recalculating elapsed seconds.
+  - [x] Manual `TimeLog` creation permits entries whose `[startTime, endTime]` interval overlaps existing historical records without blocking validation.
 
 #### [FR-5.3] Destructive Action Confirmation & Project Tag Renaming
 - **Work Item Type:** `Product Backlog Item`
