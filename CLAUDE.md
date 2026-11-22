@@ -9,12 +9,12 @@ Below is the complete context of everything we have already designed, decided, a
 ## 1. PROJECT IDENTITY, FOUNDER CONTEXT & VISION
 
 - **App Name & Domain:** **Klox** (`https://klox.dev` — domain already purchased on Hostinger).
-- **Founder Profile:** Software Engineer at **XP Inc.** (Brazil).
+- **Founder Profile:** Software Engineer.
 - **Academic Context:** This project serves both as a real SaaS product (User #001 is me) and as the Capstone Project for my **Post-Graduation in Software and Solutions Architecture with Artificial Intelligence** at **XP Educação**.
 - **Product Vision (POC -> Full Platform):**
   - **Phase 1 (Current POC):** An ultra-fast, keyboard-first, AI-augmented Time Tracking & Analytics application with seamless bi-directional Toggl Track CSV compatibility.
   - **Phase 2 (Strategic Evolution):** A complete **Time & Execution Management Platform** for both **Work** and **Personal Mastery** (studies, workouts, reading, personal goals).
-  - **Enterprise Killer Feature (Azure DevOps Sync):** At XP Inc., engineers must log hours on Azure DevOps Work Items in the `Completed Work` (`Microsoft.VSTS.Scheduling.CompletedWork`) field. Klox is architected so `TimeLog` entries can link to a `Task`, and a `Task` can either be created manually (for personal goals) or synced with an **Azure DevOps Work Item**. With user approval (Human-in-the-Loop AI workflow), Klox will automatically calculate and push accumulated hours to update existing Azure DevOps Work Items or create new Work Items for unplanned tasks.
+  - **Enterprise Killer Feature (Azure DevOps Sync):** Sometimes engineers must log hours on Azure DevOps Work Items in the `Completed Work` (`Microsoft.VSTS.Scheduling.CompletedWork`) field. Klox is architected so `TimeLog` entries can link to a `Task`, and a `Task` can either be created manually (for personal goals) or synced with an **Azure DevOps Work Item**. With user approval (Human-in-the-Loop AI workflow), Klox will automatically calculate and push accumulated hours to update existing Azure DevOps Work Items or create new Work Items for unplanned tasks.
 
 ---
 
@@ -64,13 +64,13 @@ We follow strict Domain-Driven Design nomenclature. Do NOT confuse `Timer` with 
   1. `Description Input` -> 2. `Project Selector` -> 3. `Project-Scoped Tag Selector` -> 4. `Billable Toggle` -> 5. `Start/Save Button` (`Enter` to execute).
 - **Manual Time Logging & CRUD:** Users can also add historical `TimeLog` entries manually (specifying date, start/end time or duration) and inline edit/delete existing logs.
 
-### 3.3 Two-Tier Hybrid Search Engine & Gemini AI Auto-Fill (Academic AI Highlight)
+### 3.3 Two-Tier Hybrid Search Engine & Gemini AI Auto-Fill
 
 - **Tier 1 — Instant Lexical Recall (`Fuse.js`, `<2ms`):**
   - As the user types a task description, `Fuse.js` searches deduplicated historical task templates (`normalizedDescription + projectId`) ranked by fuzzy match, frequency, and recency, displaying the **Top 10 best matches** in a floating dropdown. Selecting a match auto-fills `description`, `projectId`, `tagIds`, and `isBillable`.
-- **Tier 2 — Semantic AI Auto-Fill (`@google/genai` with `gemini-2.5-flash`):**
+- **Tier 2 — Semantic AI Auto-Fill (`@google/genai` with `gemini-4-hydrogen`):**
   - Triggered via keyboard shortcut `Cmd+I` / `Ctrl+I` or clicking the `[✨ AI Auto-Fill]` button.
-  - Sends the typed description + the user's catalog of Projects and their Project-Scoped Tags to a backend endpoint using `gemini-2.5-flash` with Structured JSON Outputs (`responseSchema`) to automatically predict and select the most appropriate `projectId`, valid `tagIds` (belonging to that project), and `isBillable` status.
+  - Sends the typed description + the user's catalog of Projects and their Project-Scoped Tags to a backend endpoint using `gemini-4-hydrogen` with Structured JSON Outputs (`responseSchema`) to automatically predict and select the most appropriate `projectId`, valid `tagIds` (belonging to that project), and `isBillable` status.
 
 ### 3.4 Analytical Dashboard & Multi-Dimensional Slicing
 

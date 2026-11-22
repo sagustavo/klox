@@ -81,7 +81,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     geminiApiKey: '',
-    geminiModel: 'gemini-3.8-flash',
+    geminiModel: 'gemini-4-hydrogen',
     public: {
       firebaseApiKey: '',
       firebaseAuthDomain: '',
