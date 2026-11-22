@@ -204,6 +204,12 @@ const ptBR: LocaleMessages = {
     saveEditButton: 'Salvar',
     cancelEditButton: 'Cancelar',
     deleteButton: 'Excluir',
+    group: {
+      expandAria: 'Expandir {count} registros agrupados de {description}',
+      collapseAria: 'Recolher {count} registros agrupados de {description}',
+      entriesBadgeTitle: '{count} registros agrupados',
+      deleteGroupAria: 'Excluir todos os {count} registros deste grupo',
+    },
     pagination: {
       ariaLabel: 'Paginação em janelas de 7 dias do rastreador',
       windowLabel: 'JANELA DE 7 DIAS',

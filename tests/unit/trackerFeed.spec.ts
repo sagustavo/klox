@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { toDateKey } from '../../app/domain/duration';
+import { formatHMS, normalizeDescription, toDateKey } from '../../app/domain/duration';
 import {
   TRACKER_FEED_WINDOW_DAYS,
+  buildSameDayGroupSignature,
   findPageIndexForDateKey,
   groupLogsByCalendarDay,
+  groupSameDayEntries,
   paginateTrackerFeed,
   resolveLogDateKey,
   sliceTrackerFeedWindow,
@@ -17,15 +19,20 @@ function makeLog(overrides: Partial<TimeLog> & { id: string; startTime: string }
     new Date(Date.parse(overrides.startTime) + durationSeconds * 1000).toISOString();
   const timeZone = overrides.timeZone ?? 'UTC';
   const dateKey = overrides.dateKey ?? toDateKey(overrides.startTime, timeZone);
+  const description = overrides.description ?? `Task ${overrides.id}`;
 
   return {
     id: overrides.id,
     userId: overrides.userId ?? 'u-test',
-    description: overrides.description ?? `Task ${overrides.id}`,
-    normalizedDescription: (overrides.description ?? `Task ${overrides.id}`).toLowerCase(),
+    description,
+    normalizedDescription: overrides.normalizedDescription ?? normalizeDescription(description),
     projectId: overrides.projectId ?? 'proj-1',
     projectNameSnapshot: overrides.projectNameSnapshot ?? 'Klox Core',
     projectColorSnapshot: overrides.projectColorSnapshot ?? '#3B82F6',
+    ...(overrides.taskId !== undefined ? { taskId: overrides.taskId } : {}),
+    ...(overrides.taskNameSnapshot !== undefined
+      ? { taskNameSnapshot: overrides.taskNameSnapshot }
+      : {}),
     tagIds: overrides.tagIds ?? [],
     tagNamesSnapshot: overrides.tagNamesSnapshot ?? [],
     isBillable: overrides.isBillable ?? true,
@@ -274,3 +281,223 @@ describe('domain/trackerFeed (NFR-1.1 7-Day Windowed Pagination)', () => {
     expect(seenLogIds.size).toBe(TOTAL_LOGS);
   });
 });
+
+describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => {
+  it('collapses same-day logs with identical (normalizedDescription, projectId, taskId, tagIds) into a single summary group', () => {
+    const logs: TimeLog[] = [
+      makeLog({
+        id: 'exec-1',
+        description: '  implement   jwt auth ',
+        projectId: 'proj-api',
+        taskId: 'task-auth',
+        taskNameSnapshot: 'Auth Middleware',
+        tagIds: ['tag-sec', 'tag-be'],
+        tagNamesSnapshot: ['security', 'backend'],
+        startTime: '2026-11-22T09:00:00.000Z',
+        durationSeconds: 1805, // 00:30:05
+        isBillable: false,
+      }),
+      makeLog({
+        id: 'exec-2',
+        description: 'Code review PR #42',
+        projectId: 'proj-api',
+        tagIds: ['tag-review'],
+        tagNamesSnapshot: ['review'],
+        startTime: '2026-11-22T11:00:00.000Z',
+        durationSeconds: 900, // 00:15:00
+        isBillable: true,
+      }),
+      makeLog({
+        id: 'exec-3',
+        description: 'Implement JWT Auth',
+        projectId: 'proj-api',
+        taskId: 'task-auth',
+        taskNameSnapshot: 'Auth Middleware',
+        tagIds: ['tag-be', 'tag-sec'], // reversed tag order must still match
+        tagNamesSnapshot: ['backend', 'security'],
+        startTime: '2026-11-22T14:30:00.000Z',
+        durationSeconds: 3655, // 01:00:55
+        isBillable: true,
+      }),
+    ];
+
+    const dayGroups = groupLogsByCalendarDay(logs, 'UTC');
+    expect(dayGroups).toHaveLength(1);
+
+    const day = dayGroups[0]!;
+    expect(day.totalSeconds).toBe(1805 + 900 + 3655);
+    expect(day.entryGroups).toHaveLength(2);
+
+    // Group 0: newest execution was 14:30 ("Implement JWT Auth"), collapsed count = 2
+    const authGroup = day.entryGroups[0]!;
+    expect(authGroup.isGrouped).toBe(true);
+    expect(authGroup.count).toBe(2);
+    expect(authGroup.description).toBe('Implement JWT Auth');
+    expect(authGroup.normalizedDescription).toBe('implement jwt auth');
+    expect(authGroup.projectId).toBe('proj-api');
+    expect(authGroup.taskId).toBe('task-auth');
+    expect(authGroup.isBillable).toBe(true);
+    expect(authGroup.totalSeconds).toBe(5460);
+    expect(formatHMS(authGroup.totalSeconds)).toBe('01:31:00');
+    expect(authGroup.earliestStartTime).toBe('2026-11-22T09:00:00.000Z');
+    expect(authGroup.latestStartTime).toBe('2026-11-22T14:30:00.000Z');
+    expect(authGroup.latestEndTime).toBe(
+      new Date(Date.parse('2026-11-22T14:30:00.000Z') + 3655 * 1000).toISOString()
+    );
+    expect(authGroup.items.map((l) => l.id)).toEqual(['exec-3', 'exec-1']);
+
+    // Group 1: singleton ("Code review PR #42"), count = 1, isGrouped = false
+    const reviewGroup = day.entryGroups[1]!;
+    expect(reviewGroup.isGrouped).toBe(false);
+    expect(reviewGroup.count).toBe(1);
+    expect(reviewGroup.totalSeconds).toBe(900);
+    expect(formatHMS(reviewGroup.totalSeconds)).toBe('00:15:00');
+    expect(reviewGroup.items.map((l) => l.id)).toEqual(['exec-2']);
+  });
+
+  it('keeps entries separate when description, projectId, taskId, or tagIds differ and avoids delimiter collisions', () => {
+    const base = {
+      startTime: '2026-11-22T10:00:00.000Z',
+      description: 'Sync backlog',
+      projectId: 'proj-1',
+      taskId: 'task-1',
+      tagIds: ['tag-1'],
+    };
+
+    const baseline = makeLog({ ...base, id: 'g-base' });
+    const diffDesc = makeLog({ ...base, id: 'g-desc', description: 'Sync sprint' });
+    const diffProj = makeLog({ ...base, id: 'g-proj', projectId: 'proj-2' });
+    const diffTask = makeLog({ ...base, id: 'g-task', taskId: 'task-2' });
+    const noTask = makeLog({
+      id: 'g-notask',
+      startTime: base.startTime,
+      description: base.description,
+      projectId: base.projectId,
+      tagIds: base.tagIds,
+    });
+    const diffTags = makeLog({ ...base, id: 'g-tags', tagIds: ['tag-1', 'tag-2'] });
+
+    const groups = groupSameDayEntries(
+      [baseline, diffDesc, diffProj, diffTask, noTask, diffTags],
+      '2026-11-22'
+    );
+    expect(groups).toHaveLength(6);
+    expect(groups.every((g) => !g.isGrouped && g.count === 1)).toBe(true);
+
+    // Length-prefixed encoding prevents delimiter injection collisions
+    const trickyA = makeLog({
+      id: 'tricky-a',
+      startTime: '2026-11-22T10:00:00.000Z',
+      description: 'alpha|4:beta',
+      projectId: 'p1',
+    });
+    const trickyB = makeLog({
+      id: 'tricky-b',
+      startTime: '2026-11-22T11:00:00.000Z',
+      description: 'alpha',
+      projectId: 'beta|2:p1',
+    });
+    expect(buildSameDayGroupSignature(trickyA)).not.toBe(buildSameDayGroupSignature(trickyB));
+  });
+
+  it('never groups identical metadata across distinct calendar days (dateKey)', () => {
+    const day1 = makeLog({
+      id: 'd1',
+      description: 'Daily workout',
+      projectId: 'proj-health',
+      tagIds: ['cardio'],
+      startTime: '2026-11-21T18:00:00.000Z',
+      durationSeconds: 2700,
+    });
+    const day2 = makeLog({
+      id: 'd2',
+      description: 'Daily workout',
+      projectId: 'proj-health',
+      tagIds: ['cardio'],
+      startTime: '2026-11-22T18:00:00.000Z',
+      durationSeconds: 2700,
+    });
+
+    const dayGroups = groupLogsByCalendarDay([day1, day2], 'UTC');
+    expect(dayGroups).toHaveLength(2);
+    expect(dayGroups[0]?.entryGroups).toHaveLength(1);
+    expect(dayGroups[0]?.entryGroups[0]?.isGrouped).toBe(false);
+    expect(dayGroups[1]?.entryGroups).toHaveLength(1);
+    expect(dayGroups[1]?.entryGroups[0]?.isGrouped).toBe(false);
+    expect(dayGroups[0]?.entryGroups[0]?.groupKey).not.toBe(
+      dayGroups[1]?.entryGroups[0]?.groupKey
+    );
+  });
+
+  it('preserves groupKey on sub-item duration edit, splits on metadata edit, and ungroups/removes cleanly on delete', () => {
+    const itemA = makeLog({
+      id: 'a',
+      description: 'Architecture ADR',
+      projectId: 'proj-cap',
+      tagIds: ['docs'],
+      startTime: '2026-11-22T08:00:00.000Z',
+      durationSeconds: 1200,
+    });
+    const itemB = makeLog({
+      id: 'b',
+      description: 'Architecture ADR',
+      projectId: 'proj-cap',
+      tagIds: ['docs'],
+      startTime: '2026-11-22T10:00:00.000Z',
+      durationSeconds: 1800,
+    });
+    const itemC = makeLog({
+      id: 'c',
+      description: 'Architecture ADR',
+      projectId: 'proj-cap',
+      tagIds: ['docs'],
+      startTime: '2026-11-22T13:00:00.000Z',
+      durationSeconds: 600,
+    });
+
+    const initial = groupLogsByCalendarDay([itemA, itemB, itemC], 'UTC')[0]!;
+    expect(initial.entryGroups).toHaveLength(1);
+    const initialGroupKey = initial.entryGroups[0]!.groupKey;
+    expect(initial.entryGroups[0]!.count).toBe(3);
+    expect(initial.entryGroups[0]!.totalSeconds).toBe(3600);
+
+    // 1. Inline duration edit on sub-item B: groupKey stays stable (accordion stays open), totalSeconds updates
+    const editedDurationB: TimeLog = { ...itemB, durationSeconds: 2400 };
+    const afterDurationEdit = groupLogsByCalendarDay([itemA, editedDurationB, itemC], 'UTC')[0]!;
+    expect(afterDurationEdit.entryGroups).toHaveLength(1);
+    expect(afterDurationEdit.entryGroups[0]!.groupKey).toBe(initialGroupKey);
+    expect(afterDurationEdit.entryGroups[0]!.totalSeconds).toBe(4200);
+    expect(formatHMS(afterDurationEdit.entryGroups[0]!.totalSeconds)).toBe('01:10:00');
+
+    // 2. Inline metadata edit on sub-item C (description changed): C splits out, A + B remain grouped (count = 2)
+    const editedMetaC: TimeLog = {
+      ...itemC,
+      description: 'C4 Diagram Polish',
+      normalizedDescription: 'c4 diagram polish',
+    };
+    const afterMetaEdit = groupLogsByCalendarDay([itemA, editedDurationB, editedMetaC], 'UTC')[0]!;
+    expect(afterMetaEdit.entryGroups).toHaveLength(2);
+    expect(afterMetaEdit.entryGroups[0]!.description).toBe('C4 Diagram Polish');
+    expect(afterMetaEdit.entryGroups[0]!.isGrouped).toBe(false);
+    expect(afterMetaEdit.entryGroups[1]!.groupKey).toBe(initialGroupKey);
+    expect(afterMetaEdit.entryGroups[1]!.count).toBe(2);
+    expect(afterMetaEdit.entryGroups[1]!.isGrouped).toBe(true);
+    expect(afterMetaEdit.entryGroups[1]!.totalSeconds).toBe(3600);
+
+    // 3. Delete sub-item B: remaining item A automatically ungroups to standalone row (count = 1, isGrouped = false)
+    const afterSingleDelete = groupLogsByCalendarDay([itemA, editedMetaC], 'UTC')[0]!;
+    const remainingAdrGroup = afterSingleDelete.entryGroups.find((g) => g.items[0]?.id === 'a')!;
+    expect(remainingAdrGroup.count).toBe(1);
+    expect(remainingAdrGroup.isGrouped).toBe(false);
+    expect(remainingAdrGroup.totalSeconds).toBe(1200);
+
+    // 4. Cascade delete all IDs belonging to a group removes the group completely
+    const groupIdsToDelete = new Set(initial.entryGroups[0]!.items.map((i) => i.id));
+    const remainingLogs = [itemA, itemB, itemC, editedMetaC].filter(
+      (l) => !groupIdsToDelete.has(l.id)
+    );
+    expect(remainingLogs).toHaveLength(0);
+    expect(groupLogsByCalendarDay(remainingLogs, 'UTC')).toEqual([]);
+  });
+});
+

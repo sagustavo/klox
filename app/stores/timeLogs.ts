@@ -346,6 +346,43 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     }
   }
 
+  async function deleteTimeLogs(params: {
+    uid: string;
+    isDemo: boolean;
+    logIds: readonly EntityId[];
+  }): Promise<void> {
+    if (params.logIds.length === 0) return;
+    if (params.logIds.length === 1) {
+      await deleteTimeLog({
+        uid: params.uid,
+        isDemo: params.isDemo,
+        logId: params.logIds[0]!,
+      });
+      return;
+    }
+
+    const idSet = new Set(params.logIds);
+    logs.value = logs.value.filter((l) => !idSet.has(l.id));
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const uniqueIds = Array.from(idSet);
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+          const chunk = uniqueIds.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const id of chunk) {
+            batch.delete(doc(fb.db, 'users', params.uid, 'timeLogs', id));
+          }
+          await batch.commit();
+        }
+      }
+    }
+  }
+
   return {
     logs,
     sortedLogs,
@@ -356,6 +393,7 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     createTimeLogsBatch,
     updateTimeLog,
     deleteTimeLog,
+    deleteTimeLogs,
     persistLocal,
   };
 });

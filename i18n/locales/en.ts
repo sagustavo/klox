@@ -200,6 +200,12 @@ const en = {
     saveEditButton: 'Save',
     cancelEditButton: 'Cancel',
     deleteButton: 'Delete',
+    group: {
+      expandAria: 'Expand {count} grouped entries for {description}',
+      collapseAria: 'Collapse {count} grouped entries for {description}',
+      entriesBadgeTitle: '{count} entries grouped',
+      deleteGroupAria: 'Delete all {count} entries in this group',
+    },
     pagination: {
       ariaLabel: 'Tracker 7-day window pagination',
       windowLabel: '7-DAY WINDOW',

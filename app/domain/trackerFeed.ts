@@ -1,12 +1,50 @@
-import { toDateKey } from './duration';
-import type { TimeLog } from './types';
+import { normalizeDescription, toDateKey } from './duration';
+import type { EntityId, TimeLog } from './types';
 
 export const TRACKER_FEED_WINDOW_DAYS = 7;
+
+/**
+ * Collapsible summary group of same-day TimeLog records sharing identical
+ * `(normalizedDescription, projectId, taskId, tagIds)` metadata (FR-5.1).
+ */
+export interface TrackerLogGroup {
+  /** Deterministic collision-free key (`dateKey` + metadata signature) */
+  groupKey: string;
+  /** Intra-day metadata signature over `(normalizedDescription, projectId, taskId, tagIds)` */
+  signature: string;
+  dateKey: string;
+  description: string;
+  normalizedDescription: string;
+  projectId: EntityId;
+  projectNameSnapshot: string;
+  projectColorSnapshot: string;
+  taskId?: EntityId;
+  taskNameSnapshot?: string;
+  tagIds: EntityId[];
+  tagNamesSnapshot: string[];
+  /** True when at least one execution in the group is billable */
+  isBillable: boolean;
+  /** Number of TimeLog executions in this group */
+  count: number;
+  /** True when count > 1 (renders as an expandable accordion summary row) */
+  isGrouped: boolean;
+  /** Exact integer sum of durationSeconds across all executions in the group */
+  totalSeconds: number;
+  /** Earliest startTime (UTC ISO) among executions in the group */
+  earliestStartTime: string;
+  /** Latest startTime (UTC ISO) among executions in the group (drives intra-day order) */
+  latestStartTime: string;
+  /** Latest endTime (UTC ISO) among executions in the group */
+  latestEndTime: string;
+  /** Individual TimeLog executions sorted descending by startTime (newest first) */
+  items: TimeLog[];
+}
 
 export interface TrackerDayGroup {
   dateKey: string; // "YYYY-MM-DD" computed in UserPreferences.timeZone
   totalSeconds: number;
   items: TimeLog[]; // Sorted descending by startTime
+  entryGroups: TrackerLogGroup[]; // Same-day metadata-collapsed groups (FR-5.1), sorted descending by latestStartTime
 }
 
 export interface TrackerFeedWindow {
@@ -39,6 +77,109 @@ export function resolveLogDateKey(log: TimeLog, timeZone: string): string {
 }
 
 /**
+ * Encodes a string with its character length prefix (`"<len>:<value>"`) so
+ * composite keys remain printable ASCII and mathematically collision-free.
+ */
+function encodeSegment(value: string): string {
+  return `${value.length}:${value}`;
+}
+
+/**
+ * Canonicalizes `tagIds` as a deduplicated, lexicographically sorted signature
+ * so tag order variations (`['b','a']` vs `['a','b']`) still group together.
+ */
+function canonicalizeTagIds(tagIds: readonly EntityId[]): string {
+  if (tagIds.length === 0) return '';
+  if (tagIds.length === 1) return encodeSegment(tagIds[0]!);
+
+  const uniqueSorted = Array.from(new Set(tagIds)).sort();
+  return uniqueSorted.map(encodeSegment).join(',');
+}
+
+/**
+ * Builds the deterministic intra-day grouping signature for `(normalizedDescription, projectId, taskId, tagIds)`.
+ */
+export function buildSameDayGroupSignature(log: TimeLog): string {
+  const normDesc = log.normalizedDescription || normalizeDescription(log.description);
+  const taskId = log.taskId ?? '';
+  return `${encodeSegment(normDesc)}|${encodeSegment(log.projectId)}|${encodeSegment(taskId)}|[${canonicalizeTagIds(log.tagIds)}]`;
+}
+
+/**
+ * Collapses TimeLog entries belonging to a single `dateKey` into `TrackerLogGroup` rows
+ * whenever `(normalizedDescription, projectId, taskId, tagIds)` match (FR-5.1).
+ *
+ * Groups are ordered descending by their most recent execution's `startTime`, and
+ * `items` inside each group are ordered descending by `startTime`.
+ */
+export function groupSameDayEntries(
+  items: readonly TimeLog[],
+  dateKey: string,
+  options?: { alreadySortedDesc?: boolean }
+): TrackerLogGroup[] {
+  if (items.length === 0) return [];
+
+  const orderedItems =
+    options?.alreadySortedDesc || items.length === 1
+      ? items
+      : [...items].sort((a, b) =>
+          a.startTime < b.startTime ? 1 : a.startTime > b.startTime ? -1 : 0
+        );
+
+  const groupMap = new Map<string, TrackerLogGroup>();
+
+  for (const log of orderedItems) {
+    const signature = buildSameDayGroupSignature(log);
+    const existing = groupMap.get(signature);
+
+    if (!existing) {
+      const normDesc = log.normalizedDescription || normalizeDescription(log.description);
+      groupMap.set(signature, {
+        groupKey: `${dateKey}|${signature}`,
+        signature,
+        dateKey,
+        description: log.description,
+        normalizedDescription: normDesc,
+        projectId: log.projectId,
+        projectNameSnapshot: log.projectNameSnapshot,
+        projectColorSnapshot: log.projectColorSnapshot,
+        ...(log.taskId ? { taskId: log.taskId } : {}),
+        ...(log.taskNameSnapshot ? { taskNameSnapshot: log.taskNameSnapshot } : {}),
+        tagIds: [...log.tagIds],
+        tagNamesSnapshot: [...log.tagNamesSnapshot],
+        isBillable: log.isBillable,
+        count: 1,
+        isGrouped: false,
+        totalSeconds: log.durationSeconds,
+        earliestStartTime: log.startTime,
+        latestStartTime: log.startTime,
+        latestEndTime: log.endTime,
+        items: [log],
+      });
+    } else {
+      existing.items.push(log);
+      existing.count = existing.items.length;
+      existing.isGrouped = true;
+      existing.totalSeconds += log.durationSeconds;
+      if (log.isBillable) {
+        existing.isBillable = true;
+      }
+      if (log.startTime < existing.earliestStartTime) {
+        existing.earliestStartTime = log.startTime;
+      }
+      if (log.startTime > existing.latestStartTime) {
+        existing.latestStartTime = log.startTime;
+      }
+      if (log.endTime > existing.latestEndTime) {
+        existing.latestEndTime = log.endTime;
+      }
+    }
+  }
+
+  return Array.from(groupMap.values());
+}
+
+/**
  * Groups historical TimeLogs into descending calendar-day buckets in `timeZone`.
  * Uses direct ASCII comparisons on ISO-8601 UTC strings & YYYY-MM-DD keys for O(N) throughput
  * on 3,000–10,000+ records.
@@ -60,6 +201,7 @@ export function groupLogsByCalendarDay(
         dateKey,
         totalSeconds: log.durationSeconds,
         items: [log],
+        entryGroups: [],
       });
     } else {
       existing.totalSeconds += log.durationSeconds;
@@ -69,13 +211,16 @@ export function groupLogsByCalendarDay(
 
   const dayList = Array.from(groups.values());
 
-  // Sort items within each day descending by startTime (newest first)
+  // Sort items within each day descending by startTime (newest first), then collapse identical metadata (FR-5.1)
   for (const day of dayList) {
     if (day.items.length > 1) {
       day.items.sort((a, b) =>
         a.startTime < b.startTime ? 1 : a.startTime > b.startTime ? -1 : 0
       );
     }
+    day.entryGroups = groupSameDayEntries(day.items, day.dateKey, {
+      alreadySortedDesc: true,
+    });
   }
 
   // Sort distinct calendar days descending by YYYY-MM-DD dateKey

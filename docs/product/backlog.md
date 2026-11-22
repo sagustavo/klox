@@ -71,7 +71,7 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 |---|---|---|---|---|---|---|
 | **NFR-1.1** | Product Backlog Item | 7-Day Windowed Tracker Feed Pagination | Performance & Scale | 2 - High | Free | Next |
 | **NFR-1.2** | Product Backlog Item | High-Volume Toggl CSV Import Optimization & Filterable Preview Table | Performance & Scale | 2 - High | Free | Next |
-| **FR-5.1** | Product Backlog Item | Same-Day Log Grouping & Expandable Accordion | Timer & Log Ergonomics | 2 - High | Free | Next |
+| **FR-5.1** | Product Backlog Item | Same-Day Log Grouping & Expandable Accordion | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-5.2** | Product Backlog Item | Direct Click-to-Edit Time Range, Overlapping Logs & Live Start Adjustment | Timer & Log Ergonomics | 2 - High | Free | Next |
 | **FR-5.3** | Product Backlog Item | Destructive Action Confirmation & Project Tag Renaming | Catalog & Safety | 2 - High | Free | Next |
 | **FR-5.4** | Product Backlog Item | Dashboard Multi-Dimension Slicing, 2-Level Grouping & Time Granularity | Analytics Dashboard | 2 - High | Free | Next |
@@ -188,15 +188,15 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Timer & Log Ergonomics`
 - **Phase:** `9`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `tracker; grouping; accordion; ux; phase-9`
 - **Description:** Reduce visual clutter in the daily tracker feed by automatically collapsing multiple `TimeLog` records created on the same day with identical metadata into a single expandable summary row.
 - **Acceptance Criteria:**
-  - [ ] Within each day bucket (`dateKey`), entries sharing identical `(normalizedDescription, projectId, taskId, tagIds)` automatically group into one summary row.
-  - [ ] The grouped header row displays the entry count badge and total summed duration (`HH:MM:SS` in JetBrains Mono `tabular-nums`).
-  - [ ] Clicking the row / chevron expands an accordion revealing all individual `TimeLog` executions for inspection, inline time editing, or deletion.
+  - [x] Within each day bucket (`dateKey`), entries sharing identical `(normalizedDescription, projectId, taskId, tagIds)` automatically group into one summary row.
+  - [x] The grouped header row displays the entry count badge and total summed duration (`HH:MM:SS` in JetBrains Mono `tabular-nums`).
+  - [x] Clicking the row / chevron expands an accordion revealing all individual `TimeLog` executions for inspection, inline time editing, or deletion.
 
 #### [FR-5.2] Direct Click-to-Edit Time Range, Overlapping Logs & Live Start Adjustment
 - **Work Item Type:** `Product Backlog Item`

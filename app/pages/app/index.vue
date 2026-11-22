@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { Plus, Trash2, Edit3, Check, X } from 'lucide-vue-next';
+import {
+  CheckSquare,
+  ChevronDown,
+  ChevronRight,
+  CornerDownRight,
+  Edit3,
+  Plus,
+  Trash2,
+} from 'lucide-vue-next';
 import { formatHMS, parseHMS, toDateKey } from '~/domain/duration';
 import { UNASSIGNED_PROJECT_ID, applyProjectSwitch } from '~/domain/invariants';
 import {
@@ -7,6 +15,7 @@ import {
   findPageIndexForDateKey,
   groupLogsByCalendarDay,
   sliceTrackerFeedWindow,
+  type TrackerLogGroup,
 } from '~/domain/trackerFeed';
 import type { EntityId, Project, TimeLog } from '~/domain/types';
 import { useAuthStore } from '~/stores/auth';
@@ -44,6 +53,9 @@ const manualDate = ref(toDateKey(new Date(), 'UTC'));
 const manualStartHM = ref('09:00');
 const manualDurationHMS = ref('01:00:00');
 
+// Same-day grouped accordion state (FR-5.1)
+const expandedGroupKeys = ref<Set<string>>(new Set());
+
 // Inline Edit state
 const editingLogId = ref<EntityId | null>(null);
 const editDescription = ref('');
@@ -75,6 +87,33 @@ function displayProjectName(project: Project | undefined, fallbackSnapshot?: str
   if (project?.systemKey === 'unassigned') return t('catalog.unassigned');
   if (project) return project.name;
   return fallbackSnapshot || t('catalog.unassigned');
+}
+
+function displayTaskName(taskId?: EntityId, fallbackSnapshot?: string): string | null {
+  if (!taskId && !fallbackSnapshot) return null;
+  const liveLabel = taskId ? catalogStore.getTaskHierarchicalLabel(taskId) : '';
+  return liveLabel || fallbackSnapshot || null;
+}
+
+function isGroupExpanded(groupKey: string): boolean {
+  return expandedGroupKeys.value.has(groupKey);
+}
+
+function toggleGroupExpanded(entryGroup: TrackerLogGroup) {
+  if (!entryGroup.isGrouped) return;
+  const next = new Set(expandedGroupKeys.value);
+  if (next.has(entryGroup.groupKey)) {
+    next.delete(entryGroup.groupKey);
+    if (
+      editingLogId.value &&
+      entryGroup.items.some((item) => item.id === editingLogId.value)
+    ) {
+      editingLogId.value = null;
+    }
+  } else {
+    next.add(entryGroup.groupKey);
+  }
+  expandedGroupKeys.value = next;
 }
 
 function handleManualProjectChange(nextId: EntityId) {
@@ -191,10 +230,31 @@ async function saveInlineEdit(log: TimeLog) {
 
 async function handleDeleteLog(logId: EntityId) {
   if (!authStore.user) return;
+  if (editingLogId.value === logId) {
+    editingLogId.value = null;
+  }
   await timeLogsStore.deleteTimeLog({
     uid: authStore.user.uid,
     isDemo: authStore.isDemoMode,
     logId,
+  });
+}
+
+async function handleDeleteGroup(entryGroup: TrackerLogGroup) {
+  if (!authStore.user) return;
+  const ids = entryGroup.items.map((item) => item.id);
+  if (editingLogId.value && ids.includes(editingLogId.value)) {
+    editingLogId.value = null;
+  }
+  if (expandedGroupKeys.value.has(entryGroup.groupKey)) {
+    const next = new Set(expandedGroupKeys.value);
+    next.delete(entryGroup.groupKey);
+    expandedGroupKeys.value = next;
+  }
+  await timeLogsStore.deleteTimeLogs({
+    uid: authStore.user.uid,
+    isDemo: authStore.isDemoMode,
+    logIds: ids,
   });
 }
 
@@ -227,6 +287,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
   const clamped = Math.min(Math.max(0, nextIndex), maxIndex);
   if (clamped === currentPageIndex.value) return;
   editingLogId.value = null;
+  expandedGroupKeys.value = new Set();
   currentPageIndex.value = clamped;
   if (scrollToTop && import.meta.client) {
     feedTopRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -382,145 +443,298 @@ function goToPage(nextIndex: number, scrollToTop = false) {
         </div>
 
         <ul class="divide-y divide-border-hairline">
-          <li
-            v-for="log in group.items"
-            :key="log.id"
-            data-testid="tracker-log-row"
-            class="px-4 py-3 hover:bg-bg-hover/50 transition-colors"
-          >
-            <!-- Inline Edit Mode -->
-            <div v-if="editingLogId === log.id" class="space-y-2.5">
-              <div class="grid grid-cols-1 gap-2 sm:grid-cols-12">
-                <input
-                  v-model="editDescription"
-                  type="text"
-                  class="sm:col-span-5 h-8 border border-border-hairline bg-bg-primary px-2.5 text-xs text-text-primary focus:border-accent focus:outline-none"
-                />
-                <select
-                  :value="editProjectId"
-                  class="sm:col-span-3 h-8 border border-border-hairline bg-bg-primary px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
-                  @change="handleEditProjectChange(($event.target as HTMLSelectElement).value)"
-                >
-                  <option
-                    v-for="proj in catalogStore.sortedProjects"
-                    :key="proj.id"
-                    :value="proj.id"
-                  >
-                    {{ displayProjectName(proj) }}
-                  </option>
-                </select>
-                <input
-                  v-model="editDurationHMS"
-                  type="text"
-                  class="tabular-telemetry sm:col-span-2 h-8 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
-                />
-                <div class="sm:col-span-2 flex items-center justify-end gap-1.5">
+          <template v-for="entryGroup in group.entryGroups" :key="entryGroup.groupKey">
+            <!-- Collapsible Same-Day Summary Row (FR-5.1: count > 1) -->
+            <li
+              v-if="entryGroup.isGrouped"
+              data-testid="tracker-log-group"
+              class="transition-colors"
+            >
+              <div
+                data-testid="tracker-log-group-header"
+                class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-bg-hover/50 transition-colors cursor-pointer select-none"
+                :class="isGroupExpanded(entryGroup.groupKey) ? 'bg-bg-hover/30' : ''"
+                @click="toggleGroupExpanded(entryGroup)"
+              >
+                <div class="flex flex-wrap items-center gap-2.5 min-w-0">
                   <button
                     type="button"
-                    class="inline-flex h-8 items-center gap-1 bg-accent px-2.5 text-xs font-mono text-white"
-                    @click="saveInlineEdit(log)"
+                    data-testid="tracker-log-group-toggle"
+                    :aria-expanded="isGroupExpanded(entryGroup.groupKey)"
+                    :aria-label="
+                      isGroupExpanded(entryGroup.groupKey)
+                        ? $t('timer.group.collapseAria', {
+                            count: entryGroup.count,
+                            description: entryGroup.description,
+                          })
+                        : $t('timer.group.expandAria', {
+                            count: entryGroup.count,
+                            description: entryGroup.description,
+                          })
+                    "
+                    class="inline-flex items-center gap-2 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                    @click.stop="toggleGroupExpanded(entryGroup)"
                   >
-                    <Check class="h-3.5 w-3.5" />
+                    <ChevronDown
+                      v-if="isGroupExpanded(entryGroup.groupKey)"
+                      class="h-3.5 w-3.5 shrink-0 text-accent"
+                    />
+                    <ChevronRight
+                      v-else
+                      class="h-3.5 w-3.5 shrink-0 text-accent"
+                    />
+
+                    <span
+                      data-testid="tracker-log-group-count"
+                      :title="$t('timer.group.entriesBadgeTitle', { count: entryGroup.count })"
+                      class="tabular-telemetry inline-flex h-5 min-w-5 items-center justify-center border border-accent/40 bg-accent/10 px-1.5 text-[11px] font-mono font-semibold text-accent"
+                    >
+                      {{ entryGroup.count }}
+                    </span>
+
+                    <span class="text-sm font-medium text-text-primary">
+                      {{ entryGroup.description }}
+                    </span>
                   </button>
-                  <button
-                    type="button"
-                    class="inline-flex h-8 items-center border border-border-hairline bg-bg-primary px-2 text-xs text-text-muted"
-                    @click="editingLogId = null"
-                  >
-                    <X class="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
 
-              <div class="flex flex-wrap items-center gap-1.5">
-                <button
-                  v-for="tag in editScopedTags"
-                  :key="tag.id"
-                  type="button"
-                  class="border px-2 py-0.5 text-[11px] font-mono"
-                  :class="
-                    editTagIds.includes(tag.id)
-                      ? 'border-accent bg-accent/15 text-accent'
-                      : 'border-border-hairline bg-bg-primary text-text-muted'
-                  "
-                  @click="toggleEditTag(tag.id)"
-                >
-                  #{{ tag.name }}
-                </button>
-                <label class="ml-2 inline-flex items-center gap-1 text-xs font-mono text-text-muted cursor-pointer">
-                  <input v-model="editBillable" type="checkbox" class="accent-accent" />
-                  <span>$</span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Standard Display Row -->
-            <div v-else class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex flex-wrap items-center gap-2.5 min-w-0">
-                <span class="text-sm font-medium text-text-primary">
-                  {{ log.description }}
-                </span>
-
-                <span class="inline-flex items-center gap-1.5 border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs">
-                  <span
-                    class="h-2 w-2"
-                    :style="{ backgroundColor: log.projectColorSnapshot }"
-                  />
-                  <span>
-                    {{
-                      displayProjectName(
-                        catalogStore.getProjectById(log.projectId),
-                        log.projectNameSnapshot
-                      )
-                    }}
+                  <span class="inline-flex items-center gap-1.5 border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs">
+                    <span
+                      class="h-2 w-2"
+                      :style="{ backgroundColor: entryGroup.projectColorSnapshot }"
+                    />
+                    <span>
+                      {{
+                        displayProjectName(
+                          catalogStore.getProjectById(entryGroup.projectId),
+                          entryGroup.projectNameSnapshot
+                        )
+                      }}
+                    </span>
                   </span>
-                </span>
 
-                <span
-                  v-for="(tagName, idx) in log.tagNamesSnapshot"
-                  :key="idx"
-                  class="border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[11px] font-mono text-text-muted"
-                >
-                  #{{ tagName }}
-                </span>
-
-                <span
-                  v-if="log.isBillable"
-                  class="border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent"
-                >
-                  $
-                </span>
-              </div>
-
-              <div class="flex items-center gap-3 shrink-0">
-                <span class="tabular-telemetry hidden sm:inline text-xs font-mono text-text-muted">
-                  {{ formatTime(log.startTime) }} – {{ formatTime(log.endTime) }}
-                </span>
-                <span class="tabular-telemetry font-mono text-sm font-semibold text-text-primary">
-                  {{ formatDuration(log.durationSeconds) }}
-                </span>
-
-                <div class="flex items-center gap-1">
-                  <button
-                    type="button"
-                    class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary"
-                    :aria-label="$t('timer.editButton')"
-                    @click="startInlineEdit(log)"
+                  <span
+                    v-if="displayTaskName(entryGroup.taskId, entryGroup.taskNameSnapshot)"
+                    class="inline-flex items-center gap-1 border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[11px] font-mono text-text-muted"
                   >
-                    <Edit3 class="h-3 w-3" />
-                  </button>
-                  <button
-                    type="button"
-                    class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400"
-                    :aria-label="$t('timer.deleteButton')"
-                    @click="handleDeleteLog(log.id)"
+                    <CheckSquare class="h-3 w-3 text-accent" />
+                    <span>{{ displayTaskName(entryGroup.taskId, entryGroup.taskNameSnapshot) }}</span>
+                  </span>
+
+                  <span
+                    v-for="(tagName, idx) in entryGroup.tagNamesSnapshot"
+                    :key="idx"
+                    class="border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[11px] font-mono text-text-muted"
                   >
-                    <Trash2 class="h-3 w-3" />
-                  </button>
+                    #{{ tagName }}
+                  </span>
+
+                  <span
+                    v-if="entryGroup.isBillable"
+                    class="border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent"
+                  >
+                    $
+                  </span>
+                </div>
+
+                <div class="flex items-center gap-3 shrink-0">
+                  <span class="tabular-telemetry hidden sm:inline text-xs font-mono text-text-muted">
+                    {{ formatTime(entryGroup.earliestStartTime) }} – {{ formatTime(entryGroup.latestEndTime) }}
+                  </span>
+                  <span
+                    data-testid="tracker-log-group-duration"
+                    class="tabular-telemetry font-mono text-sm font-semibold text-text-primary"
+                  >
+                    {{ formatDuration(entryGroup.totalSeconds) }}
+                  </span>
+
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      data-testid="tracker-log-group-delete"
+                      class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
+                      :aria-label="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
+                      :title="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
+                      @click.stop="handleDeleteGroup(entryGroup)"
+                    >
+                      <Trash2 class="h-3 w-3" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </li>
+
+              <!-- Expanded Individual TimeLog Executions -->
+              <ul
+                v-if="isGroupExpanded(entryGroup.groupKey)"
+                data-testid="tracker-log-group-items"
+                class="divide-y divide-border-hairline border-t border-border-hairline bg-bg-primary/40"
+              >
+                <li
+                  v-for="(log, subIdx) in entryGroup.items"
+                  :key="log.id"
+                  data-testid="tracker-log-row"
+                  data-subrow="true"
+                  class="pl-9 sm:pl-11 pr-4 py-2.5 hover:bg-bg-hover/50 transition-colors"
+                >
+                  <TimerTrackerLogInlineEditor
+                    v-if="editingLogId === log.id"
+                    v-model:description="editDescription"
+                    v-model:is-billable="editBillable"
+                    v-model:duration-h-m-s="editDurationHMS"
+                    :project-id="editProjectId"
+                    :tag-ids="editTagIds"
+                    :projects="catalogStore.sortedProjects"
+                    :scoped-tags="editScopedTags"
+                    @change-project="handleEditProjectChange"
+                    @toggle-tag="toggleEditTag"
+                    @save="saveInlineEdit(log)"
+                    @cancel="editingLogId = null"
+                  />
+
+                  <div v-else class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-wrap items-center gap-2 min-w-0">
+                      <CornerDownRight class="h-3 w-3 shrink-0 text-text-muted" />
+                      <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px] font-mono text-text-muted">
+                        #{{ entryGroup.count - subIdx }}
+                      </span>
+                      <span class="text-xs sm:text-sm text-text-primary">
+                        {{ log.description }}
+                      </span>
+                      <span
+                        v-if="log.isBillable"
+                        class="border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent"
+                      >
+                        $
+                      </span>
+                    </div>
+
+                    <div class="flex items-center gap-3 shrink-0">
+                      <span class="tabular-telemetry text-xs font-mono text-text-muted">
+                        {{ formatTime(log.startTime) }} – {{ formatTime(log.endTime) }}
+                      </span>
+                      <span class="tabular-telemetry font-mono text-xs sm:text-sm font-medium text-text-primary">
+                        {{ formatDuration(log.durationSeconds) }}
+                      </span>
+
+                      <div class="flex items-center gap-1">
+                        <button
+                          type="button"
+                          class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary transition-colors"
+                          :aria-label="$t('timer.editButton')"
+                          @click="startInlineEdit(log)"
+                        >
+                          <Edit3 class="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
+                          :aria-label="$t('timer.deleteButton')"
+                          @click="handleDeleteLog(log.id)"
+                        >
+                          <Trash2 class="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              </ul>
+            </li>
+
+            <!-- Standalone Single TimeLog Row (count === 1) -->
+            <li
+              v-else
+              data-testid="tracker-log-row"
+              class="px-4 py-3 hover:bg-bg-hover/50 transition-colors"
+            >
+              <TimerTrackerLogInlineEditor
+                v-if="editingLogId === entryGroup.items[0]!.id"
+                v-model:description="editDescription"
+                v-model:is-billable="editBillable"
+                v-model:duration-h-m-s="editDurationHMS"
+                :project-id="editProjectId"
+                :tag-ids="editTagIds"
+                :projects="catalogStore.sortedProjects"
+                :scoped-tags="editScopedTags"
+                @change-project="handleEditProjectChange"
+                @toggle-tag="toggleEditTag"
+                @save="saveInlineEdit(entryGroup.items[0]!)"
+                @cancel="editingLogId = null"
+              />
+
+              <div v-else class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2.5 min-w-0">
+                  <span class="text-sm font-medium text-text-primary">
+                    {{ entryGroup.items[0]!.description }}
+                  </span>
+
+                  <span class="inline-flex items-center gap-1.5 border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs">
+                    <span
+                      class="h-2 w-2"
+                      :style="{ backgroundColor: entryGroup.items[0]!.projectColorSnapshot }"
+                    />
+                    <span>
+                      {{
+                        displayProjectName(
+                          catalogStore.getProjectById(entryGroup.items[0]!.projectId),
+                          entryGroup.items[0]!.projectNameSnapshot
+                        )
+                      }}
+                    </span>
+                  </span>
+
+                  <span
+                    v-if="displayTaskName(entryGroup.items[0]!.taskId, entryGroup.items[0]!.taskNameSnapshot)"
+                    class="inline-flex items-center gap-1 border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[11px] font-mono text-text-muted"
+                  >
+                    <CheckSquare class="h-3 w-3 text-accent" />
+                    <span>{{ displayTaskName(entryGroup.items[0]!.taskId, entryGroup.items[0]!.taskNameSnapshot) }}</span>
+                  </span>
+
+                  <span
+                    v-for="(tagName, idx) in entryGroup.items[0]!.tagNamesSnapshot"
+                    :key="idx"
+                    class="border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[11px] font-mono text-text-muted"
+                  >
+                    #{{ tagName }}
+                  </span>
+
+                  <span
+                    v-if="entryGroup.items[0]!.isBillable"
+                    class="border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent"
+                  >
+                    $
+                  </span>
+                </div>
+
+                <div class="flex items-center gap-3 shrink-0">
+                  <span class="tabular-telemetry hidden sm:inline text-xs font-mono text-text-muted">
+                    {{ formatTime(entryGroup.items[0]!.startTime) }} – {{ formatTime(entryGroup.items[0]!.endTime) }}
+                  </span>
+                  <span class="tabular-telemetry font-mono text-sm font-semibold text-text-primary">
+                    {{ formatDuration(entryGroup.items[0]!.durationSeconds) }}
+                  </span>
+
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary transition-colors"
+                      :aria-label="$t('timer.editButton')"
+                      @click="startInlineEdit(entryGroup.items[0]!)"
+                    >
+                      <Edit3 class="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
+                      :aria-label="$t('timer.deleteButton')"
+                      @click="handleDeleteLog(entryGroup.items[0]!.id)"
+                    >
+                      <Trash2 class="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </li>
+          </template>
         </ul>
       </div>
 
