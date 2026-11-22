@@ -204,6 +204,18 @@ const ptBR: LocaleMessages = {
     saveEditButton: 'Salvar',
     cancelEditButton: 'Cancelar',
     deleteButton: 'Excluir',
+    pagination: {
+      ariaLabel: 'Paginação em janelas de 7 dias do rastreador',
+      windowLabel: 'JANELA DE 7 DIAS',
+      previous: 'Anterior',
+      next: 'Próxima',
+      first: 'Janela mais recente',
+      last: 'Janela mais antiga',
+      pageOf: 'Página {page} / {total}',
+      daysCount: '{count}d',
+      entriesCount: '{count} registros',
+      showingWindow: 'Exibindo {shown} de {total} registros',
+    },
     errors: {
       AI_RATE_LIMITED: 'Limite de uso da IA atingido. Tente novamente em um minuto.',
       AI_UNAVAILABLE: 'Serviço de IA temporariamente indisponível.',

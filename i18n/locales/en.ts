@@ -200,6 +200,18 @@ const en = {
     saveEditButton: 'Save',
     cancelEditButton: 'Cancel',
     deleteButton: 'Delete',
+    pagination: {
+      ariaLabel: 'Tracker 7-day window pagination',
+      windowLabel: '7-DAY WINDOW',
+      previous: 'Previous',
+      next: 'Next',
+      first: 'Latest window',
+      last: 'Oldest window',
+      pageOf: 'Page {page} / {total}',
+      daysCount: '{count}d',
+      entriesCount: '{count} entries',
+      showingWindow: 'Showing {shown} of {total} logs',
+    },
     errors: {
       AI_RATE_LIMITED: 'AI Auto-Fill rate limit reached. Try again in a minute.',
       AI_UNAVAILABLE: 'AI Auto-Fill service is temporarily unavailable.',

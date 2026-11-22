@@ -58,6 +58,27 @@ export function useFormat(prefsOverride?: MaybeRefOrGetter<UserPreferences>) {
     }).format(date);
   }
 
+  function formatDateKey(dateKey: string): string {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+    if (!match || !match[1] || !match[2] || !match[3]) return dateKey;
+    const y = match[1];
+    const m = match[2];
+    const d = match[3];
+    const { dateFormat } = resolvedPrefs.value;
+
+    if (dateFormat === 'YYYY-MM-DD') return `${y}-${m}-${d}`;
+    if (dateFormat === 'DD/MM/YYYY') return `${d}/${m}/${y}`;
+    if (dateFormat === 'MM/DD/YYYY') return `${m}/${d}/${y}`;
+
+    const safeUtcNoon = new Date(`${y}-${m}-${d}T12:00:00.000Z`);
+    return new Intl.DateTimeFormat(intlLocale.value, {
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+    }).format(safeUtcNoon);
+  }
+
   function formatTime(utcIsoOrDate: string | Date): string {
     const date = typeof utcIsoOrDate === 'string' ? new Date(utcIsoOrDate) : utcIsoOrDate;
     if (Number.isNaN(date.getTime())) return '';
@@ -74,6 +95,7 @@ export function useFormat(prefsOverride?: MaybeRefOrGetter<UserPreferences>) {
     formatDuration,
     formatDecimalHours,
     formatDate,
+    formatDateKey,
     formatTime,
   };
 }

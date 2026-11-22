@@ -15,7 +15,9 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
   const loading = ref(false);
 
   const sortedLogs = computed(() =>
-    [...logs.value].sort((a, b) => b.startTime.localeCompare(a.startTime))
+    [...logs.value].sort((a, b) =>
+      a.startTime < b.startTime ? 1 : a.startTime > b.startTime ? -1 : 0
+    )
   );
 
   function persistLocal() {

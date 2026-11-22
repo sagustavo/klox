@@ -2,6 +2,12 @@
 import { Plus, Trash2, Edit3, Check, X } from 'lucide-vue-next';
 import { formatHMS, parseHMS, toDateKey } from '~/domain/duration';
 import { UNASSIGNED_PROJECT_ID, applyProjectSwitch } from '~/domain/invariants';
+import {
+  TRACKER_FEED_WINDOW_DAYS,
+  findPageIndexForDateKey,
+  groupLogsByCalendarDay,
+  sliceTrackerFeedWindow,
+} from '~/domain/trackerFeed';
 import type { EntityId, Project, TimeLog } from '~/domain/types';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
@@ -23,6 +29,10 @@ const prefsStore = usePreferencesStore();
 const timerStore = useTimerStore();
 const timeLogsStore = useTimeLogsStore();
 const { formatDuration, formatTime } = useFormat(() => prefsStore.preferences);
+
+// 7-day windowed pagination state (NFR-1.1)
+const currentPageIndex = ref(0);
+const feedTopRef = ref<HTMLElement | null>(null);
 
 // Manual Time Log form state
 const showManualForm = ref(false);
@@ -100,7 +110,7 @@ async function handleSaveManualLog() {
   const startIso = new Date(`${manualDate.value}T${manualStartHM.value}:00`).toISOString();
   const endIso = new Date(Date.parse(startIso) + durSeconds * 1000).toISOString();
 
-  await timeLogsStore.createTimeLog({
+  const created = await timeLogsStore.createTimeLog({
     uid: authStore.user.uid,
     isDemo: authStore.isDemoMode,
     description: manualDescription.value.trim() || 'Manual entry',
@@ -112,6 +122,12 @@ async function handleSaveManualLog() {
     durationSeconds: durSeconds,
     source: 'manual',
   });
+
+  currentPageIndex.value = findPageIndexForDateKey(
+    allDayGroups.value,
+    toDateKey(created.startTime, prefsStore.preferences.timeZone),
+    TRACKER_FEED_WINDOW_DAYS
+  );
 
   manualDescription.value = '';
   manualDurationHMS.value = '01:00:00';
@@ -182,24 +198,40 @@ async function handleDeleteLog(logId: EntityId) {
   });
 }
 
-// Group historical logs by dateKey descending
-const groupedByDay = computed(() => {
-  const groups = new Map<string, { dateKey: string; totalSeconds: number; items: TimeLog[] }>();
-  for (const log of timeLogsStore.sortedLogs) {
-    const existing = groups.get(log.dateKey);
-    if (!existing) {
-      groups.set(log.dateKey, {
-        dateKey: log.dateKey,
-        totalSeconds: log.durationSeconds,
-        items: [log],
-      });
-    } else {
-      existing.totalSeconds += log.durationSeconds;
-      existing.items.push(log);
+// Group historical logs by calendar day in UserPreferences.timeZone (O(N), cached until logs/tz change)
+const allDayGroups = computed(() =>
+  groupLogsByCalendarDay(timeLogsStore.logs, prefsStore.preferences.timeZone)
+);
+
+// Slice strictly 7 distinct calendar days per page (O(1) on page turn; off-page logs never mounted)
+const feedWindow = computed(() =>
+  sliceTrackerFeedWindow({
+    dayGroups: allDayGroups.value,
+    pageIndex: currentPageIndex.value,
+    windowSizeDays: TRACKER_FEED_WINDOW_DAYS,
+    totalLogsCount: timeLogsStore.logs.length,
+  })
+);
+
+watch(
+  () => feedWindow.value.pageIndex,
+  (clamped) => {
+    if (currentPageIndex.value !== clamped) {
+      currentPageIndex.value = clamped;
     }
   }
-  return Array.from(groups.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
-});
+);
+
+function goToPage(nextIndex: number, scrollToTop = false) {
+  const maxIndex = Math.max(0, feedWindow.value.totalPages - 1);
+  const clamped = Math.min(Math.max(0, nextIndex), maxIndex);
+  if (clamped === currentPageIndex.value) return;
+  editingLogId.value = null;
+  currentPageIndex.value = clamped;
+  if (scrollToTop && import.meta.client) {
+    feedTopRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
 </script>
 
 <template>
@@ -214,7 +246,7 @@ const groupedByDay = computed(() => {
     <OnboardingGettingStartedChecklist />
 
     <!-- Manual Entry Toggle & Collapsible Form -->
-    <div class="flex items-center justify-between">
+    <div ref="feedTopRef" class="flex items-center justify-between">
       <div class="text-xs font-mono uppercase tracking-wider text-text-muted">
         {{ $t('timer.logsHeader') }} ({{ timeLogsStore.logs.length }})
       </div>
@@ -319,18 +351,24 @@ const groupedByDay = computed(() => {
       </div>
     </form>
 
-    <!-- Historical TimeLogs Grouped by Day -->
+    <!-- Historical TimeLogs Paginated into 7-Day Calendar Windows (NFR-1.1) -->
     <div
-      v-if="groupedByDay.length === 0"
+      v-if="feedWindow.days.length === 0"
       class="border border-border-hairline bg-bg-elevated p-8 text-center text-xs font-mono text-text-muted"
     >
       {{ $t('timer.emptyLogs') }}
     </div>
 
     <div v-else class="space-y-4">
+      <TimerTrackerPaginationBar
+        :window="feedWindow"
+        @navigate="goToPage($event, false)"
+      />
+
       <div
-        v-for="group in groupedByDay"
+        v-for="group in feedWindow.days"
         :key="group.dateKey"
+        data-testid="tracker-day-group"
         class="border border-border-hairline bg-bg-elevated"
       >
         <div class="flex items-center justify-between border-b border-border-hairline bg-bg-primary/60 px-4 py-2 text-xs font-mono">
@@ -347,6 +385,7 @@ const groupedByDay = computed(() => {
           <li
             v-for="log in group.items"
             :key="log.id"
+            data-testid="tracker-log-row"
             class="px-4 py-3 hover:bg-bg-hover/50 transition-colors"
           >
             <!-- Inline Edit Mode -->
@@ -484,6 +523,13 @@ const groupedByDay = computed(() => {
           </li>
         </ul>
       </div>
+
+      <TimerTrackerPaginationBar
+        v-if="feedWindow.totalPages > 1"
+        :window="feedWindow"
+        compact
+        @navigate="goToPage($event, true)"
+      />
     </div>
   </div>
 </template>
