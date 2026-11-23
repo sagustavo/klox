@@ -73,7 +73,7 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | **NFR-1.2** | Product Backlog Item | High-Volume Toggl CSV Import Optimization & Filterable Preview Table | Performance & Scale | 2 - High | Free | Next |
 | **FR-5.1** | Product Backlog Item | Same-Day Log Grouping & Expandable Accordion | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-5.2** | Product Backlog Item | Direct Click-to-Edit Time Range, Overlapping Logs & Live Start Adjustment | Timer & Log Ergonomics | 2 - High | Free | Done |
-| **FR-5.3** | Product Backlog Item | Destructive Action Confirmation & Project Tag Renaming | Catalog & Safety | 2 - High | Free | Next |
+| **FR-5.3** | Product Backlog Item | Destructive Action Confirmation & Project Tag Renaming | Catalog & Safety | 2 - High | Free | Done |
 | **FR-5.4** | Product Backlog Item | Dashboard Multi-Dimension Slicing, 2-Level Grouping & Time Granularity | Analytics Dashboard | 2 - High | Free | Next |
 | **FR-5.5** | Product Backlog Item | Dedicated Multi-Select Filter Inputs with "Select All" | Analytics Dashboard | 3 - Medium | Free | Next |
 | **UX-1.1** | Product Backlog Item | User-Friendly Copy & Base Typography Scaling | Copy & Accessibility | 3 - Medium | Free | Next |
@@ -218,15 +218,15 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Catalog & Safety`
 - **Phase:** `9`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `catalog; tags; safety; modal; phase-9`
-- **Description:** Protect users against accidental data loss with standardized confirmation dialogs on every delete action, and allow renaming existing `ProjectTag` items in the catalog.
+- **Description:** Protect users against accidental data loss with standardized confirmation dialogs on every delete action, and allow renaming existing `ProjectTag` items in the catalog while resolving tags by `tagId` on display, aggregation, and export ([ADR-0010](../adr/0010-tag-id-references-without-snapshots.md)).
 - **Acceptance Criteria:**
-  - [ ] Deleting any `TimeLog`, `Project`, `ProjectTag`, or `Task` (including cascading subtasks/sub-subtasks) opens a standardized confirmation dialog/popover before committing deletion.
-  - [ ] Confirmation dialogs are keyboard-accessible (`Enter` confirms, `Esc` cancels, focus returns cleanly).
-  - [ ] Users can edit/rename any existing `ProjectTag` inline or via dialog, updating the catalog entity and handling historical `tagNamesSnapshot` display/consistency cleanly.
+  - [x] Deleting any `TimeLog`, `Project`, `ProjectTag`, or `Task` (including cascading subtasks/sub-subtasks) opens a standardized confirmation dialog/popover before committing deletion.
+  - [x] Confirmation dialogs are keyboard-accessible (`Enter` confirms, `Esc` cancels, focus returns cleanly).
+  - [x] Users can edit/rename any existing `ProjectTag` inline in the catalog, updating only the catalog entity while historical `TimeLog` entries reference `tagIds` and resolve live tag names on display, analytics aggregation, and Toggl CSV export without `tagNamesSnapshot` mutations ([ADR-0010](../adr/0010-tag-id-references-without-snapshots.md)).
 
 #### [FR-5.4] Dashboard Multi-Dimension Slicing, 2-Level Grouping & Time Granularity
 - **Work Item Type:** `Product Backlog Item`

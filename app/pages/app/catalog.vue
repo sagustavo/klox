@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { Plus, Trash2, Tag, CheckSquare, Play, CornerDownRight } from 'lucide-vue-next';
-import { MAX_TASK_DEPTH, PROJECT_COLOR_PALETTE, UNASSIGNED_PROJECT_ID } from '~/domain/invariants';
+import { Check, CheckSquare, CornerDownRight, Pencil, Play, Plus, Tag, Trash2, X } from 'lucide-vue-next';
+import {
+  MAX_TASK_DEPTH,
+  PROJECT_COLOR_PALETTE,
+  UNASSIGNED_PROJECT_ID,
+  collectDescendantTaskIds,
+} from '~/domain/invariants';
 import { renderBasicMarkdown } from '~/domain/markdown';
-import type { EntityId, Project, TaskStatus } from '~/domain/types';
+import type { EntityId, Project, ProjectTag, Task, TaskStatus } from '~/domain/types';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
 import { useTimerStore } from '~/stores/timer';
@@ -30,14 +35,28 @@ const editName = ref('');
 const editColor = ref('#3B82F6');
 const editBillable = ref(false);
 
-// New Tag & Hierarchical Task form state
+// New Tag, Inline Tag Rename & Hierarchical Task form state
 const newTagName = ref('');
+const editingTagId = ref<EntityId | null>(null);
+const editingTagName = ref('');
+const tagRenameError = ref<string | null>(null);
+const tagRenameInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null);
+
 const newTaskName = ref('');
 const newTaskDescription = ref('');
 const newTaskParentId = ref<EntityId>('');
 const newTaskTargetHours = ref('');
 const newTaskAdoId = ref('');
 const taskNameInputRef = ref<HTMLInputElement | null>(null);
+
+// Standardized Delete Confirmation state (FR-5.3)
+type PendingCatalogDelete =
+  | { kind: 'project'; project: Project; tagCount: number; taskCount: number }
+  | { kind: 'tag'; tag: ProjectTag }
+  | { kind: 'task'; taskId: EntityId; name: string; descendantCount: number };
+
+const pendingDelete = ref<PendingCatalogDelete | null>(null);
+const isDeleting = ref(false);
 
 onMounted(async () => {
   if (authStore.user) {
@@ -78,6 +97,7 @@ function selectProject(project: Project) {
   editColor.value = project.color;
   editBillable.value = project.isBillableDefault;
   newTaskParentId.value = '';
+  cancelEditTag();
 }
 
 async function handleCreateProject() {
@@ -108,16 +128,15 @@ async function handleUpdateSelectedProject() {
   });
 }
 
-async function handleDeleteSelectedProject() {
+function requestDeleteSelectedProject() {
   if (!authStore.user || !selectedProject.value) return;
   if (selectedProject.value.systemKey === 'unassigned') return;
-  await catalogStore.deleteProject({
-    uid: authStore.user.uid,
-    isDemo: authStore.isDemoMode,
-    projectId: selectedProject.value.id,
-  });
-  const fallback = catalogStore.sortedProjects[0];
-  if (fallback) selectProject(fallback);
+  pendingDelete.value = {
+    kind: 'project',
+    project: selectedProject.value,
+    tagCount: scopedTags.value.length,
+    taskCount: flattenedTasks.value.length,
+  };
 }
 
 async function handleCreateTag() {
@@ -131,13 +150,41 @@ async function handleCreateTag() {
   newTagName.value = '';
 }
 
-async function handleDeleteTag(tagId: EntityId) {
+function startEditTag(tag: ProjectTag) {
+  editingTagId.value = tag.id;
+  editingTagName.value = tag.name;
+  tagRenameError.value = null;
+  nextTick(() => {
+    const rawRef = tagRenameInputRef.value;
+    const inputEl = Array.isArray(rawRef) ? rawRef[0] : rawRef;
+    inputEl?.focus();
+    inputEl?.select();
+  });
+}
+
+function cancelEditTag() {
+  editingTagId.value = null;
+  editingTagName.value = '';
+  tagRenameError.value = null;
+}
+
+async function saveEditTag(tagId: EntityId) {
   if (!authStore.user) return;
-  await catalogStore.deleteTag({
+  const result = await catalogStore.renameTag({
     uid: authStore.user.uid,
     isDemo: authStore.isDemoMode,
     tagId,
+    name: editingTagName.value,
   });
+  if (!result.ok) {
+    tagRenameError.value = result.error ?? 'TAG_NAME_EMPTY';
+    return;
+  }
+  cancelEditTag();
+}
+
+function requestDeleteTag(tag: ProjectTag) {
+  pendingDelete.value = { kind: 'tag', tag };
 }
 
 async function handleCreateTask() {
@@ -189,13 +236,85 @@ async function handleCycleTaskStatus(taskId: EntityId, current: TaskStatus) {
   });
 }
 
-async function handleDeleteTask(taskId: EntityId) {
-  if (!authStore.user) return;
-  await catalogStore.deleteTask({
-    uid: authStore.user.uid,
-    isDemo: authStore.isDemoMode,
-    taskId,
-  });
+function requestDeleteTask(task: Task) {
+  const ids = collectDescendantTaskIds(task.id, catalogStore.tasks);
+  pendingDelete.value = {
+    kind: 'task',
+    taskId: task.id,
+    name: task.name,
+    descendantCount: Math.max(0, ids.length - 1),
+  };
+}
+
+const confirmDialogTitle = computed(() => {
+  const target = pendingDelete.value;
+  if (!target) return '';
+  if (target.kind === 'project') return t('confirm.deleteProjectTitle');
+  if (target.kind === 'tag') return t('confirm.deleteTagTitle');
+  return t('confirm.deleteTaskTitle');
+});
+
+const confirmDialogDescription = computed(() => {
+  const target = pendingDelete.value;
+  if (!target) return '';
+  if (target.kind === 'project') {
+    return t('confirm.deleteProjectDesc', {
+      name: target.project.name,
+      tagCount: target.tagCount,
+      taskCount: target.taskCount,
+    });
+  }
+  if (target.kind === 'tag') {
+    return t('confirm.deleteTagDesc', { name: target.tag.name });
+  }
+  if (target.descendantCount > 0) {
+    return t('confirm.deleteTaskCascadeDesc', {
+      name: target.name,
+      descendantCount: target.descendantCount,
+    });
+  }
+  return t('confirm.deleteTaskDesc', { name: target.name });
+});
+
+const confirmDialogDetail = computed(() => {
+  const target = pendingDelete.value;
+  if (!target) return undefined;
+  if (target.kind === 'project') return target.project.name;
+  if (target.kind === 'tag') return `#${target.tag.name}`;
+  return target.name;
+});
+
+async function confirmCatalogDelete() {
+  if (!authStore.user || !pendingDelete.value || isDeleting.value) return;
+  isDeleting.value = true;
+  try {
+    const target = pendingDelete.value;
+    if (target.kind === 'project') {
+      await catalogStore.deleteProject({
+        uid: authStore.user.uid,
+        isDemo: authStore.isDemoMode,
+        projectId: target.project.id,
+      });
+      const fallback = catalogStore.sortedProjects[0];
+      if (fallback) selectProject(fallback);
+    } else if (target.kind === 'tag') {
+      if (editingTagId.value === target.tag.id) cancelEditTag();
+      await catalogStore.deleteTag({
+        uid: authStore.user.uid,
+        isDemo: authStore.isDemoMode,
+        tagId: target.tag.id,
+      });
+    } else {
+      await catalogStore.deleteTask({
+        uid: authStore.user.uid,
+        isDemo: authStore.isDemoMode,
+        taskId: target.taskId,
+      });
+    }
+    pendingDelete.value = null;
+  } finally {
+    isDeleting.value = false;
+  }
 }
 </script>
 
@@ -348,8 +467,9 @@ async function handleDeleteTask(taskId: EntityId) {
             <button
               v-if="selectedProject.systemKey !== 'unassigned'"
               type="button"
+              data-testid="catalog-project-delete"
               class="inline-flex h-7 items-center gap-1 border border-red-500/40 bg-red-500/10 px-2.5 text-[11px] font-mono uppercase text-red-400 hover:bg-red-500/20"
-              @click="handleDeleteSelectedProject"
+              @click="requestDeleteSelectedProject"
             >
               <Trash2 class="h-3 w-3" />
               <span>{{ $t('catalog.deleteProject') }}</span>
@@ -419,22 +539,96 @@ async function handleDeleteTask(taskId: EntityId) {
             {{ $t('catalog.noTagsYet') }}
           </div>
 
-          <div v-else class="mt-4 flex flex-wrap gap-2">
-            <span
-              v-for="tag in scopedTags"
-              :key="tag.id"
-              class="inline-flex items-center gap-2 border border-border-hairline bg-bg-primary px-2.5 py-1 text-xs font-mono text-text-primary"
-            >
-              <span class="text-accent">#</span>
-              <span>{{ tag.name }}</span>
-              <button
-                type="button"
-                class="text-text-muted hover:text-red-400 transition-colors"
-                @click="handleDeleteTag(tag.id)"
+          <div v-else class="mt-4 space-y-2">
+            <div class="flex flex-wrap gap-2">
+              <span
+                v-for="tag in scopedTags"
+                :key="tag.id"
+                :data-testid="`catalog-tag-chip-${tag.id}`"
+                class="inline-flex items-center gap-1.5 border bg-bg-primary px-2.5 py-1 text-xs font-mono text-text-primary transition-colors"
+                :class="
+                  editingTagId === tag.id
+                    ? 'border-accent'
+                    : 'border-border-hairline'
+                "
               >
-                ×
-              </button>
-            </span>
+                <span class="text-accent">#</span>
+                <form
+                  v-if="editingTagId === tag.id"
+                  class="inline-flex items-center gap-1"
+                  @submit.prevent="saveEditTag(tag.id)"
+                >
+                  <input
+                    ref="tagRenameInputRef"
+                    v-model="editingTagName"
+                    type="text"
+                    maxlength="80"
+                    data-testid="catalog-tag-rename-input"
+                    :aria-label="$t('catalog.renameTagAria', { name: tag.name })"
+                    class="h-6 w-32 border border-border-hairline bg-bg-elevated px-1.5 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+                    @keydown.esc.stop.prevent="cancelEditTag"
+                  />
+                  <button
+                    type="submit"
+                    data-testid="catalog-tag-rename-save"
+                    class="inline-flex h-5 w-5 items-center justify-center text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                    :aria-label="$t('catalog.renameTagSave')"
+                    :title="$t('catalog.renameTagSave')"
+                  >
+                    <Check class="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="catalog-tag-rename-cancel"
+                    class="inline-flex h-5 w-5 items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+                    :aria-label="$t('catalog.renameTagCancel')"
+                    :title="$t('catalog.renameTagCancel')"
+                    @click="cancelEditTag"
+                  >
+                    <X class="h-3 w-3" />
+                  </button>
+                </form>
+
+                <template v-else>
+                  <button
+                    type="button"
+                    class="hover:text-accent transition-colors text-left"
+                    :title="$t('catalog.renameTagAria', { name: tag.name })"
+                    @click="startEditTag(tag)"
+                  >
+                    {{ tag.name }}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="catalog-tag-rename-trigger"
+                    class="inline-flex h-5 w-5 items-center justify-center text-text-muted hover:text-accent transition-colors"
+                    :aria-label="$t('catalog.renameTagAria', { name: tag.name })"
+                    :title="$t('catalog.renameTagAria', { name: tag.name })"
+                    @click="startEditTag(tag)"
+                  >
+                    <Pencil class="h-2.5 w-2.5" />
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="catalog-tag-delete-trigger"
+                    class="inline-flex h-5 w-5 items-center justify-center text-text-muted hover:text-red-400 transition-colors"
+                    :aria-label="$t('catalog.deleteTagAria', { name: tag.name })"
+                    :title="$t('catalog.deleteTagAria', { name: tag.name })"
+                    @click="requestDeleteTag(tag)"
+                  >
+                    <Trash2 class="h-2.5 w-2.5" />
+                  </button>
+                </template>
+              </span>
+            </div>
+
+            <p
+              v-if="tagRenameError"
+              data-testid="catalog-tag-rename-error"
+              class="text-xs font-mono text-red-400"
+            >
+              {{ $t(`catalog.tagRenameErrors.${tagRenameError}`) }}
+            </p>
           </div>
         </div>
 
@@ -587,10 +781,13 @@ async function handleDeleteTask(taskId: EntityId) {
 
                   <button
                     type="button"
+                    data-testid="catalog-task-delete-trigger"
                     class="text-text-muted hover:text-red-400 px-1"
-                    @click="handleDeleteTask(node.task.id)"
+                    :aria-label="$t('catalog.deleteTaskAria', { name: node.task.name })"
+                    :title="$t('catalog.deleteTaskAria', { name: node.task.name })"
+                    @click="requestDeleteTask(node.task)"
                   >
-                    ×
+                    <Trash2 class="h-3 w-3" />
                   </button>
                 </div>
               </div>
@@ -607,5 +804,17 @@ async function handleDeleteTask(taskId: EntityId) {
         </div>
       </div>
     </div>
+
+    <UiConfirmDialog
+      :open="Boolean(pendingDelete)"
+      :title="confirmDialogTitle"
+      :description="confirmDialogDescription"
+      :detail="confirmDialogDetail"
+      :loading="isDeleting"
+      test-id="catalog-delete-confirm-dialog"
+      @update:open="(open) => { if (!open && !isDeleting) pendingDelete = null; }"
+      @confirm="confirmCatalogDelete"
+      @cancel="pendingDelete = null"
+    />
   </div>
 </template>

@@ -73,7 +73,6 @@ export interface TimeLog {
   taskId?: EntityId;
   taskNameSnapshot?: string;
   tagIds: EntityId[];
-  tagNamesSnapshot: string[];
   isBillable: boolean;
   startTime: string; // UTC ISO
   endTime: string; // UTC ISO

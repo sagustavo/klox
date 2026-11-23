@@ -418,28 +418,72 @@ async function handleGroupBillableSave(entryGroup: TrackerLogGroup, nextBillable
   });
 }
 
-async function handleDeleteLog(logId: EntityId) {
-  if (!authStore.user) return;
-  await timeLogsStore.deleteTimeLog({
-    uid: authStore.user.uid,
-    isDemo: authStore.isDemoMode,
-    logId,
-  });
+type PendingDeleteTarget =
+  | { kind: 'log'; log: TimeLog }
+  | { kind: 'group'; entryGroup: TrackerLogGroup };
+
+const pendingDeleteTarget = ref<PendingDeleteTarget | null>(null);
+const isConfirmingDelete = ref(false);
+
+const confirmDialogTitle = computed(() => {
+  if (!pendingDeleteTarget.value) return '';
+  return pendingDeleteTarget.value.kind === 'group'
+    ? t('confirm.deleteGroupTitle')
+    : t('confirm.deleteTimeLogTitle');
+});
+
+const confirmDialogDescription = computed(() => {
+  if (!pendingDeleteTarget.value) return '';
+  return pendingDeleteTarget.value.kind === 'group'
+    ? t('confirm.deleteGroupDesc', { count: pendingDeleteTarget.value.entryGroup.count })
+    : t('confirm.deleteTimeLogDesc');
+});
+
+const confirmDialogDetail = computed(() => {
+  const target = pendingDeleteTarget.value;
+  if (!target) return '';
+  if (target.kind === 'group') {
+    return `${target.entryGroup.description} · ${target.entryGroup.count}× · ${formatDuration(target.entryGroup.totalSeconds)}`;
+  }
+  return `${target.log.description} · ${formatDuration(target.log.durationSeconds)}`;
+});
+
+function requestDeleteLog(log: TimeLog) {
+  pendingDeleteTarget.value = { kind: 'log', log };
 }
 
-async function handleDeleteGroup(entryGroup: TrackerLogGroup) {
-  if (!authStore.user) return;
-  const ids = entryGroup.items.map((item) => item.id);
-  if (expandedGroupKeys.value.has(entryGroup.groupKey)) {
-    const next = new Set(expandedGroupKeys.value);
-    next.delete(entryGroup.groupKey);
-    expandedGroupKeys.value = next;
+function requestDeleteGroup(entryGroup: TrackerLogGroup) {
+  pendingDeleteTarget.value = { kind: 'group', entryGroup };
+}
+
+async function confirmDeletePending() {
+  if (!authStore.user || !pendingDeleteTarget.value || isConfirmingDelete.value) return;
+  isConfirmingDelete.value = true;
+  try {
+    const target = pendingDeleteTarget.value;
+    if (target.kind === 'log') {
+      await timeLogsStore.deleteTimeLog({
+        uid: authStore.user.uid,
+        isDemo: authStore.isDemoMode,
+        logId: target.log.id,
+      });
+    } else {
+      const ids = target.entryGroup.items.map((item) => item.id);
+      if (expandedGroupKeys.value.has(target.entryGroup.groupKey)) {
+        const next = new Set(expandedGroupKeys.value);
+        next.delete(target.entryGroup.groupKey);
+        expandedGroupKeys.value = next;
+      }
+      await timeLogsStore.deleteTimeLogs({
+        uid: authStore.user.uid,
+        isDemo: authStore.isDemoMode,
+        logIds: ids,
+      });
+    }
+    pendingDeleteTarget.value = null;
+  } finally {
+    isConfirmingDelete.value = false;
   }
-  await timeLogsStore.deleteTimeLogs({
-    uid: authStore.user.uid,
-    isDemo: authStore.isDemoMode,
-    logIds: ids,
-  });
 }
 
 async function handleContinueActivity(log: TimeLog) {
@@ -885,7 +929,6 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   <UiTagMultiSelect
                     :model-value="entryGroup.tagIds"
                     :tags="catalogStore.getTagsForProject(entryGroup.projectId)"
-                    :fallback-snapshots="entryGroup.tagNamesSnapshot"
                     variant="row"
                     stop-propagation
                     test-id="tracker-group-tags-trigger"
@@ -930,7 +973,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                     class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
                     :aria-label="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
                     :title="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
-                    @click.stop="handleDeleteGroup(entryGroup)"
+                    @click.stop="requestDeleteGroup(entryGroup)"
                   >
                     <Trash2 class="h-3 w-3" />
                   </button>
@@ -975,7 +1018,6 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                       <UiTagMultiSelect
                         :model-value="log.tagIds"
                         :tags="catalogStore.getTagsForProject(log.projectId)"
-                        :fallback-snapshots="log.tagNamesSnapshot"
                         variant="row"
                         @update:model-value="handleSingleTagsSave(log, $event)"
                       />
@@ -1010,9 +1052,10 @@ function goToPage(nextIndex: number, scrollToTop = false) {
 
                       <button
                         type="button"
+                        data-testid="tracker-log-delete"
                         class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
                         :aria-label="$t('timer.deleteButton')"
-                        @click="handleDeleteLog(log.id)"
+                        @click="requestDeleteLog(log)"
                       >
                         <Trash2 class="h-3 w-3" />
                       </button>
@@ -1047,7 +1090,6 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   <UiTagMultiSelect
                     :model-value="entryGroup.items[0]!.tagIds"
                     :tags="catalogStore.getTagsForProject(entryGroup.items[0]!.projectId)"
-                    :fallback-snapshots="entryGroup.items[0]!.tagNamesSnapshot"
                     variant="row"
                     @update:model-value="handleSingleTagsSave(entryGroup.items[0]!, $event)"
                   />
@@ -1081,9 +1123,10 @@ function goToPage(nextIndex: number, scrollToTop = false) {
 
                   <button
                     type="button"
+                    data-testid="tracker-log-delete"
                     class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
                     :aria-label="$t('timer.deleteButton')"
-                    @click="handleDeleteLog(entryGroup.items[0]!.id)"
+                    @click="requestDeleteLog(entryGroup.items[0]!)"
                   >
                     <Trash2 class="h-3 w-3" />
                   </button>
@@ -1103,5 +1146,17 @@ function goToPage(nextIndex: number, scrollToTop = false) {
         @navigate="goToPage($event, true)"
       />
     </div>
+
+    <UiConfirmDialog
+      :open="Boolean(pendingDeleteTarget)"
+      :title="confirmDialogTitle"
+      :description="confirmDialogDescription"
+      :detail="confirmDialogDetail"
+      :loading="isConfirmingDelete"
+      test-id="tracker-delete-confirm-dialog"
+      @update:open="(open) => { if (!open && !isConfirmingDelete) pendingDeleteTarget = null; }"
+      @confirm="confirmDeletePending"
+      @cancel="pendingDeleteTarget = null"
+    />
   </div>
 </template>

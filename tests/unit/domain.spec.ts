@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aggregateDailyStacked,
   aggregatePizzaSlices,
   filterTimeLogs,
   groupLogsByTag,
@@ -26,7 +27,9 @@ import {
   createUnassignedProject,
   flattenTaskTree,
   formatTaskHierarchyLabel,
+  resolveTagNames,
   tagsForProject,
+  validateProjectTagRename,
   validateTaskParent,
 } from '../../app/domain/invariants';
 import { renderBasicMarkdown } from '../../app/domain/markdown';
@@ -249,7 +252,6 @@ describe('domain/invariants (Project-Scoped Tags)', () => {
         projectNameSnapshot: 'XP Core API',
         projectColorSnapshot: '#3B82F6',
         tagIds: ['t1'],
-        tagNamesSnapshot: ['backend'],
         isBillable: true,
         startTime: '2026-11-08T10:00:00.000Z',
         endTime: '2026-11-08T11:00:00.000Z',
@@ -266,7 +268,6 @@ describe('domain/invariants (Project-Scoped Tags)', () => {
         projectNameSnapshot: 'XP Core API',
         projectColorSnapshot: '#3B82F6',
         tagIds: ['t1', 't2'],
-        tagNamesSnapshot: ['backend', 'security'],
         isBillable: true,
         startTime: '2026-11-09T10:00:00.000Z',
         endTime: '2026-11-09T11:00:00.000Z',
@@ -296,9 +297,58 @@ describe('domain/invariants (Project-Scoped Tags)', () => {
     expect(validated.tagIds).toEqual(['t1']);
     expect(validated.isBillable).toBe(true);
   });
+
+  it('validates ProjectTag renames (empty, length, missing, duplicate) and resolves tag names dynamically from tagIds', () => {
+    expect(
+      validateProjectTagRename({
+        tagId: 't1',
+        nextName: '   ',
+        allTags: tags,
+      })
+    ).toEqual({ valid: false, normalizedName: '', error: 'TAG_NAME_EMPTY' });
+
+    expect(
+      validateProjectTagRename({
+        tagId: 't1',
+        nextName: 'x'.repeat(81),
+        allTags: tags,
+      }).error
+    ).toBe('TAG_NAME_TOO_LONG');
+
+    expect(
+      validateProjectTagRename({
+        tagId: 'missing',
+        nextName: 'platform',
+        allTags: tags,
+      }).error
+    ).toBe('TAG_NOT_FOUND');
+
+    expect(
+      validateProjectTagRename({
+        tagId: 't1',
+        nextName: '  SECURITY ',
+        allTags: tags,
+      }).error
+    ).toBe('TAG_DUPLICATE_NAME');
+
+    // Same name as tag in a DIFFERENT project is allowed (Project-Scoped Tag invariant)
+    expect(
+      validateProjectTagRename({
+        tagId: 't1',
+        nextName: '  cardio  ',
+        allTags: tags,
+      })
+    ).toEqual({ valid: true, normalizedName: 'cardio' });
+
+    expect(resolveTagNames(['t1', 'deleted-tag', 't3'], tags)).toEqual(['backend', 'cardio']);
+  });
 });
 
 describe('domain/aggregation (Analytics Dashboard)', () => {
+  const sampleTags: ProjectTag[] = [
+    { id: 't1', userId: 'u1', projectId: 'proj-a', name: 'backend', createdAt: '' },
+  ];
+
   const sampleLogs: TimeLog[] = [
     {
       id: 'l1',
@@ -309,7 +359,6 @@ describe('domain/aggregation (Analytics Dashboard)', () => {
       projectNameSnapshot: 'XP Core API',
       projectColorSnapshot: '#3B82F6',
       tagIds: ['t1'],
-      tagNamesSnapshot: ['backend'],
       isBillable: true,
       startTime: '2026-11-09T10:00:00.000Z',
       endTime: '2026-11-09T11:00:00.000Z',
@@ -326,7 +375,6 @@ describe('domain/aggregation (Analytics Dashboard)', () => {
       projectNameSnapshot: 'Marathon Prep',
       projectColorSnapshot: '#10B981',
       tagIds: [],
-      tagNamesSnapshot: [],
       isBillable: false,
       startTime: '2026-11-09T12:00:00.000Z',
       endTime: '2026-11-09T12:30:00.000Z',
@@ -354,17 +402,54 @@ describe('domain/aggregation (Analytics Dashboard)', () => {
     const pizza = aggregatePizzaSlices({
       logs: sampleLogs,
       dimension: 'project',
+      tags: sampleTags,
     });
     expect(pizza.totalTrackedSeconds).toBe(5400);
     expect(pizza.slices).toHaveLength(2);
 
-    const tagBuckets = groupLogsByTag(sampleLogs, 'Untagged');
+    const tagBuckets = groupLogsByTag(sampleLogs, 'Untagged', sampleTags);
     expect(tagBuckets.map((g) => g.tagLabel)).toEqual(['#backend', 'Untagged']);
+  });
+
+  it('reflects renamed ProjectTag live across charts and grouped table without mutating TimeLogs', () => {
+    const renamedTags: ProjectTag[] = [
+      { id: 't1', userId: 'u1', projectId: 'proj-a', name: 'api-core', createdAt: '' },
+    ];
+
+    const tagPizza = aggregatePizzaSlices({
+      logs: sampleLogs,
+      dimension: 'tag',
+      untaggedLabel: 'Untagged',
+      tags: renamedTags,
+    });
+    expect(tagPizza.slices.map((s) => s.label)).toEqual(['#api-core', 'Untagged']);
+
+    const tagStacked = aggregateDailyStacked({
+      logs: sampleLogs,
+      dimension: 'tag',
+      bounds: { startDateKey: '2026-11-09', endDateKey: '2026-11-09' },
+      untaggedLabel: 'Untagged',
+      tags: renamedTags,
+    });
+    expect(tagStacked.series.map((s) => s.label)).toEqual(['#api-core', 'Untagged']);
+
+    const tagBuckets = groupLogsByTag(sampleLogs, 'Untagged', renamedTags);
+    expect(tagBuckets.map((g) => g.tagLabel)).toEqual(['#api-core', 'Untagged']);
+
+    // Deleted tags are omitted cleanly and a log whose tags were all deleted falls back to Untagged
+    const deletedTagsBuckets = groupLogsByTag(sampleLogs, 'Untagged', []);
+    expect(deletedTagsBuckets.map((g) => g.tagLabel)).toEqual(['Untagged']);
+    expect(deletedTagsBuckets[0]?.subtotalSeconds).toBe(5400);
   });
 });
 
 describe('domain/toggl (Bi-Directional Toggl CSV Studio)', () => {
   it('serializes TimeLogs with UTF-8 BOM + official English headers and round-trips idempotently', async () => {
+    const catalogTags: ProjectTag[] = [
+      { id: 't1', userId: 'u1', projectId: 'proj-a', name: 'architecture', createdAt: '' },
+      { id: 't2', userId: 'u1', projectId: 'proj-a', name: 'security', createdAt: '' },
+    ];
+
     const existingLog: TimeLog = {
       id: 'initial-id',
       userId: 'u1',
@@ -374,7 +459,6 @@ describe('domain/toggl (Bi-Directional Toggl CSV Studio)', () => {
       projectNameSnapshot: 'XP Core API',
       projectColorSnapshot: '#3B82F6',
       tagIds: ['t1', 't2'],
-      tagNamesSnapshot: ['architecture', 'security'],
       isBillable: true,
       startTime: '2026-11-09T09:00:00.000Z',
       endTime: '2026-11-09T10:30:00.000Z',
@@ -387,10 +471,24 @@ describe('domain/toggl (Bi-Directional Toggl CSV Studio)', () => {
       logs: [existingLog],
       userName: 'Gustavo',
       userEmail: 'gustavo@klox.dev',
+      tags: catalogTags,
     });
 
     expect(csv.startsWith('\uFEFF')).toBe(true);
     expect(csv).toContain(TOGGL_CSV_HEADERS.join(','));
+    expect(csv).toContain('architecture, security');
+
+    // Renaming a tag updates CSV exports automatically without touching TimeLogs
+    const renamedExport = serializeTogglCsv({
+      logs: [existingLog],
+      userName: 'Gustavo',
+      userEmail: 'gustavo@klox.dev',
+      tags: [
+        { ...catalogTags[0]!, name: 'system-architecture' },
+        catalogTags[1]!,
+      ],
+    });
+    expect(renamedExport).toContain('system-architecture, security');
 
     // First import against empty state -> 1 new log, 1 new project, 2 new scoped tags
     const firstPreview = await parseAndPreviewTogglCsv({

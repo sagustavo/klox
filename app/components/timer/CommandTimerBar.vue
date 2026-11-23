@@ -276,6 +276,10 @@ async function handlePrimaryAction() {
  * `Cmd+I` / `Ctrl+I` and `Esc` work globally.
  */
 function handleGlobalKeydown(e: KeyboardEvent) {
+  if (document.querySelector('[role="alertdialog"], [role="dialog"]')) {
+    return;
+  }
+
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
     e.preventDefault();
     triggerAiAutofill();

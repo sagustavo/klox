@@ -10,7 +10,6 @@ export interface RecallTemplate {
   projectNameSnapshot: string;
   projectColorSnapshot: string;
   tagIds: EntityId[];
-  tagNamesSnapshot: string[];
   isBillable: boolean;
   frequency: number;
   lastUsedTime: string; // UTC ISO
@@ -38,7 +37,6 @@ export function buildRecallTemplates(logs: readonly TimeLog[]): RecallTemplate[]
         projectNameSnapshot: log.projectNameSnapshot,
         projectColorSnapshot: log.projectColorSnapshot,
         tagIds: [...log.tagIds],
-        tagNamesSnapshot: [...log.tagNamesSnapshot],
         isBillable: log.isBillable,
         frequency: 1,
         lastUsedTime: log.startTime,
@@ -48,7 +46,6 @@ export function buildRecallTemplates(logs: readonly TimeLog[]): RecallTemplate[]
       if (log.startTime > existing.lastUsedTime) {
         existing.description = log.description.trim();
         existing.tagIds = [...log.tagIds];
-        existing.tagNamesSnapshot = [...log.tagNamesSnapshot];
         existing.isBillable = log.isBillable;
         existing.lastUsedTime = log.startTime;
       }

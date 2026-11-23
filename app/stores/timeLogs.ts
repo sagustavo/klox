@@ -178,10 +178,9 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
 
     const resolvedProjectId = project?.id ?? UNASSIGNED_PROJECT_ID;
     const validScopedTags = tagsForProject(catalogStore.tags, resolvedProjectId);
-    const validTagMap = new Map(validScopedTags.map((t) => [t.id, t.name]));
+    const validTagSet = new Set(validScopedTags.map((t) => t.id));
 
-    const cleanTagIds = params.tagIds.filter((id) => validTagMap.has(id));
-    const tagNamesSnapshot = cleanTagIds.map((id) => validTagMap.get(id) ?? '');
+    const cleanTagIds = params.tagIds.filter((id) => validTagSet.has(id));
 
     const duration =
       params.durationSeconds !== undefined
@@ -204,7 +203,6 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
       projectColorSnapshot: project?.color ?? '#8E8E93',
       ...(task ? { taskId: task.id, taskNameSnapshot: task.name } : {}),
       tagIds: cleanTagIds,
-      tagNamesSnapshot,
       isBillable: params.isBillable,
       startTime: params.startTimeUTC,
       endTime: params.endTimeUTC,
@@ -294,12 +292,10 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
       const resolvedProjectId = project?.id ?? UNASSIGNED_PROJECT_ID;
 
       const cleanTagIds: EntityId[] = [];
-      const tagNamesSnapshot: string[] = [];
       for (const tid of item.tagIds) {
         const tagObj = tagById.get(tid);
         if (tagObj && tagObj.projectId === resolvedProjectId) {
           cleanTagIds.push(tagObj.id);
-          tagNamesSnapshot.push(tagObj.name);
         }
       }
 
@@ -323,7 +319,6 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
         projectColorSnapshot: project?.color ?? '#8E8E93',
         ...(validTask ? { taskId: validTask.id, taskNameSnapshot: validTask.name } : {}),
         tagIds: cleanTagIds,
-        tagNamesSnapshot,
         isBillable: item.isBillable,
         startTime: item.startTimeUTC,
         endTime: item.endTimeUTC,

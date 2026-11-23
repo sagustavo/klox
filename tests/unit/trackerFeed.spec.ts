@@ -47,7 +47,6 @@ function makeLog(overrides: Partial<TimeLog> & { id: string; startTime: string }
       ? { taskNameSnapshot: overrides.taskNameSnapshot }
       : {}),
     tagIds: overrides.tagIds ?? [],
-    tagNamesSnapshot: overrides.tagNamesSnapshot ?? [],
     isBillable: overrides.isBillable ?? true,
     startTime: overrides.startTime,
     endTime,
@@ -305,7 +304,6 @@ describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => 
         taskId: 'task-auth',
         taskNameSnapshot: 'Auth Middleware',
         tagIds: ['tag-sec', 'tag-be'],
-        tagNamesSnapshot: ['security', 'backend'],
         startTime: '2026-11-22T09:00:00.000Z',
         durationSeconds: 1805, // 00:30:05
         isBillable: false,
@@ -315,7 +313,6 @@ describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => 
         description: 'Code review PR #42',
         projectId: 'proj-api',
         tagIds: ['tag-review'],
-        tagNamesSnapshot: ['review'],
         startTime: '2026-11-22T11:00:00.000Z',
         durationSeconds: 900, // 00:15:00
         isBillable: true,
@@ -327,7 +324,6 @@ describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => 
         taskId: 'task-auth',
         taskNameSnapshot: 'Auth Middleware',
         tagIds: ['tag-be', 'tag-sec'], // reversed tag order must still match
-        tagNamesSnapshot: ['backend', 'security'],
         startTime: '2026-11-22T14:30:00.000Z',
         durationSeconds: 3655, // 01:00:55
         isBillable: true,
@@ -574,7 +570,6 @@ describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => 
       description: 'API Contract Design',
       projectId: 'proj-a',
       tagIds: ['tag-a1', 'tag-a2'],
-      tagNamesSnapshot: ['backend', 'contracts'],
       isBillable: false,
       startTime: '2026-11-22T09:00:00.000Z',
       durationSeconds: 1800,
@@ -584,7 +579,6 @@ describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => 
       description: 'API Contract Design',
       projectId: 'proj-a',
       tagIds: ['tag-a1', 'tag-a2'],
-      tagNamesSnapshot: ['backend', 'contracts'],
       isBillable: false,
       startTime: '2026-11-22T11:00:00.000Z',
       durationSeconds: 2400,
@@ -639,7 +633,6 @@ describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => 
       ...log,
       projectId: switched.projectId,
       tagIds: switched.tagIds,
-      tagNamesSnapshot: [],
       isBillable: switched.isBillable,
     }));
     const regrouped = groupLogsByCalendarDay(bulkUpdatedLogs, 'UTC')[0]!.entryGroups;

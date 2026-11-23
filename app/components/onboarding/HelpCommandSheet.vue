@@ -13,6 +13,10 @@ function isEditableElement(el: Element | null): boolean {
 }
 
 function onGlobalKeydown(event: KeyboardEvent) {
+  if (document.querySelector('[role="alertdialog"], [role="dialog"]')) {
+    return;
+  }
+
   if (event.key === '?' && !isEditableElement(document.activeElement)) {
     event.preventDefault();
     onboardingStore.isHelpSheetOpen = !onboardingStore.isHelpSheetOpen;

@@ -14,7 +14,6 @@ const props = withDefaults(
     tags: readonly ProjectTag[];
     variant?: 'field' | 'row';
     size?: 'sm' | 'md';
-    fallbackSnapshots?: readonly string[];
     stopPropagation?: boolean;
     dataTour?: string;
     testId?: string;
@@ -22,7 +21,6 @@ const props = withDefaults(
   {
     variant: 'field',
     size: 'md',
-    fallbackSnapshots: () => [],
     stopPropagation: false,
     dataTour: undefined,
     testId: undefined,
@@ -53,11 +51,9 @@ const allFilteredSelected = computed(() => {
 
 const selectedTagNames = computed(() => {
   const byId = new Map(props.tags.map((tag) => [tag.id, tag.name]));
-  const liveNames = props.modelValue
+  return props.modelValue
     .map((id) => byId.get(id))
     .filter((name): name is string => Boolean(name));
-  if (liveNames.length > 0) return liveNames;
-  return [...props.fallbackSnapshots].filter(Boolean);
 });
 
 const fieldSummaryLabel = computed(() => {

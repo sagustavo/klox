@@ -23,7 +23,6 @@ export interface TrackerLogGroup {
   taskId?: EntityId;
   taskNameSnapshot?: string;
   tagIds: EntityId[];
-  tagNamesSnapshot: string[];
   /** True when at least one execution in the group is billable */
   isBillable: boolean;
   /** True when every execution in the group is billable (drives bulk toggle target) */
@@ -158,7 +157,6 @@ export function groupSameDayEntries(
         ...(log.taskId ? { taskId: log.taskId } : {}),
         ...(log.taskNameSnapshot ? { taskNameSnapshot: log.taskNameSnapshot } : {}),
         tagIds: [...log.tagIds],
-        tagNamesSnapshot: [...log.tagNamesSnapshot],
         isBillable: log.isBillable,
         allBillable: log.isBillable,
         count: 1,

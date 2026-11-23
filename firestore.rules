@@ -69,7 +69,7 @@ rules_version = '2';
 //   - taskId: string | null (optional, <= 128 chars)
 //   - taskNameSnapshot: string | null (optional, <= 200 chars)
 //   - tagIds: list<string> (required, max 25 items)
-//   - tagNamesSnapshot: list<string> (required, max 25 items)
+//   - tagNamesSnapshot: list<string> | null (optional, legacy, max 25 items)
 //   - isBillable: bool (required)
 //   - startTime: string (required, UTC ISO string 10..64 chars)
 //   - endTime: string (required, UTC ISO string 10..64 chars)
@@ -277,7 +277,6 @@ service cloud.firestore {
           'projectNameSnapshot',
           'projectColorSnapshot',
           'tagIds',
-          'tagNamesSnapshot',
           'isBillable',
           'startTime',
           'endTime',
@@ -314,7 +313,7 @@ service cloud.firestore {
         isOptionalBoundedString(data, 'taskId', 128) &&
         isOptionalBoundedString(data, 'taskNameSnapshot', 200) &&
         isValidList(data.tagIds, 25) &&
-        isValidList(data.tagNamesSnapshot, 25) &&
+        (!('tagNamesSnapshot' in data) || data.tagNamesSnapshot == null || isValidList(data.tagNamesSnapshot, 25)) &&
         data.isBillable is bool &&
         isNonEmptyString(data.startTime, 64) &&
         isNonEmptyString(data.endTime, 64) &&

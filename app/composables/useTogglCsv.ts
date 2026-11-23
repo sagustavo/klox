@@ -195,6 +195,7 @@ export function useTogglCsv() {
       logs: targetLogs,
       userName: authStore.user?.displayName || 'Klox User',
       userEmail: authStore.user?.email || 'user@klox.dev',
+      tags: catalogStore.tags,
     });
 
     if (import.meta.client) {

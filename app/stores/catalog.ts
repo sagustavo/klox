@@ -9,7 +9,9 @@ import {
   formatTaskHierarchyLabel,
   isValidHexColor,
   tagsForProject,
+  validateProjectTagRename,
   validateTaskParent,
+  type TagRenameErrorCode,
   type TaskTreeNode,
 } from '~/domain/invariants';
 import type { EntityId, Project, ProjectTag, Task, TaskStatus } from '~/domain/types';
@@ -41,6 +43,11 @@ export const useCatalogStore = defineStore('catalog', () => {
 
   function getTagsForProject(projectId: EntityId | null | undefined): ProjectTag[] {
     return tagsForProject(tags.value, projectId).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function getTagById(tagId: EntityId | null | undefined): ProjectTag | undefined {
+    if (!tagId) return undefined;
+    return tags.value.find((t) => t.id === tagId);
   }
 
   function getTasksForProject(projectId: EntityId | null | undefined): Task[] {
@@ -295,6 +302,45 @@ export const useCatalogStore = defineStore('catalog', () => {
     return tag;
   }
 
+  async function renameTag(params: {
+    uid: string;
+    isDemo: boolean;
+    tagId: EntityId;
+    name: string;
+  }): Promise<{ ok: boolean; tag?: ProjectTag; error?: TagRenameErrorCode }> {
+    const check = validateProjectTagRename({
+      tagId: params.tagId,
+      nextName: params.name,
+      allTags: tags.value,
+    });
+    if (!check.valid) {
+      return { ok: false, error: check.error };
+    }
+
+    const existing = tags.value.find((t) => t.id === params.tagId);
+    if (!existing) {
+      return { ok: false, error: 'TAG_NOT_FOUND' };
+    }
+
+    const updated: ProjectTag = {
+      ...existing,
+      name: check.normalizedName,
+    };
+
+    tags.value = tags.value.map((t) => (t.id === updated.id ? updated : t));
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, setDoc } = await import('firebase/firestore');
+        await setDoc(doc(fb.db, 'users', params.uid, 'tags', updated.id), updated);
+      }
+    }
+
+    return { ok: true, tag: updated };
+  }
+
   async function deleteTag(params: {
     uid: string;
     isDemo: boolean;
@@ -477,6 +523,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     hydrate,
     getProjectById,
     getTagsForProject,
+    getTagById,
     getTasksForProject,
     getTaskById,
     getTaskTreeForProject,
@@ -486,6 +533,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     updateProject,
     deleteProject,
     createTag,
+    renameTag,
     deleteTag,
     createTask,
     updateTask,

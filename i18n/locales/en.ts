@@ -338,6 +338,17 @@ const en = {
     scopedTagsHint: 'Only these tags can be selected when logging time under the active project.',
     newTagPlaceholder: 'New tag for this project (e.g. architecture)',
     addTag: 'Add Tag',
+    renameTagAria: 'Rename tag #{name}',
+    renameTagSave: 'Save tag name',
+    renameTagCancel: 'Cancel renaming',
+    deleteTagAria: 'Delete tag #{name}',
+    deleteTaskAria: 'Delete task {name}',
+    tagRenameErrors: {
+      TAG_NAME_EMPTY: 'Tag name cannot be empty.',
+      TAG_NAME_TOO_LONG: 'Tag name must be 80 characters or fewer.',
+      TAG_NOT_FOUND: 'Tag was not found in the catalog.',
+      TAG_DUPLICATE_NAME: 'A tag with this name already exists in this project.',
+    },
     noTagsYet: 'No tags defined for this project yet.',
     tasksTitle: 'TASKS, SUBTASKS & GOALS',
     tasksHint:
@@ -459,6 +470,25 @@ const en = {
       showChecklist: 'Restore Getting-Started Checklist',
       rerunWizard: 'Open Welcome Setup Wizard (non-destructive)',
     },
+  },
+  confirm: {
+    cancelAction: 'Cancel',
+    deleteAction: 'Delete',
+    deletingAction: 'Deleting…',
+    deleteTimeLogTitle: 'Delete Time Log',
+    deleteTimeLogDesc: 'This recorded time entry will be permanently deleted.',
+    deleteGroupTitle: 'Delete Grouped Time Logs',
+    deleteGroupDesc: 'All {count} entries in this same-day group will be permanently deleted.',
+    deleteProjectTitle: 'Delete Project',
+    deleteProjectDesc:
+      'Deleting "{name}" permanently removes its {tagCount} scoped tags and {taskCount} tasks. Historical time logs keep their project name snapshot.',
+    deleteTagTitle: 'Delete Project Tag',
+    deleteTagDesc:
+      'Deleting tag #{name} permanently removes it from the project catalog and stops displaying it on tagged time logs.',
+    deleteTaskTitle: 'Delete Task',
+    deleteTaskDesc: 'Task "{name}" will be permanently deleted.',
+    deleteTaskCascadeDesc:
+      'Deleting "{name}" will also permanently delete {descendantCount} child subtasks/sub-subtasks.',
   },
 };
 

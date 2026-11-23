@@ -18,6 +18,7 @@ import {
   resolveDateKeyBounds,
 } from '~/domain/aggregation';
 import { publishDomainEvent } from '~/domain/events';
+import { buildTagNameMap, resolveTagNames } from '~/domain/invariants';
 import type {
   DashboardFilters,
   DateRangePreset,
@@ -135,6 +136,7 @@ const pizzaData = computed(() =>
     logs: filteredLogs.value,
     dimension: pizzaDimension.value,
     untaggedLabel: t('dashboard.untaggedBucket'),
+    tags: catalogStore.tags,
   })
 );
 
@@ -165,6 +167,7 @@ const dailyStacked = computed(() =>
     dimension: barDimension.value,
     bounds: currentBounds.value,
     untaggedLabel: t('dashboard.untaggedBucket'),
+    tags: catalogStore.tags,
   })
 );
 
@@ -201,8 +204,10 @@ const stackedBarChartOptions = {
   },
 };
 
+const tagNameMap = computed(() => buildTagNameMap(catalogStore.tags));
+
 const tagGroups = computed(() =>
-  groupLogsByTag(filteredLogs.value, t('dashboard.untaggedBucket'))
+  groupLogsByTag(filteredLogs.value, t('dashboard.untaggedBucket'), catalogStore.tags)
 );
 
 function toggleTagGroupCollapse(key: string) {
@@ -508,7 +513,7 @@ function toggleTagGroupCollapse(key: string) {
                   </td>
                   <td class="px-4 py-2.5 font-mono text-[11px] text-text-muted">
                     <span
-                      v-for="(tn, idx) in log.tagNamesSnapshot"
+                      v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
                       :key="idx"
                       class="mr-1.5"
                     >
@@ -563,7 +568,7 @@ function toggleTagGroupCollapse(key: string) {
                 </span>
               </td>
               <td class="px-4 py-2.5 font-mono text-[11px] text-text-muted">
-                <span v-for="(tn, idx) in log.tagNamesSnapshot" :key="idx" class="mr-1.5">
+                <span v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)" :key="idx" class="mr-1.5">
                   #{{ tn }}
                 </span>
               </td>

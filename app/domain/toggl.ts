@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import { formatHMS, normalizeDescription, parseHMS } from './duration';
 import { deterministicLogId } from './ids';
+import { buildTagNameMap, resolveTagNames } from './invariants';
 import type { EntityId, Project, ProjectTag, TimeLog } from './types';
 
 /**
@@ -299,9 +300,11 @@ export function serializeTogglCsv(params: {
   logs: readonly TimeLog[];
   userName?: string | null;
   userEmail?: string | null;
+  tags?: readonly Pick<ProjectTag, 'id' | 'name'>[];
 }): string {
   const userName = params.userName || 'Klox User';
   const userEmail = params.userEmail || 'user@klox.dev';
+  const tagNameById = params.tags ? buildTagNameMap(params.tags) : undefined;
 
   const rows = params.logs.map((log) => {
     const startIso = new Date(log.startTime).toISOString();
@@ -325,7 +328,7 @@ export function serializeTogglCsv(params: {
       'End date': endDate,
       'End time': endTime,
       Duration: formatHMS(log.durationSeconds),
-      Tags: log.tagNamesSnapshot.join(', '),
+      Tags: tagNameById ? resolveTagNames(log.tagIds, tagNameById).join(', ') : log.tagIds.join(', '),
     };
   });
 

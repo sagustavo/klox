@@ -11,10 +11,12 @@ import {
   subDays,
 } from 'date-fns';
 import { normalizeDescription } from './duration';
-import { PROJECT_COLOR_PALETTE } from './invariants';
+import { PROJECT_COLOR_PALETTE, buildTagNameMap } from './invariants';
 import type {
   DashboardFilters,
   DateRangePreset,
+  EntityId,
+  ProjectTag,
   SliceDimension,
   TimeLog,
   WeekStartDay,
@@ -141,7 +143,8 @@ export interface PizzaAggregation {
 function extractDimensionEntries(
   log: TimeLog,
   dimension: SliceDimension,
-  untaggedLabel: string
+  untaggedLabel: string,
+  tagNameById?: ReadonlyMap<EntityId, string>
 ): Array<{ key: string; label: string; color?: string }> {
   if (dimension === 'project') {
     return [
@@ -162,12 +165,26 @@ function extractDimensionEntries(
     ];
   }
   // dimension === 'tag'
+  if (tagNameById) {
+    const resolved: Array<{ key: string; label: string; color?: string }> = [];
+    for (const tagId of log.tagIds) {
+      const name = tagNameById.get(tagId);
+      if (name !== undefined) {
+        resolved.push({ key: tagId, label: `#${name}` });
+      }
+    }
+    if (resolved.length === 0) {
+      return [{ key: '__untagged__', label: untaggedLabel, color: '#71717A' }];
+    }
+    return resolved;
+  }
+
   if (log.tagIds.length === 0) {
     return [{ key: '__untagged__', label: untaggedLabel, color: '#71717A' }];
   }
-  return log.tagIds.map((tagId, idx) => ({
+  return log.tagIds.map((tagId) => ({
     key: tagId,
-    label: `#${log.tagNamesSnapshot[idx] ?? tagId}`,
+    label: `#${tagId}`,
   }));
 }
 
@@ -178,14 +195,16 @@ export function aggregatePizzaSlices(params: {
   logs: readonly TimeLog[];
   dimension: SliceDimension;
   untaggedLabel?: string;
+  tags?: readonly Pick<ProjectTag, 'id' | 'name'>[];
 }): PizzaAggregation {
   const untaggedLabel = params.untaggedLabel ?? 'Untagged';
+  const tagNameById = params.tags ? buildTagNameMap(params.tags) : undefined;
   const totalTrackedSeconds = params.logs.reduce((acc, l) => acc + l.durationSeconds, 0);
 
   const buckets = new Map<string, { key: string; label: string; color?: string; seconds: number }>();
 
   for (const log of params.logs) {
-    const entries = extractDimensionEntries(log, params.dimension, untaggedLabel);
+    const entries = extractDimensionEntries(log, params.dimension, untaggedLabel, tagNameById);
     for (const entry of entries) {
       const existing = buckets.get(entry.key);
       if (!existing) {
@@ -241,8 +260,10 @@ export function aggregateDailyStacked(params: {
   dimension: SliceDimension;
   bounds: DateKeyBounds;
   untaggedLabel?: string;
+  tags?: readonly Pick<ProjectTag, 'id' | 'name'>[];
 }): DailyStackedAggregation {
   const untaggedLabel = params.untaggedLabel ?? 'Untagged';
+  const tagNameById = params.tags ? buildTagNameMap(params.tags) : undefined;
 
   let dateKeys: string[] = [];
   if (params.bounds.startDateKey && params.bounds.endDateKey) {
@@ -278,7 +299,7 @@ export function aggregateDailyStacked(params: {
   for (const log of params.logs) {
     const dIdx = dayIndex.get(log.dateKey);
     if (dIdx === undefined) continue;
-    const entries = extractDimensionEntries(log, params.dimension, untaggedLabel);
+    const entries = extractDimensionEntries(log, params.dimension, untaggedLabel, tagNameById);
     for (const entry of entries) {
       let s = seriesMap.get(entry.key);
       if (!s) {
@@ -325,18 +346,20 @@ export interface TagBreakdownGroup {
  */
 export function groupLogsByTag(
   logs: readonly TimeLog[],
-  untaggedLabel = 'Untagged'
+  untaggedLabel = 'Untagged',
+  tags?: readonly Pick<ProjectTag, 'id' | 'name'>[]
 ): TagBreakdownGroup[] {
   const groups = new Map<string, TagBreakdownGroup>();
+  const tagNameById = tags ? buildTagNameMap(tags) : undefined;
 
   for (const log of logs) {
-    if (log.tagIds.length === 0) {
-      const key = '__untagged__';
-      const existing = groups.get(key);
+    const entries = extractDimensionEntries(log, 'tag', untaggedLabel, tagNameById);
+    for (const entry of entries) {
+      const existing = groups.get(entry.key);
       if (!existing) {
-        groups.set(key, {
-          tagKey: key,
-          tagLabel: untaggedLabel,
+        groups.set(entry.key, {
+          tagKey: entry.key,
+          tagLabel: entry.label,
           count: 1,
           subtotalSeconds: log.durationSeconds,
           logs: [log],
@@ -346,24 +369,6 @@ export function groupLogsByTag(
         existing.subtotalSeconds += log.durationSeconds;
         existing.logs.push(log);
       }
-    } else {
-      log.tagIds.forEach((tagId, idx) => {
-        const label = `#${log.tagNamesSnapshot[idx] ?? tagId}`;
-        const existing = groups.get(tagId);
-        if (!existing) {
-          groups.set(tagId, {
-            tagKey: tagId,
-            tagLabel: label,
-            count: 1,
-            subtotalSeconds: log.durationSeconds,
-            logs: [log],
-          });
-        } else {
-          existing.count += 1;
-          existing.subtotalSeconds += log.durationSeconds;
-          existing.logs.push(log);
-        }
-      });
     }
   }
 

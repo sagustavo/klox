@@ -343,6 +343,17 @@ const ptBR: LocaleMessages = {
       'Apenas estas tags podem ser selecionadas ao registrar tempo neste projeto.',
     newTagPlaceholder: 'Nova tag para este projeto (ex.: architecture)',
     addTag: 'Adicionar Tag',
+    renameTagAria: 'Renomear tag #{name}',
+    renameTagSave: 'Salvar nome da tag',
+    renameTagCancel: 'Cancelar renomeação',
+    deleteTagAria: 'Excluir tag #{name}',
+    deleteTaskAria: 'Excluir tarefa {name}',
+    tagRenameErrors: {
+      TAG_NAME_EMPTY: 'O nome da tag não pode ficar vazio.',
+      TAG_NAME_TOO_LONG: 'O nome da tag deve ter no máximo 80 caracteres.',
+      TAG_NOT_FOUND: 'Tag não encontrada no catálogo.',
+      TAG_DUPLICATE_NAME: 'Já existe uma tag com este nome neste projeto.',
+    },
     noTagsYet: 'Nenhuma tag definida para este projeto ainda.',
     tasksTitle: 'TAREFAS, SUBTAREFAS E METAS',
     tasksHint:
@@ -464,6 +475,26 @@ const ptBR: LocaleMessages = {
       showChecklist: 'Restaurar Checklist de Primeiros Passos',
       rerunWizard: 'Abrir Assistente Inicial de Configuração (não destrutivo)',
     },
+  },
+  confirm: {
+    cancelAction: 'Cancelar',
+    deleteAction: 'Excluir',
+    deletingAction: 'Excluindo…',
+    deleteTimeLogTitle: 'Excluir Registro de Tempo',
+    deleteTimeLogDesc: 'Este registro de tempo será excluído permanentemente.',
+    deleteGroupTitle: 'Excluir Registros Agrupados',
+    deleteGroupDesc:
+      'Todos os {count} registros deste grupo no mesmo dia serão excluídos permanentemente.',
+    deleteProjectTitle: 'Excluir Projeto',
+    deleteProjectDesc:
+      'Excluir "{name}" remove permanentemente suas {tagCount} tags escopadas e {taskCount} tarefas. Os registros históricos mantêm o nome de snapshot do projeto.',
+    deleteTagTitle: 'Excluir Tag do Projeto',
+    deleteTagDesc:
+      'Excluir a tag #{name} a remove permanentemente do catálogo do projeto e interrompe sua exibição nos registros.',
+    deleteTaskTitle: 'Excluir Tarefa',
+    deleteTaskDesc: 'A tarefa "{name}" será excluída permanentemente.',
+    deleteTaskCascadeDesc:
+      'Excluir "{name}" também excluirá permanentemente {descendantCount} subtarefas/sub-subtarefas filhas.',
   },
 };
 

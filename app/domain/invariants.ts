@@ -3,6 +3,7 @@ import type { EntityId, Project, ProjectTag, Task, TaskDepth } from './types';
 export const UNASSIGNED_PROJECT_ID: EntityId = 'system_unassigned';
 
 export const MAX_TASK_DEPTH: TaskDepth = 2; // 0 = Task, 1 = Subtask, 2 = Sub-subtask
+export const MAX_TAG_NAME_LENGTH = 80;
 
 export const PROJECT_COLOR_PALETTE: readonly string[] = [
   '#3B82F6', // Electric Cobalt (Default Telemetry Accent)
@@ -29,6 +30,76 @@ export function tagsForProject(
 ): ProjectTag[] {
   if (!projectId) return [];
   return allTags.filter((tag) => tag.projectId === projectId);
+}
+
+export function buildTagNameMap(
+  tags: readonly Pick<ProjectTag, 'id' | 'name'>[]
+): Map<EntityId, string> {
+  return new Map(tags.map((tag) => [tag.id, tag.name]));
+}
+
+/**
+ * Resolves `TimeLog.tagIds` against the live ProjectTag catalog at render/export time.
+ * Missing or deleted tag IDs are omitted cleanly rather than rendering stale snapshots.
+ */
+export function resolveTagNames(
+  tagIds: readonly EntityId[],
+  tagsOrMap: readonly Pick<ProjectTag, 'id' | 'name'>[] | ReadonlyMap<EntityId, string>
+): string[] {
+  const byId = tagsOrMap instanceof Map ? tagsOrMap : buildTagNameMap(tagsOrMap as readonly Pick<ProjectTag, 'id' | 'name'>[]);
+  const resolved: string[] = [];
+  for (const tagId of tagIds) {
+    const name = byId.get(tagId);
+    if (name !== undefined) {
+      resolved.push(name);
+    }
+  }
+  return resolved;
+}
+
+export type TagRenameErrorCode =
+  | 'TAG_NAME_EMPTY'
+  | 'TAG_NAME_TOO_LONG'
+  | 'TAG_NOT_FOUND'
+  | 'TAG_DUPLICATE_NAME';
+
+/**
+ * Validates renaming an existing `ProjectTag` within its parent Project's vocabulary.
+ */
+export function validateProjectTagRename(params: {
+  tagId: EntityId;
+  nextName: string;
+  allTags: readonly ProjectTag[];
+}): {
+  valid: boolean;
+  normalizedName: string;
+  error?: TagRenameErrorCode;
+} {
+  const normalizedName = params.nextName.trim();
+  if (!normalizedName) {
+    return { valid: false, normalizedName, error: 'TAG_NAME_EMPTY' };
+  }
+  if (normalizedName.length > MAX_TAG_NAME_LENGTH) {
+    return { valid: false, normalizedName, error: 'TAG_NAME_TOO_LONG' };
+  }
+
+  const target = params.allTags.find((t) => t.id === params.tagId);
+  if (!target) {
+    return { valid: false, normalizedName, error: 'TAG_NOT_FOUND' };
+  }
+
+  const lower = normalizedName.toLowerCase();
+  const hasDuplicate = params.allTags.some(
+    (t) =>
+      t.id !== target.id &&
+      t.projectId === target.projectId &&
+      t.name.trim().toLowerCase() === lower
+  );
+  if (hasDuplicate) {
+    return { valid: false, normalizedName, error: 'TAG_DUPLICATE_NAME' };
+  }
+
+  return { valid: true, normalizedName };
 }
 
 /**
