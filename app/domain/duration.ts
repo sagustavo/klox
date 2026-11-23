@@ -500,3 +500,58 @@ export function buildCalendarMonthGrid(params: {
 
   return cells;
 }
+
+export interface DynamicTabTitleInput {
+  elapsedSeconds: number;
+  description: string;
+  projectName?: string | null;
+  isUnassignedProject?: boolean;
+  brandName?: string;
+  maxDescriptionLength?: number;
+}
+
+function truncateWithEllipsis(value: string, maxLength: number): string {
+  const safeMax = Math.max(2, Math.floor(maxLength));
+  if (value.length <= safeMax) return value;
+  return `${value.slice(0, safeMax - 1).trimEnd()}…`;
+}
+
+/**
+ * Formats a live active timer browser tab title:
+ * `{H:MM:SS} | {activity description} | {project} • Klox`
+ * Omitting unassigned fallback project noise and empty descriptions cleanly.
+ */
+export function formatDynamicTabTitle(input: DynamicTabTitleInput): string {
+  const safeSeconds =
+    Number.isFinite(input.elapsedSeconds) && input.elapsedSeconds > 0
+      ? Math.floor(input.elapsedSeconds)
+      : 0;
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  const timerText = `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const brand = input.brandName?.trim() || 'Klox';
+  const maxDescLen = input.maxDescriptionLength ?? 40;
+
+  const cleanDesc = input.description.trim().replace(/\s+/g, ' ');
+  const truncatedDesc = cleanDesc ? truncateWithEllipsis(cleanDesc, maxDescLen) : '';
+  const cleanProject =
+    !input.isUnassignedProject && input.projectName
+      ? input.projectName.trim().replace(/\s+/g, ' ')
+      : '';
+
+  const segments = [timerText];
+  if (truncatedDesc) segments.push(truncatedDesc);
+  if (cleanProject) segments.push(cleanProject);
+
+  return `${segments.join(' | ')} • ${brand}`;
+}
+
+/**
+ * Formats the idle workspace browser tab title: `{Section} • Klox`.
+ */
+export function formatIdleTabTitle(sectionLabel: string, brandName = 'Klox'): string {
+  const brand = brandName.trim() || 'Klox';
+  const section = sectionLabel.trim();
+  return section ? `${section} • ${brand}` : brand;
+}

@@ -72,14 +72,14 @@ function handleExport() {
     <!-- Header -->
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-hairline pb-4">
       <div>
-        <h1 class="text-xl font-semibold tracking-tight text-text-primary">{{ $t('csv.title') }}</h1>
-        <p class="mt-1 text-sm text-text-muted">{{ $t('csv.subtitle') }}</p>
+        <h1 class="display-wide text-xl sm:text-2xl text-text-primary">{{ $t('csv.title') }}</h1>
+        <p class="mt-1.5 text-sm text-text-muted">{{ $t('csv.subtitle') }}</p>
       </div>
 
       <button
         type="button"
         data-tour="csv-export-btn"
-        class="inline-flex h-10 items-center gap-2 border border-signal/60 bg-signal-soft px-4 text-xs font-mono font-semibold uppercase tracking-wider text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
+        class="btn-press inline-flex h-10 items-center gap-2 border border-signal/60 bg-signal-soft px-4 text-xs font-semibold uppercase tracking-wider text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
         @click="handleExport"
       >
         <Download class="h-4 w-4" />
@@ -92,7 +92,7 @@ function handleExport() {
       <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 class="label-mono text-signal">
+          <h2 class="label-eyebrow text-signal">
             {{ $t('csv.importSectionTitle') }}
           </h2>
           <p class="mt-1.5 text-sm text-text-muted">
@@ -102,7 +102,7 @@ function handleExport() {
 
         <label
           data-tour="csv-upload-input"
-          class="inline-flex h-9 cursor-pointer items-center gap-2 border border-border-hairline bg-bg-primary px-3.5 text-xs font-mono text-text-primary hover:border-signal transition-colors"
+          class="btn-press inline-flex h-9 cursor-pointer items-center gap-2 border border-border-hairline bg-bg-primary px-3.5 text-xs font-medium text-text-primary hover:border-signal transition-colors"
         >
           <Upload class="h-4 w-4 text-signal" />
           <span>{{ $t('csv.uploadFileLabel') }}</span>
@@ -116,7 +116,7 @@ function handleExport() {
       </div>
 
       <div>
-        <label class="label-mono block text-text-muted mb-2">
+        <label class="label-eyebrow block text-text-muted mb-2">
           {{ $t('csv.pasteLabel') }}
         </label>
         <textarea
@@ -131,7 +131,7 @@ function handleExport() {
         <button
           type="button"
           :disabled="!csvText.trim()"
-          class="inline-flex h-10 items-center gap-2 border border-border-hairline bg-bg-primary px-4 text-xs font-mono uppercase tracking-wider text-text-primary hover:border-signal disabled:opacity-40 transition-colors"
+          class="btn-press inline-flex h-10 items-center gap-2 border border-border-hairline bg-bg-primary px-4 text-xs font-semibold uppercase tracking-wider text-text-primary hover:border-signal disabled:opacity-40 transition-colors"
           @click="handleRunPreview"
         >
           <Play class="h-4 w-4 text-signal" />
@@ -142,7 +142,7 @@ function handleExport() {
           v-if="preview && (preview.newLogsCount > 0 || preview.newProjectNames.length > 0 || preview.newScopedTags.length > 0)"
           type="button"
           :disabled="isCommitting"
-          class="inline-flex h-10 items-center gap-2 bg-accent px-5 text-xs font-mono font-semibold uppercase tracking-wider text-white hover:bg-accent-hover disabled:opacity-50"
+          class="btn-press inline-flex h-10 items-center gap-2 bg-accent px-5 text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover disabled:opacity-50"
           @click="handleCommit"
         >
           <FileSpreadsheet class="h-4 w-4" />
@@ -166,7 +166,7 @@ function handleExport() {
     >
       <CheckCircle2 class="h-4 w-4 shrink-0 text-emerald-500 mt-0.5" />
       <div>
-        <div class="font-mono font-semibold uppercase tracking-wider">
+        <div class="font-semibold uppercase tracking-wider">
           {{ $t('csv.commitSuccessTitle') }}
         </div>
         <p class="mt-1 text-text-primary">
@@ -187,47 +187,47 @@ function handleExport() {
       <!-- Summary Telemetry Grid -->
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div class="border border-border-hairline bg-bg-elevated p-4">
-          <div class="label-mono text-text-muted">
+          <div class="label-eyebrow text-text-muted">
             {{ $t('csv.summaryNewLogs') }}
           </div>
-          <div class="tabular-telemetry mt-2 font-mono text-2xl font-semibold text-signal">
+          <div class="display-wide tabular-telemetry mt-2 text-2xl text-signal">
             {{ preview.newLogsCount }}
           </div>
         </div>
 
         <div class="border border-border-hairline bg-bg-elevated p-4">
-          <div class="label-mono text-text-muted">
+          <div class="label-eyebrow text-text-muted">
             {{ $t('csv.summaryDuplicates') }}
           </div>
-          <div class="tabular-telemetry mt-2 font-mono text-2xl font-semibold text-text-primary">
+          <div class="display-wide tabular-telemetry mt-2 text-2xl text-text-primary">
             {{ preview.duplicateLogsCount }}
           </div>
         </div>
 
         <div class="border border-border-hairline bg-bg-elevated p-4">
-          <div class="label-mono text-text-muted">
+          <div class="label-eyebrow text-text-muted">
             {{ $t('csv.summaryNewProjects') }}
           </div>
-          <div class="tabular-telemetry mt-2 font-mono text-2xl font-semibold text-emerald-500">
+          <div class="display-wide tabular-telemetry mt-2 text-2xl text-emerald-500">
             {{ preview.newProjectNames.length }}
           </div>
         </div>
 
         <div class="border border-border-hairline bg-bg-elevated p-4">
-          <div class="label-mono text-text-muted">
+          <div class="label-eyebrow text-text-muted">
             {{ $t('csv.summaryNewTags') }}
           </div>
-          <div class="tabular-telemetry mt-2 font-mono text-2xl font-semibold text-amber-500">
+          <div class="display-wide tabular-telemetry mt-2 text-2xl text-amber-500">
             {{ preview.newScopedTags.length }}
           </div>
         </div>
 
         <div class="border border-border-hairline bg-bg-elevated p-4">
-          <div class="label-mono text-text-muted">
+          <div class="label-eyebrow text-text-muted">
             {{ $t('csv.summaryErrors') }}
           </div>
           <div
-            class="tabular-telemetry mt-2 font-mono text-2xl font-semibold"
+            class="display-wide tabular-telemetry mt-2 text-2xl"
             :class="preview.errors.length > 0 ? 'text-destructive' : 'text-text-muted'"
           >
             {{ preview.errors.length }}
@@ -241,14 +241,14 @@ function handleExport() {
         class="grid grid-cols-1 gap-4 md:grid-cols-2"
       >
         <div class="border border-border-hairline bg-bg-elevated p-4">
-          <div class="label-mono text-text-muted mb-2.5">
+          <div class="label-eyebrow text-text-muted mb-2.5">
             {{ $t('csv.summaryNewProjects') }}
           </div>
           <div class="flex flex-wrap gap-2">
             <span
               v-for="proj in preview.newProjectNames"
               :key="proj"
-              class="border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 font-mono text-ui text-emerald-500"
+              class="border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-ui font-medium text-emerald-500"
             >
               + {{ proj }}
             </span>
@@ -256,14 +256,14 @@ function handleExport() {
         </div>
 
         <div class="border border-border-hairline bg-bg-elevated p-4">
-          <div class="label-mono text-text-muted mb-2.5">
+          <div class="label-eyebrow text-text-muted mb-2.5">
             {{ $t('csv.summaryNewTags') }}
           </div>
           <div class="flex flex-wrap gap-2">
             <span
               v-for="st in preview.newScopedTags"
               :key="`${st.projectName}::${st.tagName}`"
-              class="border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 font-mono text-ui text-amber-500"
+              class="border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-ui font-medium text-amber-500"
             >
               {{ st.projectName }} → #{{ st.tagName }}
             </span>
@@ -276,11 +276,11 @@ function handleExport() {
         v-if="preview.errors.length > 0"
         class="border border-destructive/50 bg-destructive/10 p-4 space-y-2"
       >
-        <div class="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-destructive">
+        <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-destructive">
           <AlertTriangle class="h-4 w-4" />
           <span>{{ $t('csv.summaryErrors') }} ({{ preview.errors.length }})</span>
         </div>
-        <ul class="space-y-1 font-mono text-ui text-destructive">
+        <ul class="space-y-1 text-ui text-destructive">
           <li v-for="err in preview.errors" :key="err.rowNumber">
             {{ t(`csv.errors.${err.code}`, { row: err.rowNumber }) }}
           </li>
@@ -294,7 +294,7 @@ function handleExport() {
       >
         <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
         <table class="w-full text-left text-sm">
-          <thead class="border-b border-border-hairline bg-bg-primary text-xs font-mono uppercase text-text-muted">
+          <thead class="border-b border-border-hairline bg-bg-primary text-xs font-medium uppercase tracking-wider text-text-muted">
             <tr>
               <th class="px-4 py-3">#</th>
               <th class="px-4 py-3">{{ $t('dashboard.colDate') }}</th>
@@ -310,16 +310,16 @@ function handleExport() {
               :key="row.deterministicId"
               class="hover:bg-bg-hover"
             >
-              <td class="tabular-telemetry px-4 py-2.5 font-mono text-ui text-text-muted">
+              <td class="tabular-telemetry px-4 py-2.5 text-ui text-text-muted">
                 {{ row.rowNumber }}
               </td>
-              <td class="tabular-telemetry px-4 py-2.5 font-mono text-ui text-text-muted whitespace-nowrap">
+              <td class="tabular-telemetry px-4 py-2.5 text-ui text-text-muted whitespace-nowrap">
                 {{ row.startDateKey }}
               </td>
               <td class="px-4 py-2.5 font-medium text-text-primary">
                 {{ row.description }}
               </td>
-              <td class="px-4 py-2.5 font-mono text-ui text-text-muted">
+              <td class="px-4 py-2.5 text-ui text-text-muted">
                 {{ row.projectName || $t('catalog.unassigned') }}
               </td>
               <td class="px-4 py-2.5">
@@ -327,13 +327,13 @@ function handleExport() {
                   <span
                     v-for="tag in row.tagNames"
                     :key="tag"
-                    class="border border-border-hairline bg-bg-primary px-2 py-0.5 font-mono text-xs text-text-muted"
+                    class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs text-text-muted"
                   >
                     #{{ tag }}
                   </span>
                 </div>
               </td>
-              <td class="tabular-telemetry px-4 py-2.5 text-right font-mono font-semibold text-text-primary">
+              <td class="tabular-telemetry px-4 py-2.5 text-right font-semibold text-text-primary">
                 {{ formatHMS(row.durationSeconds) }}
               </td>
             </tr>

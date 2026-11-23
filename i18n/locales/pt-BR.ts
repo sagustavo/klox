@@ -110,6 +110,10 @@ const ptBR: LocaleMessages = {
         seg2: 'Revisão',
         seg3: 'Planejamento',
         seg4: 'Gestão',
+        totalLabel: 'Total',
+        filterAria: 'Filtrar projetos da demonstração',
+        autoResume: 'Auto',
+        days: ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'],
       },
       csv: {
         title: 'Toggl ⇄ Klox',

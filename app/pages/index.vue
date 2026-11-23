@@ -39,7 +39,10 @@ useHead({
 });
 
 const motionPaused = ref(false);
+const landingRootRef = ref<HTMLElement | null>(null);
 let mql: MediaQueryList | null = null;
+
+useScrollReveal(landingRootRef, motionPaused);
 
 function handleReducedMotionChange(event: MediaQueryListEvent) {
   if (event.matches) {
@@ -79,7 +82,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 </script>
 
 <template>
-  <div :class="{ 'motion-paused': motionPaused }">
+  <div ref="landingRootRef" :class="{ 'motion-paused': motionPaused }">
     <!-- Section 1: Atmospheric Orbital Horizon Hero -->
     <section
       id="top"
@@ -97,22 +100,21 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
       <div class="bg-void-fade absolute inset-0" aria-hidden="true" />
 
       <div class="relative mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 py-16 sm:px-6 sm:py-24">
-        <p class="label-mono animate-rise text-text-muted">
+        <p class="label-eyebrow animate-rise text-text-muted">
           <BrandMissionClock :paused="motionPaused" />
           <span class="mx-3 text-text-faint">//</span>
           <span>{{ $t('landing.hero.missionLabel') }}</span>
         </p>
 
-        <h1
-          class="display-wide animate-rise mt-8 max-w-5xl text-4xl text-text-primary sm:text-6xl lg:text-7xl"
-          style="animation-delay: 120ms"
-        >
-          {{ $t('landing.hero.headlineLine1') }}
-          <br />
-          {{ $t('landing.hero.headlineLine2') }}
-          <br />
-          {{ $t('landing.hero.headlineLine3') }}
-        </h1>
+        <BrandTypewriterHeadline
+          :lines="[
+            $t('landing.hero.headlineLine1'),
+            $t('landing.hero.headlineLine2'),
+            $t('landing.hero.headlineLine3'),
+          ]"
+          :paused="motionPaused"
+          class="mt-8"
+        />
 
         <p
           class="animate-rise mt-8 max-w-xl text-base leading-relaxed text-text-muted sm:text-lg"
@@ -137,7 +139,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
           <a
             href="#features"
-            class="label-mono inline-flex h-12 items-center px-3 text-text-muted transition-colors hover:text-text-primary"
+            class="label-eyebrow inline-flex h-12 items-center px-3 text-text-muted transition-colors hover:text-text-primary"
           >
             {{ $t('landing.hero.ctaSpecs') }} ↓
           </a>
@@ -156,10 +158,10 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
               idx % 2 === 1 && 'border-l border-border-hairline pl-6',
             ]"
           >
-            <div class="display-wide text-xl text-text-primary sm:text-2xl">
+            <div class="display-wide tabular-telemetry text-xl text-text-primary sm:text-2xl">
               {{ $t(stat.valueKey) }}
             </div>
-            <div class="label-mono mt-2 text-text-muted">
+            <div class="label-eyebrow mt-2 text-text-muted">
               {{ $t(stat.labelKey) }}
             </div>
           </div>
@@ -173,9 +175,12 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
       class="relative scroll-mt-16 border-t border-border-hairline bg-bg-primary"
     >
       <div class="mx-auto max-w-7xl px-4 py-24 sm:px-6 sm:py-28">
-        <div class="flex flex-col justify-between gap-6 md:flex-row md:items-end">
+        <div
+          data-scroll-reveal
+          class="flex flex-col justify-between gap-6 md:flex-row md:items-end"
+        >
           <div>
-            <p class="label-mono text-signal">{{ $t('landing.advantages.eyebrow') }}</p>
+            <p class="label-eyebrow text-signal">{{ $t('landing.advantages.eyebrow') }}</p>
             <h2 class="display-wide mt-4 max-w-2xl text-3xl text-text-primary sm:text-5xl">
               {{ $t('landing.advantages.title') }}
             </h2>
@@ -187,7 +192,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
             </p>
             <button
               type="button"
-              class="inline-flex h-9 items-center gap-2 border border-border-hairline bg-bg-elevated px-3 font-mono text-xs text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+              class="btn-press inline-flex h-9 items-center gap-2 border border-border-hairline bg-bg-elevated px-3 text-xs font-medium text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
               @click="motionPaused = !motionPaused"
             >
               <Play v-if="motionPaused" class="h-3.5 w-3.5 text-signal" />
@@ -207,10 +212,11 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
           <article
             v-for="item in advantages"
             :key="item.id"
+            data-scroll-reveal
             class="grid items-center gap-10 py-14 sm:py-16 lg:grid-cols-12 lg:gap-16"
           >
             <div class="lg:col-span-5">
-              <span class="label-mono text-text-faint">{{ item.index }}</span>
+              <span class="label-eyebrow text-text-faint">{{ item.index }}</span>
               <h3 class="display-wide mt-5 text-xl text-text-primary sm:text-2xl">
                 {{ $t(`landing.pillars.${item.key}.title`) }}
               </h3>
@@ -222,8 +228,8 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
             <div class="lg:col-span-7">
               <LandingKeyboardVisual v-if="item.key === 'keyboard'" :paused="motionPaused" />
               <LandingRecallVisual v-else-if="item.key === 'ai'" :paused="motionPaused" />
-              <LandingTelemetryVisual v-else-if="item.key === 'analytics'" />
-              <LandingCsvVisual v-else />
+              <LandingTelemetryVisual v-else-if="item.key === 'analytics'" :paused="motionPaused" />
+              <LandingCsvVisual v-else :paused="motionPaused" />
             </div>
           </article>
         </div>
@@ -232,35 +238,37 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
     <!-- Section 3: Upcoming Enterprise Integration Teaser -->
     <section class="mx-auto max-w-7xl px-4 pb-24 sm:px-6 sm:pb-28">
-      <UiInstrumentPanel signal-line class="p-6 sm:p-10">
-        <div class="label-mono inline-flex items-center gap-2 text-signal">
-          <GitBranch class="h-4 w-4 shrink-0" />
-          <span>{{ $t('landing.adoTeaser.badge') }}</span>
-        </div>
-
-        <h2 class="display-wide mt-4 text-2xl text-text-primary sm:text-3xl">
-          {{ $t('landing.adoTeaser.title') }}
-        </h2>
-
-        <p class="mt-4 max-w-3xl text-base leading-relaxed text-text-muted">
-          {{ $t('landing.adoTeaser.body') }}
-        </p>
-
-        <div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
-            <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
-            <span>{{ $t('landing.adoTeaser.bullet1') }}</span>
+      <div data-scroll-reveal>
+        <UiInstrumentPanel signal-line class="p-6 sm:p-10">
+          <div class="label-eyebrow inline-flex items-center gap-2 text-signal">
+            <GitBranch class="h-4 w-4 shrink-0" />
+            <span>{{ $t('landing.adoTeaser.badge') }}</span>
           </div>
-          <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
-            <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
-            <span>{{ $t('landing.adoTeaser.bullet2') }}</span>
+
+          <h2 class="display-wide mt-4 text-2xl text-text-primary sm:text-3xl">
+            {{ $t('landing.adoTeaser.title') }}
+          </h2>
+
+          <p class="mt-4 max-w-3xl text-base leading-relaxed text-text-muted">
+            {{ $t('landing.adoTeaser.body') }}
+          </p>
+
+          <div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
+              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
+              <span>{{ $t('landing.adoTeaser.bullet1') }}</span>
+            </div>
+            <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
+              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
+              <span>{{ $t('landing.adoTeaser.bullet2') }}</span>
+            </div>
+            <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
+              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
+              <span>{{ $t('landing.adoTeaser.bullet3') }}</span>
+            </div>
           </div>
-          <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
-            <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
-            <span>{{ $t('landing.adoTeaser.bullet3') }}</span>
-          </div>
-        </div>
-      </UiInstrumentPanel>
+        </UiInstrumentPanel>
+      </div>
     </section>
 
     <!-- Section 4: Pricing Matrix (#pricing) -->
@@ -273,8 +281,8 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         aria-hidden="true"
       />
       <div class="relative mx-auto max-w-7xl px-4 py-24 sm:px-6 sm:py-28">
-        <div class="text-center">
-          <p class="label-mono text-signal">{{ $t('landing.pricing.badge') }}</p>
+        <div data-scroll-reveal class="text-center">
+          <p class="label-eyebrow text-signal">{{ $t('landing.pricing.badge') }}</p>
           <h2 class="display-wide mt-4 text-3xl text-text-primary sm:text-5xl">
             {{ $t('landing.pricing.title') }}
           </h2>
@@ -285,13 +293,16 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
         <div class="mx-auto mt-16 grid max-w-4xl gap-px border border-border-hairline bg-border-hairline md:grid-cols-2">
           <!-- Free Plan (Highlighted) -->
-          <div class="glow-signal relative flex flex-col bg-bg-primary p-8 sm:p-10">
+          <div
+            data-scroll-reveal
+            class="glow-signal relative flex flex-col bg-bg-primary p-8 sm:p-10"
+          >
             <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
             <div class="flex items-center justify-between gap-2">
               <h3 class="display-wide text-lg tracking-[0.28em] text-text-primary">
                 {{ $t('landing.pricing.freeTier.name') }}
               </h3>
-              <span class="label-mono text-signal">
+              <span class="label-eyebrow text-signal">
                 {{ $t('landing.pricing.recommended') }}
               </span>
             </div>
@@ -301,10 +312,10 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
             </p>
 
             <div class="mt-8 flex items-baseline gap-3">
-              <span class="display-wide text-5xl text-text-primary sm:text-6xl">
+              <span class="display-wide tabular-telemetry text-5xl text-text-primary sm:text-6xl">
                 {{ $t('landing.pricing.freeTier.price') }}
               </span>
-              <span class="label-mono text-text-muted">
+              <span class="label-eyebrow text-text-muted">
                 / {{ $t('landing.pricing.freeTier.period') }}
               </span>
             </div>
@@ -330,12 +341,15 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
           </div>
 
           <!-- Pro Plan (Roadmap Placeholder) -->
-          <div class="relative flex flex-col bg-bg-primary p-8 sm:p-10">
+          <div
+            data-scroll-reveal
+            class="relative flex flex-col bg-bg-primary p-8 sm:p-10"
+          >
             <div class="flex items-center justify-between gap-2">
               <h3 class="display-wide text-lg tracking-[0.28em] text-text-primary">
                 {{ $t('landing.pricing.proTier.name') }}
               </h3>
-              <span class="label-mono text-text-faint">
+              <span class="label-eyebrow text-text-faint">
                 {{ $t('landing.pricing.proTier.period') }}
               </span>
             </div>
@@ -361,7 +375,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
               </li>
             </ul>
 
-            <span class="label-mono mt-10 inline-flex h-12 w-full items-center justify-center border border-border-hairline bg-bg-elevated px-6 text-text-muted">
+            <span class="label-eyebrow mt-10 inline-flex h-12 w-full items-center justify-center border border-border-hairline bg-bg-elevated px-6 text-text-muted">
               {{ $t('landing.pricing.proTier.cta') }}
             </span>
           </div>
@@ -374,7 +388,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
       id="faq"
       class="scroll-mt-16 border-t border-border-hairline bg-bg-primary"
     >
-      <div class="mx-auto max-w-4xl px-4 py-24 sm:px-6">
+      <div data-scroll-reveal class="mx-auto max-w-4xl px-4 py-24 sm:px-6">
         <h2 class="display-wide mb-10 text-2xl text-text-primary sm:text-4xl">
           {{ $t('landing.faq.title') }}
         </h2>
@@ -383,18 +397,18 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
           <details
             v-for="itemKey in faqKeys"
             :key="itemKey"
-            class="group py-5"
+            class="orbital-details group py-5"
           >
             <summary class="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal">
               <span>{{ $t(`landing.faq.${itemKey}.q`) }}</span>
-              <ChevronDown class="h-4 w-4 shrink-0 text-text-muted transition-transform group-open:rotate-180" />
+              <ChevronDown class="h-4 w-4 shrink-0 text-text-muted motion-safe:transition-transform motion-safe:duration-200 group-open:rotate-180" />
             </summary>
             <div class="mt-4 space-y-2 text-sm leading-relaxed text-text-muted">
               <p>{{ $t(`landing.faq.${itemKey}.a`) }}</p>
               <p v-if="itemKey === 'q5'">
                 <a
                   href="mailto:contact@klox.dev"
-                  class="font-mono text-signal hover:underline"
+                  class="text-signal hover:underline"
                 >
                   contact@klox.dev
                 </a>

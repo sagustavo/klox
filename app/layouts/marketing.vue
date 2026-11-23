@@ -37,19 +37,19 @@ function toggleLocale() {
         >
           <a
             href="#features"
-            class="label-mono text-text-muted transition-colors hover:text-text-primary"
+            class="label-eyebrow text-text-muted transition-colors hover:text-text-primary"
           >
             {{ $t('nav.features') }}
           </a>
           <a
             href="#pricing"
-            class="label-mono text-text-muted transition-colors hover:text-text-primary"
+            class="label-eyebrow text-text-muted transition-colors hover:text-text-primary"
           >
             {{ $t('nav.pricing') }}
           </a>
           <a
             href="#faq"
-            class="label-mono text-text-muted transition-colors hover:text-text-primary"
+            class="label-eyebrow text-text-muted transition-colors hover:text-text-primary"
           >
             {{ $t('nav.faq') }}
           </a>
@@ -58,7 +58,7 @@ function toggleLocale() {
         <div class="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             type="button"
-            class="tabular-telemetry inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-elevated px-3 text-xs font-mono uppercase text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+            class="tabular-telemetry btn-press inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-elevated px-3 text-xs font-medium uppercase text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
             :aria-label="$t('nav.switchLanguage')"
             @click="toggleLocale"
           >
@@ -69,7 +69,7 @@ function toggleLocale() {
           <ClientOnly>
             <button
               type="button"
-              class="inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+              class="btn-press inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
               :aria-label="$t('nav.toggleTheme')"
               @click="toggleTheme"
             >
@@ -139,7 +139,7 @@ function toggleLocale() {
             <span>{{ $t('landing.footer.copyright') }}</span>
           </div>
 
-          <div class="flex items-center gap-2 font-mono text-xs">
+          <div class="flex items-center gap-2 text-xs">
             <span class="text-text-faint">{{ $t('landing.footer.supportPrompt') }}</span>
             <a
               href="mailto:contact@klox.dev"

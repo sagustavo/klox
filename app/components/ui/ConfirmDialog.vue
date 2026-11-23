@@ -70,10 +70,10 @@ function handleCancel() {
 <template>
   <AlertDialogRoot :open="open" @update:open="handleOpenChange">
     <AlertDialogPortal>
-      <AlertDialogOverlay class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overscroll-contain" />
+      <AlertDialogOverlay class="orbital-dialog-overlay fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overscroll-contain" />
       <AlertDialogContent
         :data-testid="testId"
-        class="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden border border-border-hairline bg-bg-elevated p-6 shadow-2xl overscroll-contain focus:outline-none space-y-5"
+        class="orbital-dialog-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-hidden border border-border-hairline bg-bg-elevated p-6 shadow-2xl overscroll-contain focus:outline-none space-y-5"
         @open-auto-focus="handleOpenAutoFocus"
       >
         <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
@@ -90,7 +90,7 @@ function handleCancel() {
           </span>
 
           <div class="min-w-0 space-y-2">
-            <AlertDialogTitle class="text-base font-mono font-semibold uppercase tracking-wider text-text-primary">
+            <AlertDialogTitle class="display-wide text-base tracking-[0.12em] text-text-primary">
               {{ title }}
             </AlertDialogTitle>
             <AlertDialogDescription class="text-sm leading-relaxed text-text-muted">
@@ -99,7 +99,7 @@ function handleCancel() {
             <div
               v-if="detail"
               data-testid="confirm-dialog-detail"
-              class="mt-2 border border-border-hairline bg-bg-primary px-3 py-2 text-ui font-mono text-text-primary break-words"
+              class="mt-2 border border-border-hairline bg-bg-primary px-3 py-2 text-ui font-medium text-text-primary break-words"
             >
               {{ detail }}
             </div>
@@ -112,7 +112,7 @@ function handleCancel() {
               type="button"
               data-testid="confirm-dialog-cancel"
               :disabled="loading"
-              class="inline-flex h-9 items-center gap-2 border border-border-hairline bg-bg-primary px-3.5 text-xs font-mono text-text-primary hover:bg-bg-hover transition-colors focus:outline-none focus-visible:border-signal disabled:opacity-50"
+              class="btn-press inline-flex h-9 items-center gap-2 border border-border-hairline bg-bg-primary px-3.5 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors focus:outline-none focus-visible:border-signal disabled:opacity-50"
               @click="handleCancel"
             >
               <span>{{ cancelLabel || $t('confirm.cancelAction') }}</span>
@@ -126,7 +126,7 @@ function handleCancel() {
               type="button"
               data-testid="confirm-dialog-confirm"
               :disabled="loading"
-              class="inline-flex h-9 items-center gap-2 border px-3.5 text-xs font-mono uppercase transition-colors focus:outline-none focus-visible:ring-1 disabled:opacity-50"
+              class="btn-press inline-flex h-9 items-center gap-2 border px-3.5 text-xs font-semibold uppercase transition-colors focus:outline-none focus-visible:ring-1 disabled:opacity-50"
               :class="
                 destructive
                   ? 'border-destructive/60 bg-destructive/15 text-destructive hover:bg-red-600 hover:border-red-600 hover:text-white focus-visible:ring-destructive'

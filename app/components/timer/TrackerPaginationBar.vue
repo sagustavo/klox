@@ -70,7 +70,7 @@ function goLast() {
     class="flex flex-wrap items-center justify-between gap-3 border border-border-hairline bg-bg-elevated px-4 py-3"
   >
     <!-- Active 7-Day Window Telemetry Summary -->
-    <div class="flex flex-wrap items-center gap-2.5 text-ui font-mono">
+    <div class="flex flex-wrap items-center gap-2.5 text-ui">
       <span
         v-if="!compact"
         class="inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-signal"
@@ -97,7 +97,7 @@ function goLast() {
       <span
         v-if="streaming"
         data-testid="tracker-streaming-badge"
-        class="inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-2.5 py-0.5 text-xs font-mono text-signal"
+        class="inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-2.5 py-0.5 text-xs font-medium text-signal"
       >
         <span class="h-1.5 w-1.5 rounded-full bg-signal motion-safe:animate-pulse" />
         <span class="tabular-telemetry">{{ $t('timer.streamingHistory', { count: streamedCount }) }}</span>
@@ -112,7 +112,7 @@ function goLast() {
         data-testid="tracker-toggle-all-days"
         :aria-label="allDaysExpanded ? $t('timer.dayGroup.collapseAll') : $t('timer.dayGroup.expandAll')"
         :title="allDaysExpanded ? $t('timer.dayGroup.collapseAll') : $t('timer.dayGroup.expandAll')"
-        class="inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-mono text-text-primary hover:bg-bg-hover transition-colors"
+        class="btn-press inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors"
         @click="emit('toggleAllDays')"
       >
         <ChevronsDownUp v-if="allDaysExpanded" class="h-3.5 w-3.5 text-signal" />
@@ -127,7 +127,7 @@ function goLast() {
         :disabled="!window.hasPreviousPage"
         :aria-label="$t('timer.pagination.first')"
         :title="$t('timer.pagination.first')"
-        class="inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-primary text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+        class="btn-press inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-primary text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
         @click="goFirst"
       >
         <ChevronsLeft class="h-4 w-4" />
@@ -137,7 +137,7 @@ function goLast() {
         type="button"
         data-testid="tracker-pagination-prev"
         :disabled="!window.hasPreviousPage"
-        class="inline-flex h-9 items-center gap-1 border border-border-hairline bg-bg-primary px-3 text-xs font-mono text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+        class="btn-press inline-flex h-9 items-center gap-1 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
         @click="goPrevious"
       >
         <ChevronLeft class="h-4 w-4" />
@@ -146,7 +146,7 @@ function goLast() {
 
       <span
         data-testid="tracker-pagination-page"
-        class="tabular-telemetry inline-flex h-9 items-center border border-border-hairline bg-bg-primary px-3 text-xs font-mono text-text-muted"
+        class="tabular-telemetry inline-flex h-9 items-center border border-border-hairline bg-bg-primary px-3 text-xs text-text-muted"
       >
         {{ $t('timer.pagination.pageOf', { page: window.pageNumber, total: window.totalPages }) }}
       </span>
@@ -155,7 +155,7 @@ function goLast() {
         type="button"
         data-testid="tracker-pagination-next"
         :disabled="!window.hasNextPage"
-        class="inline-flex h-9 items-center gap-1 border border-border-hairline bg-bg-primary px-3 text-xs font-mono text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+        class="btn-press inline-flex h-9 items-center gap-1 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
         @click="goNext"
       >
         <span>{{ $t('timer.pagination.next') }}</span>
@@ -169,7 +169,7 @@ function goLast() {
         :disabled="!window.hasNextPage"
         :aria-label="$t('timer.pagination.last')"
         :title="$t('timer.pagination.last')"
-        class="inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-primary text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+        class="btn-press inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-primary text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
         @click="goLast"
       >
         <ChevronsRight class="h-4 w-4" />

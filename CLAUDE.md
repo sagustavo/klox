@@ -125,7 +125,7 @@ Must strictly follow official Toggl Track CSV specifications:
 
 - **Launch locales:** `en` (default + source of truth) and `pt-BR` (`es` deferred to post-POC backlog). Adding a locale = one JSON file + one config entry, no code changes. **RTL is out of scope.**
 - **Four separate concerns:** UI language (`@nuxtjs/i18n`, lazy-loaded) · regional formatting (`Intl.*` via a single `useFormat()` composable) · time semantics (`UserPreferences.timeZone` + `weekStartsOn` in the domain layer; dashboard presets respect them) · user content (never translated).
-- **Telemetry exception:** live timers and durations always render `HH:MM:SS` in Latin digits, JetBrains Mono, `tabular-nums`, in every locale.
+- **Telemetry exception:** live timers and durations always render `HH:MM:SS` in Latin digits, `Geist` (`tabular-nums`), in every locale.
 - **Boundaries:** server/API returns error **codes** (`AI_RATE_LIMITED`, `AI_UNAVAILABLE`, `AUTH_INVALID`), translated client-side. Gemini returns IDs only. Firebase Auth `languageCode` follows the user locale.
 - **Quality gates (lean POC):** typed message keys from `en.json`. Key convention `feature.component.element`. Heavy i18n lint rules, CI check scripts, and pseudo-locale generation are deferred to the post-POC backlog to keep token spend and setup minimal.
 - **Rule from Phase 1 onward:** every UI string goes through `$t()`; every interactive element relevant to onboarding gets a `data-tour` attribute.
@@ -139,8 +139,9 @@ Must strictly follow official Toggl Track CSV specifications:
   - **Dark Mode (Default):** Primary BG `#050505` (Deep Obsidian) | Elevated Card BG `#0C0C0E` | Hover Surface `#141417` | Hairline Borders `1px solid #222226` | Primary Text `#FAFAFA` | Muted Text `#8E8E93` | Telemetry Accent `#3B82F6` (Electric Cobalt).
   - **Light Mode:** Primary BG `#FAFAFA` | Elevated Card BG `#FFFFFF` | Hairline Borders `#E4E4E7` | Primary Text `#09090B`.
 - **Typography:**
-  - UI Sans: `'Inter'` or `'Geist'` (`tracking-tight`).
-  - Telemetry & Timers Mono: `'JetBrains Mono'` with `font-variant-numeric: tabular-nums` MANDATORY on all live timers, durations, dates, and keyboard shortcut keycaps (`[N]`, `[S]`, `[Tab]`, `[⌘I]`).
+  - Display Wide (`display-wide`): `'Michroma'` (`tracking-[0.04em]` default; brand wordmarks use `tracking-[0.42em]` orbital / `tracking-[0.32em]` reticle) for brand marks (`KLOX ▪` / compact `K▪`), landing/in-app page titles, modal headers, and primary KPI totals.
+  - UI & Telemetry Sans: `'Geist'` / `'Inter'` (`tracking-tight`), with `font-variant-numeric: tabular-nums` (`.tabular-telemetry`) MANDATORY on all live timers, durations, dates, and dashboard numbers.
+  - Keycaps & Code Mono (Strictly Scoped): `'JetBrains Mono'` is reserved strictly for keyboard shortcut keycaps (`[N]`, `[S]`, `[Tab]`, `[⌘I]`) and technical code/CSV blocks.
 - **Mobile Responsiveness:**
   - Desktop (`>= 1024px`): Persistent top Command Timer Bar and multi-column analytics grid.
   - Mobile (`< 768px`): Command Timer Bar transforms into a sticky bottom thumb-zone dock; charts stack cleanly in 1 column.

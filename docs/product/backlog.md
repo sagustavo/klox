@@ -78,6 +78,8 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | **FR-5.5** | Product Backlog Item | Dedicated Multi-Select Filter Inputs with "Select All" | Analytics Dashboard | 3 - Medium | Free | Done |
 | **UX-1.1** | Product Backlog Item | User-Friendly Copy & Base Typography Scaling | Copy & Accessibility | 3 - Medium | Free | Done |
 | **UX-1.2** | Product Backlog Item | Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency | UI Polish & Brand | 3 - Medium | Free | Done |
+| **UX-2.1** | Product Backlog Item | Brand Logo Tracking, Typography Unification, Favicon & Dynamic Tab Title (`AB#72`) | UI Polish & Brand | 2 - High | Free | Done |
+| **UX-2.2** | Product Backlog Item | Landing Page Kinetic Experience & Site-Wide Orbital Motion (`AB#73`) | UI Polish & Motion | 2 - High | Free | Done |
 
 ### 3.2 Phase 10 — Keyboard Velocity, Auth, Profile & Feedback (`Next`)
 
@@ -292,6 +294,34 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
   - [x] Prominently surface `contact@klox.dev` in the footer, FAQ, auth panel, and in-app help sheet.
   - [x] Align in-app layout and telemetry design tokens so future sprint components follow the exact same visual hierarchy and palette.
   - [x] Route all user-facing copy through `$t()` in `en` and `pt-BR`, preserving hybrid prerendering (`fetchpriority="high"` and zero Firebase SDK on prerendered routes verified via `pnpm build`; Lighthouse mobile ≥ 95 pending live Chromium audit).
+
+#### [UX-2.1] Brand Logo Tracking, Typography Unification, Favicon & Dynamic Tab Title (`AB#72`)
+- **Work Item Type:** `Product Backlog Item`
+- **Area / Category:** `UI Polish & Brand`
+- **Phase:** `Sprint 4 / Phase 10`
+- **Status (ADO State):** `Done` (`Done`)
+- **Priority:** `2 - High`
+- **Plan Tier:** `Free`
+- **Tags:** `branding; design-system; favicon; phase-10; tab-title; typography; ux`
+- **Acceptance Criteria:**
+  - [x] Move `.display-wide`, `.tabular-telemetry`, and `.label-eyebrow` into `@layer components` in `app/assets/css/tokens.css` so Tailwind `tracking-*` utilities override `.display-wide` properly; widen `KloxLogo` (`0.42em` orbital / `0.32em` reticle) with baseline dot alignment and compact `K▪` rail variant.
+  - [x] Restrict `JetBrains Mono` strictly to `KeycapBadge` and technical code/CSV blocks; render UI text, dates, timers, and durations in `Geist` (`tabular-nums`) and titles/KPI totals in `Michroma`.
+  - [x] Register `/images/klox-favicon.png` (`icon` and `apple-touch-icon`) in `nuxt.config.ts`.
+  - [x] Add `formatDynamicTabTitle` / `formatIdleTabTitle` (`app/domain/duration.ts`) + `useDynamicTabTitle` (`app/composables/useDynamicTabTitle.ts`) wired into `app/layouts/app.vue` with unit tests in `tests/unit/domain.spec.ts`.
+
+#### [UX-2.2] Landing Page Kinetic Experience & Site-Wide Orbital Motion (`AB#73`)
+- **Work Item Type:** `Product Backlog Item`
+- **Area / Category:** `UI Polish & Motion`
+- **Phase:** `Sprint 4 / Phase 10`
+- **Status (ADO State):** `Done` (`Done`)
+- **Priority:** `2 - High`
+- **Plan Tier:** `Free`
+- **Tags:** `animations; landing; motion; phase-10; scroll-reveal; telemetry; ux`
+- **Acceptance Criteria:**
+  - [x] Add zero-CLS `BrandTypewriterHeadline.vue` with `sr-only` static `<h1>` and `prefers-reduced-motion` / `paused` static fallback.
+  - [x] Implement bi-directional scroll entry & exit reveals (`useScrollReveal.ts` + `tokens.css`) using native CSS Scroll-Driven Animations (`animation-timeline: view()`) and a feature-detected `IntersectionObserver` fallback.
+  - [x] Upgrade `TelemetryVisual.vue` with interactive project chips, total hours readout, and infinite choreographed filter loop, plus sequential pipeline animation on `CsvVisual.vue` (`:paused`-aware).
+  - [x] Add compositor-only `orbital-page` transitions, trigger-anchored `reka-ui` popover/dialog animations, smooth `reka-ui` + native `::details-content` accordions, and tactile button press states.
 
 ---
 

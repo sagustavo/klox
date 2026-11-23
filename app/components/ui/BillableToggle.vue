@@ -61,7 +61,7 @@ function handleSwitchUpdate(next: boolean) {
     :aria-pressed="modelValue"
     :aria-label="resolvedTooltip"
     :title="resolvedTooltip"
-    class="inline-flex h-8 w-8 shrink-0 items-center justify-center border font-mono transition-all focus:outline-none focus-visible:border-signal focus-visible:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
+    class="btn-press inline-flex h-8 w-8 shrink-0 items-center justify-center border font-medium transition-all focus:outline-none focus-visible:border-signal focus-visible:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
     :class="
       modelValue
         ? 'opacity-100 border-signal/50 bg-signal-soft text-signal hover:bg-signal/25'
@@ -83,7 +83,7 @@ function handleSwitchUpdate(next: boolean) {
     :data-testid="testId"
     :aria-label="label || $t('timer.billableToggle')"
     :title="resolvedTooltip"
-    class="group/billable inline-flex h-10 max-md:min-h-[44px] w-full items-center justify-center gap-1.5 border px-3 text-ui font-mono transition-all select-none cursor-pointer focus:outline-none focus-visible:border-signal disabled:opacity-40 disabled:cursor-not-allowed"
+    class="group/billable btn-press inline-flex h-10 max-md:min-h-[44px] w-full items-center justify-center gap-1.5 border px-3 text-ui font-medium transition-all select-none cursor-pointer focus:outline-none focus-visible:border-signal disabled:opacity-40 disabled:cursor-not-allowed"
     :class="
       modelValue
         ? 'border-signal/60 bg-signal-soft text-signal font-semibold'
@@ -109,7 +109,7 @@ function handleSwitchUpdate(next: boolean) {
     :disabled="disabled"
     :data-tour="dataTour"
     :data-testid="testId"
-    class="group/billable inline-flex h-9 items-center gap-2 border px-3 text-ui font-mono transition-all select-none cursor-pointer focus:outline-none focus-visible:border-signal disabled:opacity-40 disabled:cursor-not-allowed"
+    class="group/billable btn-press inline-flex h-9 items-center gap-2 border px-3 text-ui font-medium transition-all select-none cursor-pointer focus:outline-none focus-visible:border-signal disabled:opacity-40 disabled:cursor-not-allowed"
     :class="
       modelValue
         ? 'border-signal/60 bg-signal-soft text-signal'

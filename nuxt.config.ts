@@ -31,6 +31,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/tokens.css'],
 
   app: {
+    pageTransition: { name: 'orbital-page', mode: 'out-in' },
     head: {
       title: 'Klox — Keyboard-First Time Tracking & Analytics',
       meta: [
@@ -44,6 +45,8 @@ export default defineNuxtConfig({
         },
       ],
       link: [
+        { rel: 'icon', type: 'image/png', href: '/images/klox-favicon.png' },
+        { rel: 'apple-touch-icon', href: '/images/klox-favicon.png' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         {

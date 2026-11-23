@@ -34,7 +34,7 @@ function toggleLocale() {
         <div class="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
-            class="tabular-telemetry inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-elevated px-3 text-xs font-mono uppercase text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+            class="tabular-telemetry btn-press inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-elevated px-3 text-xs font-medium uppercase text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
             :aria-label="$t('nav.switchLanguage')"
             @click="toggleLocale"
           >
@@ -45,7 +45,7 @@ function toggleLocale() {
           <ClientOnly>
             <button
               type="button"
-              class="inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+              class="btn-press inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
               :aria-label="$t('nav.toggleTheme')"
               @click="toggleTheme"
             >

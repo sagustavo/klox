@@ -19,7 +19,7 @@ function renderInlineMarkdown(escapedLine: string): string {
       // Inline code: `code`
       .replace(
         /`([^`]+)`/g,
-        '<code class="border border-border-hairline bg-bg-primary px-1 py-0.5 font-mono text-[11px] text-accent">$1</code>'
+        '<code class="border border-border-hairline bg-bg-primary px-1 py-0.5 font-mono text-xs text-accent">$1</code>'
       )
       // Bold: **text**
       .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-text-primary">$1</strong>')
@@ -87,7 +87,7 @@ export function renderBasicMarkdown(markdown: string | undefined | null): string
         inList = true;
       }
       htmlBlocks.push(
-        `<li class="flex items-start gap-1.5"><span class="font-mono text-text-muted">☐</span><span>${renderInlineMarkdown(uncheckedMatch[1] ?? '')}</span></li>`
+        `<li class="flex items-start gap-1.5"><span class="text-text-muted">☐</span><span>${renderInlineMarkdown(uncheckedMatch[1] ?? '')}</span></li>`
       );
       continue;
     }
@@ -99,7 +99,7 @@ export function renderBasicMarkdown(markdown: string | undefined | null): string
         inList = true;
       }
       htmlBlocks.push(
-        `<li class="flex items-start gap-1.5 text-text-muted line-through"><span class="font-mono text-accent">☑</span><span>${renderInlineMarkdown(checkedMatch[1] ?? '')}</span></li>`
+        `<li class="flex items-start gap-1.5 text-text-muted line-through"><span class="text-accent">☑</span><span>${renderInlineMarkdown(checkedMatch[1] ?? '')}</span></li>`
       );
       continue;
     }

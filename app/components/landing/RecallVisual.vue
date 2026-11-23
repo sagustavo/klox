@@ -16,10 +16,10 @@ const rows = [
 </script>
 
 <template>
-  <div class="border border-border-hairline bg-bg-elevated font-mono text-sm">
+  <div class="border border-border-hairline bg-bg-elevated text-sm">
     <div class="flex items-center justify-between border-b border-border-hairline px-4 py-3">
       <span class="text-text-faint">{{ $t('landing.visuals.recall.promptLabel') }}</span>
-      <span class="label-mono text-signal">{{ $t('landing.visuals.recall.tier1Badge') }}</span>
+      <span class="label-eyebrow text-signal">{{ $t('landing.visuals.recall.tier1Badge') }}</span>
     </div>
 
     <div
@@ -27,7 +27,7 @@ const rows = [
       :key="row.labelKey"
       class="flex items-center justify-between gap-4 border-b border-border-subtle px-4 py-2.5"
     >
-      <span class="font-sans text-sm text-text-primary">{{ $t(row.labelKey) }}</span>
+      <span class="text-sm text-text-primary">{{ $t(row.labelKey) }}</span>
       <span class="tabular-telemetry shrink-0 text-xs text-text-muted">{{ row.ms }}</span>
     </div>
 
@@ -42,7 +42,7 @@ const rows = [
           <BrandKeycapBadge keys="⌘I" size="sm" />
           <span class="text-ui text-text-muted">{{ $t('landing.visuals.recall.aiBadge') }}</span>
         </span>
-        <span class="label-mono text-signal">{{ $t('landing.visuals.recall.matchStatus') }}</span>
+        <span class="label-eyebrow text-signal">{{ $t('landing.visuals.recall.matchStatus') }}</span>
       </div>
 
       <dl class="mt-3 grid grid-cols-1 gap-1.5 border border-border-subtle bg-bg-primary/60 p-3 text-xs sm:grid-cols-3">

@@ -117,7 +117,7 @@ async function handleFinish(startTourAfter: boolean) {
     <!-- Top Banner -->
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-hairline pb-5">
       <div>
-        <div class="label-mono inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-3 py-1 text-signal">
+        <div class="label-eyebrow inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-3 py-1 text-signal">
           {{ $t('onboarding.wizard.badge') }}
         </div>
         <h1 class="display-wide mt-3 text-2xl text-text-primary">
@@ -130,7 +130,7 @@ async function handleFinish(startTourAfter: boolean) {
 
       <button
         type="button"
-        class="h-9 border border-border-hairline bg-bg-elevated px-3.5 font-mono text-xs text-text-muted hover:text-text-primary transition-colors"
+        class="btn-press h-9 border border-border-hairline bg-bg-elevated px-3.5 text-xs font-medium text-text-muted hover:text-text-primary transition-colors"
         @click="handleSkipAll"
       >
         {{ $t('onboarding.wizard.skipAll') }}
@@ -141,7 +141,7 @@ async function handleFinish(startTourAfter: boolean) {
     <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
       <button
         type="button"
-        class="border px-3.5 py-2.5 text-left font-mono text-ui transition-colors"
+        class="border px-3.5 py-2.5 text-left text-ui transition-colors"
         :class="
           step === 1
             ? 'border-signal bg-signal-soft text-signal font-semibold'
@@ -153,7 +153,7 @@ async function handleFinish(startTourAfter: boolean) {
       </button>
       <button
         type="button"
-        class="border px-3.5 py-2.5 text-left font-mono text-ui transition-colors"
+        class="border px-3.5 py-2.5 text-left text-ui transition-colors"
         :class="
           step === 2
             ? 'border-signal bg-signal-soft text-signal font-semibold'
@@ -165,7 +165,7 @@ async function handleFinish(startTourAfter: boolean) {
       </button>
       <button
         type="button"
-        class="border px-3.5 py-2.5 text-left font-mono text-ui transition-colors"
+        class="border px-3.5 py-2.5 text-left text-ui transition-colors"
         :class="
           step === 3
             ? 'border-signal bg-signal-soft text-signal font-semibold'
@@ -181,7 +181,7 @@ async function handleFinish(startTourAfter: boolean) {
     <div v-if="step === 1" class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-6 space-y-5">
       <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
       <div>
-        <label class="label-mono block text-text-muted mb-2">
+        <label class="label-eyebrow block text-text-muted mb-2">
           {{ $t('settings.languageLabel') }}
         </label>
         <select
@@ -195,12 +195,12 @@ async function handleFinish(startTourAfter: boolean) {
       </div>
 
       <div>
-        <label class="label-mono block text-text-muted mb-2">
+        <label class="label-eyebrow block text-text-muted mb-2">
           {{ $t('settings.timeZoneLabel') }}
         </label>
         <select
           :value="prefsStore.preferences.timeZone"
-          class="tabular-telemetry h-10 w-full border border-border-input bg-bg-primary px-3 font-mono text-sm text-text-primary focus:border-signal focus:outline-none"
+          class="tabular-telemetry h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
           @change="onChangeTimeZone"
         >
           <option v-for="tz in timeZoneOptions" :key="tz" :value="tz">
@@ -211,13 +211,13 @@ async function handleFinish(startTourAfter: boolean) {
 
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label class="label-mono block text-text-muted mb-2">
+          <label class="label-eyebrow block text-text-muted mb-2">
             {{ $t('settings.weekStartsOnLabel') }}
           </label>
           <div class="grid grid-cols-3 gap-1.5">
             <button
               type="button"
-              class="h-10 border text-xs font-mono transition-colors"
+              class="h-10 border text-xs transition-colors"
               :class="
                 prefsStore.preferences.weekStartsOn === 1
                   ? 'border-signal bg-signal-soft text-text-primary font-semibold'
@@ -229,7 +229,7 @@ async function handleFinish(startTourAfter: boolean) {
             </button>
             <button
               type="button"
-              class="h-10 border text-xs font-mono transition-colors"
+              class="h-10 border text-xs transition-colors"
               :class="
                 prefsStore.preferences.weekStartsOn === 0
                   ? 'border-signal bg-signal-soft text-text-primary font-semibold'
@@ -241,7 +241,7 @@ async function handleFinish(startTourAfter: boolean) {
             </button>
             <button
               type="button"
-              class="h-10 border text-xs font-mono transition-colors"
+              class="h-10 border text-xs transition-colors"
               :class="
                 prefsStore.preferences.weekStartsOn === 6
                   ? 'border-signal bg-signal-soft text-text-primary font-semibold'
@@ -255,13 +255,13 @@ async function handleFinish(startTourAfter: boolean) {
         </div>
 
         <div>
-          <label class="label-mono block text-text-muted mb-2">
+          <label class="label-eyebrow block text-text-muted mb-2">
             {{ $t('settings.hourCycleLabel') }}
           </label>
           <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              class="h-10 border text-xs font-mono transition-colors"
+              class="tabular-telemetry h-10 border text-xs transition-colors"
               :class="
                 prefsStore.preferences.hourCycle === 'h23'
                   ? 'border-signal bg-signal-soft text-text-primary font-semibold'
@@ -273,7 +273,7 @@ async function handleFinish(startTourAfter: boolean) {
             </button>
             <button
               type="button"
-              class="h-10 border text-xs font-mono transition-colors"
+              class="tabular-telemetry h-10 border text-xs transition-colors"
               :class="
                 prefsStore.preferences.hourCycle === 'h12'
                   ? 'border-signal bg-signal-soft text-text-primary font-semibold'
@@ -290,7 +290,7 @@ async function handleFinish(startTourAfter: boolean) {
       <div class="flex justify-end pt-2">
         <button
           type="button"
-          class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
+          class="btn-press inline-flex h-10 items-center gap-2 bg-accent px-5 text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
           @click="step = 2"
         >
           <span>{{ $t('onboarding.wizard.nextButton') }}</span>
@@ -369,7 +369,7 @@ async function handleFinish(startTourAfter: boolean) {
       <div class="flex items-center justify-between pt-2">
         <button
           type="button"
-          class="h-10 border border-border-hairline bg-bg-primary px-4 font-mono text-xs text-text-muted hover:text-text-primary"
+          class="btn-press h-10 border border-border-hairline bg-bg-primary px-4 text-xs font-medium text-text-muted hover:text-text-primary"
           @click="step = 1"
         >
           {{ $t('onboarding.wizard.backButton') }}
@@ -377,7 +377,7 @@ async function handleFinish(startTourAfter: boolean) {
 
         <button
           type="button"
-          class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
+          class="btn-press inline-flex h-10 items-center gap-2 bg-accent px-5 text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
           @click="step = 3"
         >
           <span>{{ $t('onboarding.wizard.nextButton') }}</span>
@@ -391,7 +391,7 @@ async function handleFinish(startTourAfter: boolean) {
       <div class="space-y-3">
         <button
           type="button"
-          class="flex w-full items-center justify-between border p-4 text-left text-sm font-mono transition-colors"
+          class="flex w-full items-center justify-between border p-4 text-left text-sm transition-colors"
           :class="
             startingMode === 'templates'
               ? 'border-signal bg-signal-soft text-text-primary font-semibold'
@@ -405,7 +405,7 @@ async function handleFinish(startTourAfter: boolean) {
 
         <button
           type="button"
-          class="flex w-full items-center justify-between border p-4 text-left text-sm font-mono transition-colors"
+          class="flex w-full items-center justify-between border p-4 text-left text-sm transition-colors"
           :class="
             startingMode === 'import'
               ? 'border-signal bg-signal-soft text-text-primary font-semibold'
@@ -419,7 +419,7 @@ async function handleFinish(startTourAfter: boolean) {
 
         <button
           type="button"
-          class="flex w-full items-center justify-between border p-4 text-left text-sm font-mono transition-colors"
+          class="flex w-full items-center justify-between border p-4 text-left text-sm transition-colors"
           :class="
             startingMode === 'empty'
               ? 'border-signal bg-signal-soft text-text-primary font-semibold'
@@ -435,7 +435,7 @@ async function handleFinish(startTourAfter: boolean) {
       <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
         <button
           type="button"
-          class="h-10 border border-border-hairline bg-bg-primary px-4 font-mono text-xs text-text-muted hover:text-text-primary"
+          class="btn-press h-10 border border-border-hairline bg-bg-primary px-4 text-xs font-medium text-text-muted hover:text-text-primary"
           @click="step = 2"
         >
           {{ $t('onboarding.wizard.backButton') }}
@@ -445,7 +445,7 @@ async function handleFinish(startTourAfter: boolean) {
           <button
             type="button"
             :disabled="isSubmitting"
-            class="h-10 border border-border-hairline bg-bg-primary px-4 font-mono text-xs text-text-primary hover:border-signal transition-colors"
+            class="btn-press h-10 border border-border-hairline bg-bg-primary px-4 text-xs font-medium text-text-primary hover:border-signal transition-colors"
             @click="handleFinish(false)"
           >
             {{ $t('onboarding.wizard.finishWithoutTour') }}
@@ -454,7 +454,7 @@ async function handleFinish(startTourAfter: boolean) {
           <button
             type="button"
             :disabled="isSubmitting"
-            class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
+            class="btn-press inline-flex h-10 items-center gap-2 bg-accent px-5 text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
             @click="handleFinish(true)"
           >
             <Compass class="h-4 w-4" />

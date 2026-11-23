@@ -55,14 +55,14 @@ async function handleDemo() {
     class="w-full max-w-md p-8 shadow-2xl sm:p-10"
   >
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <p class="label-mono text-signal">
+      <p class="label-eyebrow text-signal">
         {{ mode === 'signup' ? $t('auth.eyebrowSignUp') : $t('auth.eyebrowSignIn') }}
       </p>
 
-      <div class="inline-flex border border-border-hairline bg-bg-primary font-mono text-xs">
+      <div class="inline-flex border border-border-hairline bg-bg-primary text-xs font-medium">
         <button
           type="button"
-          class="h-8 px-3 transition-colors"
+          class="btn-press h-8 px-3 transition-colors"
           :class="
             mode === 'signin'
               ? 'bg-accent font-medium text-white'
@@ -74,7 +74,7 @@ async function handleDemo() {
         </button>
         <button
           type="button"
-          class="h-8 px-3 transition-colors"
+          class="btn-press h-8 px-3 transition-colors"
           :class="
             mode === 'signup'
               ? 'bg-accent font-medium text-white'
@@ -119,7 +119,7 @@ async function handleDemo() {
         @click="handleGoogle"
       />
 
-      <div class="flex items-center gap-3 font-mono text-xs uppercase tracking-widest text-text-faint">
+      <div class="flex items-center gap-3 text-xs font-medium uppercase tracking-widest text-text-faint">
         <span class="h-px flex-1 bg-border-hairline" />
         <span>{{ $t('auth.orDivider') }}</span>
         <span class="h-px flex-1 bg-border-hairline" />
@@ -129,7 +129,7 @@ async function handleDemo() {
         <div v-if="mode === 'signup'">
           <label
             for="auth-display-name"
-            class="label-mono block text-text-muted"
+            class="label-eyebrow block text-text-muted"
           >
             {{ $t('auth.displayNameLabel') }}
           </label>
@@ -146,7 +146,7 @@ async function handleDemo() {
         <div>
           <label
             for="auth-email"
-            class="label-mono block text-text-muted"
+            class="label-eyebrow block text-text-muted"
           >
             {{ $t('auth.emailLabel') }}
           </label>
@@ -164,7 +164,7 @@ async function handleDemo() {
         <div>
           <label
             for="auth-password"
-            class="label-mono block text-text-muted"
+            class="label-eyebrow block text-text-muted"
           >
             {{ $t('auth.passwordLabel') }}
           </label>
@@ -205,7 +205,7 @@ async function handleDemo() {
       {{ ' ' }}
       <a
         href="mailto:contact@klox.dev"
-        class="font-mono text-signal hover:underline"
+        class="text-signal hover:underline"
       >
         contact@klox.dev
       </a>

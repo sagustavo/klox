@@ -110,7 +110,7 @@ function handleSubmit() {
           data-testid="tracker-log-time-trigger"
           :aria-label="$t('timer.clickToEditTimeRange')"
           :title="$t('timer.clickToEditTimeRange')"
-          class="tabular-telemetry border border-transparent px-2 py-0.5 text-ui font-mono text-text-muted transition-colors hover:border-signal/50 hover:bg-signal-soft hover:text-signal focus:outline-none focus-visible:border-signal data-[state=open]:border-signal/50 data-[state=open]:bg-signal-soft data-[state=open]:text-signal"
+          class="tabular-telemetry border border-transparent px-2 py-0.5 text-ui text-text-muted transition-colors hover:border-signal/50 hover:bg-signal-soft hover:text-signal focus:outline-none focus-visible:border-signal data-[state=open]:border-signal/50 data-[state=open]:bg-signal-soft data-[state=open]:text-signal"
           @click.prevent="openWithFocus('start')"
         >
           {{ formatTime(startTime) }} – {{ formatTime(endTime) }}
@@ -126,7 +126,7 @@ function handleSubmit() {
           })
         "
         :title="$t('timer.clickToEditTimeRange')"
-        class="tabular-telemetry border border-transparent px-2 py-0.5 font-mono transition-colors hover:border-signal/50 hover:bg-signal-soft hover:text-signal focus:outline-none focus-visible:border-signal"
+        class="tabular-telemetry border border-transparent px-2 py-0.5 transition-colors hover:border-signal/50 hover:bg-signal-soft hover:text-signal focus:outline-none focus-visible:border-signal"
         :class="[
           compactDuration ? 'text-ui sm:text-sm font-medium' : 'text-sm font-semibold',
           open ? 'border-signal/50 bg-signal-soft text-signal' : 'text-text-primary',
@@ -143,12 +143,12 @@ function handleSubmit() {
         :side-offset="6"
         :collision-padding="12"
         data-testid="tracker-time-range-popover"
-        class="relative z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated p-3.5 shadow-2xl focus:outline-none"
+        class="orbital-popover relative z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated p-3.5 shadow-2xl focus:outline-none"
         @click.stop
       >
         <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
         <form class="space-y-3" @submit.prevent="handleSubmit">
-          <div class="flex items-center justify-between border-b border-border-hairline pb-2 text-xs font-mono uppercase tracking-wider text-signal">
+          <div class="flex items-center justify-between border-b border-border-hairline pb-2 text-xs font-semibold uppercase tracking-wider text-signal">
             <span>{{ $t('timer.timeRangePopover.title') }}</span>
             <button
               type="button"
@@ -162,7 +162,7 @@ function handleSubmit() {
 
           <!-- Editable Date Field (Typed Date + Interactive Calendar Picker) -->
           <div class="space-y-1">
-            <span class="block text-xs font-mono uppercase text-text-muted">
+            <span class="block text-xs font-medium uppercase text-text-muted">
               {{ $t('timer.timeRangePopover.dateLabel') }}
             </span>
             <UiDateInput
@@ -177,7 +177,7 @@ function handleSubmit() {
 
           <div class="grid grid-cols-2 gap-2">
             <label class="space-y-1">
-              <span class="block text-xs font-mono uppercase text-text-muted">
+              <span class="block text-xs font-medium uppercase text-text-muted">
                 {{ $t('timer.inlineStartLabel') }}
               </span>
               <input
@@ -188,12 +188,12 @@ function handleSubmit() {
                 required
                 data-testid="tracker-inline-start-time"
                 :aria-label="$t('timer.inlineStartLabel')"
-                class="tabular-telemetry h-9 w-full border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
+                class="tabular-telemetry h-9 w-full border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
               />
             </label>
 
             <label class="space-y-1">
-              <span class="block text-xs font-mono uppercase text-text-muted">
+              <span class="block text-xs font-medium uppercase text-text-muted">
                 {{ $t('timer.inlineStopLabel') }}
               </span>
               <input
@@ -204,7 +204,7 @@ function handleSubmit() {
                 required
                 data-testid="tracker-inline-stop-time"
                 :aria-label="$t('timer.inlineStopLabel')"
-                class="tabular-telemetry h-9 w-full border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
+                class="tabular-telemetry h-9 w-full border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
               />
             </label>
           </div>
@@ -212,7 +212,7 @@ function handleSubmit() {
           <div class="flex items-center justify-between gap-2 pt-0.5">
             <span
               data-testid="tracker-inline-duration-preview"
-              class="tabular-telemetry inline-flex items-center gap-1.5 border px-2.5 py-1 text-ui font-mono font-semibold"
+              class="tabular-telemetry inline-flex items-center gap-1.5 border px-2.5 py-1 text-ui font-semibold"
               :class="
                 isValidRange
                   ? 'border-signal/40 bg-signal-soft text-text-primary'
@@ -239,7 +239,7 @@ function handleSubmit() {
               type="submit"
               data-testid="tracker-inline-save"
               :disabled="!isValidRange"
-              class="inline-flex h-8 items-center gap-1.5 bg-accent px-3 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              class="btn-press inline-flex h-8 items-center gap-1.5 bg-accent px-3 text-xs font-semibold uppercase text-white hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Check class="h-3.5 w-3.5" />
               <span>{{ $t('timer.timeRangePopover.applyButton') }}</span>

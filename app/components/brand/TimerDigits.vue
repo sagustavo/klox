@@ -18,7 +18,7 @@ const formatted = computed(() => formatHMS(props.seconds));
 
 <template>
   <span
-    class="tabular-telemetry inline-flex items-center gap-2 font-mono font-semibold tracking-tight select-none"
+    class="tabular-telemetry inline-flex items-center gap-2 font-semibold tracking-tight select-none"
     :class="[
       size === 'sm' && 'text-sm',
       size === 'md' && 'text-lg sm:text-xl',

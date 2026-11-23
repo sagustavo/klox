@@ -119,10 +119,10 @@ onBeforeUnmount(() => {
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-2.5">
         <Compass class="h-4 w-4 text-signal motion-safe:animate-pulse" />
-        <span class="label-mono font-semibold text-signal">
+        <span class="label-eyebrow font-semibold text-signal">
           {{ $t('onboarding.tour.badge') }}
         </span>
-        <span class="tabular-telemetry border border-border-hairline bg-bg-primary px-2.5 py-0.5 font-mono text-xs text-text-muted">
+        <span class="tabular-telemetry border border-border-hairline bg-bg-primary px-2.5 py-0.5 text-xs font-medium text-text-muted">
           {{ t('onboarding.tour.stepCounter', { current: onboardingStore.tourStep, total: 6 }) }}
         </span>
       </div>
@@ -130,7 +130,7 @@ onBeforeUnmount(() => {
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="inline-flex h-8 items-center gap-1.5 border border-signal bg-signal-soft px-3 text-xs font-mono uppercase text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
+          class="btn-press inline-flex h-8 items-center gap-1.5 border border-signal bg-signal-soft px-3 text-xs font-semibold uppercase text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
           @click="onboardingStore.nextTourStep()"
         >
           <span>{{ $t('onboarding.tour.nextStep') }}</span>
@@ -139,7 +139,7 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          class="inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-mono text-text-muted hover:text-text-primary transition-colors"
+          class="btn-press inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-text-muted hover:text-text-primary transition-colors"
           @click="onboardingStore.completeTour()"
         >
           <X class="h-3.5 w-3.5" />

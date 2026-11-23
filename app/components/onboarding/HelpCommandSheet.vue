@@ -65,15 +65,15 @@ async function handleRerunWizard() {
     @update:open="onboardingStore.isHelpSheetOpen = $event"
   >
     <DialogPortal>
-      <DialogOverlay class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overscroll-contain" />
+      <DialogOverlay class="orbital-dialog-overlay fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overscroll-contain" />
       <DialogContent
-        class="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-hidden border border-border-hairline bg-bg-elevated p-6 shadow-2xl overscroll-contain focus:outline-none space-y-5"
+        class="orbital-dialog-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-hidden border border-border-hairline bg-bg-elevated p-6 shadow-2xl overscroll-contain focus:outline-none space-y-5"
       >
         <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
 
         <div class="flex items-start justify-between gap-4 border-b border-border-hairline pb-4">
           <div>
-            <DialogTitle class="text-base font-mono font-semibold uppercase tracking-wider text-text-primary">
+            <DialogTitle class="display-wide text-base tracking-[0.12em] text-text-primary">
               {{ $t('onboarding.help.title') }}
             </DialogTitle>
             <DialogDescription class="mt-1 text-ui text-text-muted">
@@ -84,7 +84,7 @@ async function handleRerunWizard() {
           <DialogClose as-child>
             <button
               type="button"
-              class="inline-flex h-8 shrink-0 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-mono text-text-muted hover:text-text-primary transition-colors"
+              class="btn-press inline-flex h-8 shrink-0 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-text-muted hover:text-text-primary transition-colors"
             >
               <X class="h-3.5 w-3.5" />
               <span>{{ $t('onboarding.help.close') }}</span>
@@ -122,13 +122,13 @@ async function handleRerunWizard() {
 
         <!-- Onboarding Actions -->
         <div class="border-t border-border-hairline pt-4 space-y-2.5">
-          <div class="label-mono text-text-muted">
+          <div class="label-eyebrow text-text-muted">
             {{ $t('onboarding.help.actionsTitle') }}
           </div>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <button
               type="button"
-              class="flex items-center gap-2 border border-signal/50 bg-signal-soft px-3.5 py-2.5 text-left text-ui font-mono text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
+              class="btn-press flex items-center gap-2 border border-signal/50 bg-signal-soft px-3.5 py-2.5 text-left text-ui font-medium text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
               @click="handleReplayTour"
             >
               <Compass class="h-4 w-4 shrink-0" />
@@ -137,7 +137,7 @@ async function handleRerunWizard() {
 
             <button
               type="button"
-              class="flex items-center gap-2 border border-border-hairline bg-bg-primary px-3.5 py-2.5 text-left text-ui font-mono text-text-primary hover:border-signal transition-colors"
+              class="btn-press flex items-center gap-2 border border-border-hairline bg-bg-primary px-3.5 py-2.5 text-left text-ui font-medium text-text-primary hover:border-signal transition-colors"
               @click="handleRestoreChecklist"
             >
               <ListChecks class="h-4 w-4 shrink-0 text-signal" />
@@ -146,7 +146,7 @@ async function handleRerunWizard() {
 
             <button
               type="button"
-              class="flex items-center gap-2 border border-border-hairline bg-bg-primary px-3.5 py-2.5 text-left text-ui font-mono text-text-primary hover:border-signal transition-colors"
+              class="btn-press flex items-center gap-2 border border-border-hairline bg-bg-primary px-3.5 py-2.5 text-left text-ui font-medium text-text-primary hover:border-signal transition-colors"
               @click="handleRerunWizard"
             >
               <SlidersHorizontal class="h-4 w-4 shrink-0 text-signal" />
@@ -160,7 +160,7 @@ async function handleRerunWizard() {
           <span>{{ $t('onboarding.help.supportLabel') }}</span>
           <a
             href="mailto:contact@klox.dev"
-            class="font-mono text-signal hover:underline"
+            class="text-signal hover:underline"
           >
             contact@klox.dev
           </a>

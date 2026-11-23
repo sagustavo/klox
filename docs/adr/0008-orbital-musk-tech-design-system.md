@@ -31,9 +31,9 @@ We establish the **Orbital "Musk-Tech" Design System** across the entire applica
   - One high-precision signal color (`#3B82F6` / `oklch(0.72 0.16 245)` dark, `#2563EB` light) used sparingly for active live timers, key interactive highlights, scanlines, and critical badges.
   - `signal-line`: `1px` atmospheric gradient lines (`linear-gradient(90deg, transparent, var(--signal), transparent)`) framing active modals, panels, and cards.
 - **Typography Matrix:**
-  - **Display (Wide/Orbital):** `"Michroma"`, `"Eurostile"`, or wide uppercase tracking (`tracking-[0.25em]` to `0.35em`) for macro titles, section headers, and brand logos.
-  - **Body (UI Sans):** `"Geist"`, `"Inter"`, sans-serif (`tracking-tight`) for high readability at `100%` display zoom.
-  - **Telemetry (Strict Mono):** `"JetBrains Mono"`, monospace with mandatory `font-variant-numeric: tabular-nums` for all live ticking digits, timestamps, durations, and keycap badges (`[N]`, `[S]`, `[Tab]`, `[⌘I]`).
+  - **Display (Wide/Orbital):** `"Michroma"` (`display-wide`) for brand marks (`KLOX ▪` / compact `K▪`), landing/in-app page titles, modal titles, and primary KPI totals.
+  - **Body & Telemetry UI Sans:** `"Geist"`, `"Inter"`, sans-serif (`tracking-tight`) for high readability at `100%` display zoom, plus `.tabular-telemetry` (`font-variant-numeric: tabular-nums`) for live timers, durations, timestamps, and dashboard numbers.
+  - **Keycap & Code Mono (Strictly Scoped):** `"JetBrains Mono"`, monospace reserved exclusively for keyboard keycap badges (`KeycapBadge`, e.g. `[N]`, `[S]`, `[Tab]`, `[⌘I]`) and technical code/CSV blocks.
 
 ### 2.2 Reusable Shared Components
 1. `BrandKloxLogo`: Orbital wide-tracked geometric mark with signal dot.
@@ -57,6 +57,14 @@ We establish the **Orbital "Musk-Tech" Design System** across the entire applica
 - **Contrast Polarity & Scrims:** `--launch-bg` / `--launch-fg` invert cleanly across themes (`#FAFAFA`/`#09090B` in Dark, `#09090B`/`#FAFAFA` in Light); Light Mode strengthens `.bg-void-fade` (`88%` → `78%` → `95%` → `100%`) over `klox-orbit.jpg` and lowers `--text-muted` lightness to maintain WCAG AA contrast.
 - **Font Fallback Metrics & Chart.js Compatibility:** A `'Michroma Fallback'` `@font-face` (`size-adjust` / ascent-override) minimizes CLS before `Michroma` swaps in, while `dashboard.vue` resolves Chart.js stroke/tick/grid colors to hex/`rgba()` values reactive to `useColorMode()` (avoiding `@kurkle/color` parse failures on OKLCH CSS custom properties).
 - **Motion & Modal Accessibility:** Continuous orbital animations (`.animate-scan`, `.animate-press`, `.animate-blink`, `.animate-rise`) are gated behind `@media (prefers-reduced-motion: no-preference)` with a user Pause/Play toggle (`.motion-paused`), and `reka-ui` dialogs (`ConfirmDialog`, `HelpCommandSheet`) apply `overscroll-contain` for scroll containment.
+
+### 2.5 Typography Unification, Cascade Fix & Kinetic Motion (Sprint 4 / UX-2.1 & UX-2.2)
+- **CSS Layer Cascade Resolution:** `.display-wide`, `.tabular-telemetry`, and `.label-eyebrow` reside in `@layer components` inside `app/assets/css/tokens.css` (replacing `.label-mono` in `@layer utilities`), ensuring Tailwind `@layer utilities` letter-spacing classes (`tracking-[0.42em]`, `tracking-[0.32em]`, `tracking-[0.28em]`) never get overridden by `.display-wide`'s base `0.04em` tracking.
+- **Font Hierarchy Unification:** `JetBrains Mono` is restricted strictly to `KeycapBadge` and code/CSV blocks; `Geist` (`tabular-nums`) renders all UI text, timers (`BrandTimerDigits`), durations, and dates; `Michroma` (`display-wide`) anchors brand marks, landing/in-app page titles, modal headers, and key KPI totals.
+- **Kinetic Orbital Motion (Zero-CLS & Accessibility):**
+  - `BrandTypewriterHeadline` reserves exact line dimensions via an invisible static mirror (`aria-hidden`) + `sr-only` text for zero CLS and full SSR/SEO output.
+  - Below-the-fold landing sections (`[data-scroll-reveal]`) animate entry and exit using native CSS Scroll-Driven Animations (`animation-timeline: view()` declared after `animation` inside `@supports ((animation-timeline: view()) and (animation-range: entry))`) with a feature-detected `IntersectionObserver` fallback (`useScrollReveal.ts`) and `.motion-paused` / `prefers-reduced-motion` static rest guarantees.
+  - Compositor-only `orbital-page` transitions, trigger-anchored `reka-ui` popover/dialog transitions (animating `scale` without overriding `-translate-x-1/2 -translate-y-1/2`), smooth `reka-ui` and native `::details-content` accordions, and tactile `:active` press micro-interactions run across the entire app.
 
 ---
 

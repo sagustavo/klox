@@ -13,7 +13,9 @@ import {
 import {
   doTimeRangesOverlap,
   elapsedSeconds,
+  formatDynamicTabTitle,
   formatHMS,
+  formatIdleTabTitle,
   normalizeDescription,
   parseHMS,
   parseTimeOfDay,
@@ -171,6 +173,85 @@ describe('domain/duration', () => {
       elapsedSeconds: 0,
       clampedToNow: true,
     });
+  });
+
+  it('formats live H:MM:SS dynamic browser tab titles cleanly across edge cases (UX-2.1)', () => {
+    // Sub-minute elapsed time (45s)
+    expect(
+      formatDynamicTabTitle({
+        elapsedSeconds: 45,
+        description: 'API Refactor',
+        projectName: 'XP Core API',
+      })
+    ).toBe('0:00:45 | API Refactor | XP Core API • Klox');
+
+    // Multi-hour (2h 20m 15s = 8415s) and whitespace normalization
+    expect(
+      formatDynamicTabTitle({
+        elapsedSeconds: 8415,
+        description: '  Review   architecture   RFC  ',
+        projectName: '  Klox   Platform  ',
+      })
+    ).toBe('2:20:15 | Review architecture RFC | Klox Platform • Klox');
+
+    // Exact 1h 02m 05s = 3725s
+    expect(
+      formatDynamicTabTitle({
+        elapsedSeconds: 3725,
+        description: 'Backend sync',
+        projectName: 'Core',
+      })
+    ).toBe('1:02:05 | Backend sync | Core • Klox');
+
+    // Unassigned fallback project omitted cleanly without extra separator
+    expect(
+      formatDynamicTabTitle({
+        elapsedSeconds: 720,
+        description: 'Deep Focus Session',
+        projectName: 'General / Unassigned',
+        isUnassignedProject: true,
+      })
+    ).toBe('0:12:00 | Deep Focus Session • Klox');
+
+    expect(
+      formatDynamicTabTitle({
+        elapsedSeconds: 720,
+        description: 'Quick triage',
+        projectName: '   ',
+      })
+    ).toBe('0:12:00 | Quick triage • Klox');
+
+    // Long description truncated cleanly with ellipsis
+    expect(
+      formatDynamicTabTitle({
+        elapsedSeconds: 180,
+        description: 'Implement comprehensive quarterly analytics export pipeline',
+        projectName: 'Core',
+        maxDescriptionLength: 24,
+      })
+    ).toBe('0:03:00 | Implement comprehensive… | Core • Klox');
+
+    // Empty description + unassigned project + negative/NaN safety
+    expect(
+      formatDynamicTabTitle({
+        elapsedSeconds: -10,
+        description: '   ',
+        isUnassignedProject: true,
+      })
+    ).toBe('0:00:00 • Klox');
+
+    expect(
+      formatDynamicTabTitle({
+        elapsedSeconds: Number.NaN,
+        description: '',
+        projectName: null,
+      })
+    ).toBe('0:00:00 • Klox');
+
+    // Idle workspace tab titles
+    expect(formatIdleTabTitle('Tracker')).toBe('Tracker • Klox');
+    expect(formatIdleTabTitle('Análises')).toBe('Análises • Klox');
+    expect(formatIdleTabTitle('   ')).toBe('Klox');
   });
 });
 

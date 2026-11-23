@@ -146,7 +146,7 @@ function handleTriggerClick(event: MouseEvent) {
         type="button"
         :data-tour="dataTour"
         :data-testid="testId ?? 'tag-multiselect-trigger'"
-        class="inline-flex w-full items-center justify-between gap-2 border bg-bg-primary px-3 text-ui font-mono text-text-primary transition-colors hover:bg-bg-hover focus:border-signal focus:outline-none data-[state=open]:border-signal"
+        class="inline-flex w-full items-center justify-between gap-2 border bg-bg-primary px-3 text-ui text-text-primary transition-colors hover:bg-bg-hover focus:border-signal focus:outline-none data-[state=open]:border-signal"
         :class="[
           size === 'md' ? 'h-10 max-md:min-h-[44px]' : 'h-9',
           modelValue.length > 0 ? 'border-signal/45' : 'border-border-input',
@@ -183,7 +183,7 @@ function handleTriggerClick(event: MouseEvent) {
         <span
           v-for="(tagName, idx) in selectedTagNames"
           :key="idx"
-          class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs font-mono text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
+          class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs font-medium text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
         >
           #{{ tagName }}
         </span>
@@ -209,7 +209,7 @@ function handleTriggerClick(event: MouseEvent) {
         :side-offset="6"
         :collision-padding="12"
         data-testid="tag-multiselect-popover"
-        class="relative z-50 w-72 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
+        class="orbital-popover relative z-50 w-72 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
         @keydown="handleKeydown"
         @click.stop
       >
@@ -223,7 +223,7 @@ function handleTriggerClick(event: MouseEvent) {
             type="text"
             data-testid="tag-multiselect-search"
             :placeholder="$t('timer.tagSelect.searchPlaceholder')"
-            class="w-full bg-transparent text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
+            class="w-full bg-transparent text-ui text-text-primary placeholder:text-text-faint focus:outline-none"
           />
           <button
             v-if="searchQuery"
@@ -238,7 +238,7 @@ function handleTriggerClick(event: MouseEvent) {
         <!-- Select All / Clear Action Bar -->
         <div
           v-if="tags.length > 0"
-          class="flex items-center justify-between border-b border-border-hairline px-3 py-2 text-xs font-mono"
+          class="flex items-center justify-between border-b border-border-hairline px-3 py-2 text-xs font-medium"
         >
           <button
             type="button"
@@ -271,12 +271,12 @@ function handleTriggerClick(event: MouseEvent) {
         </div>
 
         <!-- Scoped Tag Option List -->
-        <div v-if="tags.length === 0" class="px-3 py-4 text-center text-ui font-mono text-text-muted">
+        <div v-if="tags.length === 0" class="px-3 py-4 text-center text-ui text-text-muted">
           {{ $t('timer.noScopedTags') }}
         </div>
         <div
           v-else-if="filteredTags.length === 0"
-          class="px-3 py-4 text-center text-ui font-mono text-text-muted"
+          class="px-3 py-4 text-center text-ui text-text-muted"
         >
           {{ $t('timer.tagSelect.noMatches', { query: searchQuery }) }}
         </div>
@@ -295,7 +295,7 @@ function handleTriggerClick(event: MouseEvent) {
             <button
               type="button"
               :data-testid="`tag-multiselect-option-${tag.id}`"
-              class="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-ui font-mono transition-colors"
+              class="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-ui transition-colors"
               :class="[
                 idx === highlightedIdx ? 'bg-bg-hover' : 'hover:bg-bg-hover/70',
                 selectedSet.has(tag.id) ? 'text-signal font-medium' : 'text-text-primary',

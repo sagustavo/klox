@@ -70,7 +70,7 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
       <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
       <div class="flex items-center justify-between border-b border-border-hairline pb-4">
         <div>
-          <h1 class="text-xl font-semibold text-text-primary">
+          <h1 class="display-wide text-xl sm:text-2xl text-text-primary">
             {{ $t('settings.title') }}
           </h1>
           <p class="mt-1.5 text-sm text-text-muted">
@@ -80,7 +80,7 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
 
         <span
           v-if="savedFlash"
-          class="inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-2.5 py-1 text-xs font-mono uppercase text-signal"
+          class="inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-2.5 py-1 text-xs font-semibold uppercase text-signal"
         >
           <Check class="h-3.5 w-3.5" />
           <span>{{ $t('settings.savedBadge') }}</span>
@@ -90,7 +90,7 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
       <div class="mt-6 space-y-5">
         <!-- Interface Language -->
         <div>
-          <label class="label-mono block text-text-muted">
+          <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.languageLabel') }}
           </label>
           <select
@@ -105,12 +105,12 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
 
         <!-- Timezone -->
         <div>
-          <label class="label-mono block text-text-muted">
+          <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.timeZoneLabel') }}
           </label>
           <select
             :value="prefsStore.preferences.timeZone"
-            class="tabular-telemetry mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm font-mono text-text-primary focus:border-signal focus:outline-none"
+            class="tabular-telemetry mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
             @change="updateField('timeZone', ($event.target as HTMLSelectElement).value)"
           >
             <option v-for="tz in commonTimeZones" :key="tz" :value="tz">
@@ -124,7 +124,7 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
 
         <!-- Week Starts On -->
         <div>
-          <label class="label-mono block text-text-muted">
+          <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.weekStartsOnLabel') }}
           </label>
           <select
@@ -140,12 +140,12 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
 
         <!-- Date Format -->
         <div>
-          <label class="label-mono block text-text-muted">
+          <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.dateFormatLabel') }}
           </label>
           <select
             :value="prefsStore.preferences.dateFormat"
-            class="tabular-telemetry mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm font-mono text-text-primary focus:border-signal focus:outline-none"
+            class="tabular-telemetry mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
             @change="updateField('dateFormat', ($event.target as HTMLSelectElement).value as DateFormatPreset)"
           >
             <option value="locale">{{ $t('settings.dateFormatLocale') }}</option>
@@ -157,7 +157,7 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
 
         <!-- Clock Hour Cycle -->
         <div>
-          <label class="label-mono block text-text-muted">
+          <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.hourCycleLabel') }}
           </label>
           <select
@@ -175,42 +175,42 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
     <!-- Live Formatting Preview -->
     <div class="relative overflow-hidden lg:col-span-5 border border-border-hairline bg-bg-elevated p-6 h-fit">
       <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
-      <div class="label-mono border-b border-border-hairline pb-3 text-signal">
+      <div class="label-eyebrow border-b border-border-hairline pb-3 text-signal">
         {{ $t('settings.previewTitle') }}
       </div>
 
       <dl class="mt-4 space-y-4 text-sm">
         <div class="flex items-center justify-between border-b border-border-hairline pb-3">
           <dt class="text-ui text-text-muted">{{ $t('settings.previewTimer') }}</dt>
-          <dd class="tabular-telemetry font-mono text-base font-semibold text-text-primary">
+          <dd class="tabular-telemetry text-base font-semibold text-text-primary">
             {{ formatDuration(6138) }}
           </dd>
         </div>
 
         <div class="flex items-center justify-between border-b border-border-hairline pb-3">
           <dt class="text-ui text-text-muted">{{ $t('settings.previewDate') }}</dt>
-          <dd class="tabular-telemetry font-mono text-sm text-text-primary">
+          <dd class="tabular-telemetry text-sm text-text-primary">
             {{ formatDate(sampleInstant) }}
           </dd>
         </div>
 
         <div class="flex items-center justify-between border-b border-border-hairline pb-3">
           <dt class="text-ui text-text-muted">{{ $t('settings.previewDayBoundary') }}</dt>
-          <dd class="tabular-telemetry font-mono text-sm text-signal">
+          <dd class="tabular-telemetry text-sm text-signal">
             {{ sampleDateKey }}
           </dd>
         </div>
 
         <div class="flex items-center justify-between border-b border-border-hairline pb-3">
           <dt class="text-ui text-text-muted">{{ $t('settings.previewTime') }}</dt>
-          <dd class="tabular-telemetry font-mono text-sm text-text-primary">
+          <dd class="tabular-telemetry text-sm text-text-primary">
             {{ formatTime(sampleInstant) }}
           </dd>
         </div>
 
         <div class="flex items-center justify-between">
           <dt class="text-ui text-text-muted">{{ $t('settings.previewDecimal') }}</dt>
-          <dd class="tabular-telemetry font-mono text-sm text-text-primary">
+          <dd class="tabular-telemetry text-sm text-text-primary">
             {{ formatDecimalHours(27000) }} h
           </dd>
         </div>

@@ -32,11 +32,11 @@ const steps = [
             :animated="!paused"
             :animation-delay="`${idx * 0.5}s`"
           />
-          <span class="label-mono text-text-faint">{{ $t(step.labelKey) }}</span>
+          <span class="label-eyebrow text-text-faint">{{ $t(step.labelKey) }}</span>
         </div>
         <span
           v-if="idx < steps.length - 1"
-          class="mb-6 font-mono text-sm text-text-faint"
+          class="mb-6 text-sm text-text-faint"
           aria-hidden="true"
         >
           →
@@ -44,7 +44,7 @@ const steps = [
       </div>
     </div>
 
-    <div class="border border-border-hairline bg-bg-elevated p-4 font-mono text-sm">
+    <div class="border border-border-hairline bg-bg-elevated p-4 text-sm">
       <div class="flex flex-wrap items-center gap-1.5 text-text-primary">
         <span class="text-text-faint">{{ $t('landing.visuals.keyboard.promptLabel') }}</span>
         <span>{{ $t('landing.visuals.keyboard.sampleText') }}</span>

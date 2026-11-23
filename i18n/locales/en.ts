@@ -108,6 +108,10 @@ const en = {
         seg2: 'Review',
         seg3: 'Planning',
         seg4: 'Admin',
+        totalLabel: 'Total',
+        filterAria: 'Filter demo projects',
+        autoResume: 'Auto',
+        days: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
       },
       csv: {
         title: 'Toggl ⇄ Klox',

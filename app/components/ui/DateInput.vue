@@ -255,7 +255,7 @@ defineExpose({
         :aria-invalid="!isValid"
         :title="!isValid ? $t('timer.timeRangePopover.invalidDate', { format: placeholder }) : placeholder"
         :data-testid="testId ?? 'ui-date-input'"
-        class="tabular-telemetry h-full w-full bg-transparent px-2.5 text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
+        class="tabular-telemetry h-full w-full bg-transparent px-2.5 text-ui text-text-primary placeholder:text-text-faint focus:outline-none"
         @focus="isInputFocused = true"
         @blur="handleBlur"
         @input="handleTextInput"
@@ -275,76 +275,78 @@ defineExpose({
       </button>
     </div>
 
-    <div
-      v-if="calendarOpen"
-      data-testid="ui-date-calendar-grid"
-      class="border border-border-hairline bg-bg-primary p-3 space-y-2"
-      @keydown.esc.stop="calendarOpen = false"
-    >
-      <div class="flex items-center justify-between">
-        <button
-          type="button"
-          :aria-label="$t('timer.timeRangePopover.previousMonth')"
-          class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted hover:border-signal/50 hover:text-text-primary transition-colors"
-          @click="goPrevMonth"
-        >
-          <ChevronLeft class="h-4 w-4" />
-        </button>
+    <Transition name="orbital-dropdown">
+      <div
+        v-if="calendarOpen"
+        data-testid="ui-date-calendar-grid"
+        class="border border-border-hairline bg-bg-primary p-3 space-y-2"
+        @keydown.esc.stop="calendarOpen = false"
+      >
+        <div class="flex items-center justify-between">
+          <button
+            type="button"
+            :aria-label="$t('timer.timeRangePopover.previousMonth')"
+            class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted hover:border-signal/50 hover:text-text-primary transition-colors"
+            @click="goPrevMonth"
+          >
+            <ChevronLeft class="h-4 w-4" />
+          </button>
 
-        <span class="tabular-telemetry text-xs font-mono font-semibold uppercase tracking-wider text-text-primary">
-          {{ monthYearLabel }}
-        </span>
+          <span class="tabular-telemetry text-xs font-semibold uppercase tracking-wider text-text-primary">
+            {{ monthYearLabel }}
+          </span>
 
-        <button
-          type="button"
-          :aria-label="$t('timer.timeRangePopover.nextMonth')"
-          class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted hover:border-signal/50 hover:text-text-primary transition-colors"
-          @click="goNextMonth"
-        >
-          <ChevronRight class="h-4 w-4" />
-        </button>
+          <button
+            type="button"
+            :aria-label="$t('timer.timeRangePopover.nextMonth')"
+            class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted hover:border-signal/50 hover:text-text-primary transition-colors"
+            @click="goNextMonth"
+          >
+            <ChevronRight class="h-4 w-4" />
+          </button>
+        </div>
+
+        <div class="grid grid-cols-7 gap-0.5 text-center text-xs font-medium uppercase text-text-muted">
+          <span v-for="(wd, idx) in weekdayLabels" :key="idx" class="py-1">
+            {{ wd }}
+          </span>
+        </div>
+
+        <div class="grid grid-cols-7 gap-0.5">
+          <button
+            v-for="cell in calendarCells"
+            :key="cell.dateKey"
+            type="button"
+            :data-testid="`calendar-day-${cell.dateKey}`"
+            class="tabular-telemetry h-8 border text-xs transition-colors focus:outline-none focus-visible:border-signal"
+            :class="[
+              cell.dateKey === modelValue
+                ? 'border-accent bg-accent text-white font-semibold'
+                : cell.dateKey === todayDateKey
+                  ? 'border-signal/50 bg-signal-soft text-signal font-medium hover:bg-signal/20'
+                  : cell.inCurrentMonth
+                    ? 'border-transparent text-text-primary hover:border-border-hairline hover:bg-bg-hover'
+                    : 'border-transparent text-text-faint hover:text-text-muted',
+            ]"
+            @click="selectCalendarDate(cell.dateKey)"
+          >
+            {{ cell.dayOfMonth }}
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between border-t border-border-hairline pt-2 text-xs">
+          <span class="tabular-telemetry text-text-muted">{{ placeholder }}</span>
+          <button
+            type="button"
+            data-testid="calendar-today-shortcut"
+            class="text-signal hover:underline"
+            @click="selectToday"
+          >
+            {{ $t('timer.timeRangePopover.todayShortcut') }}
+          </button>
+        </div>
       </div>
-
-      <div class="grid grid-cols-7 gap-0.5 text-center text-xs font-mono uppercase text-text-muted">
-        <span v-for="(wd, idx) in weekdayLabels" :key="idx" class="py-1">
-          {{ wd }}
-        </span>
-      </div>
-
-      <div class="grid grid-cols-7 gap-0.5">
-        <button
-          v-for="cell in calendarCells"
-          :key="cell.dateKey"
-          type="button"
-          :data-testid="`calendar-day-${cell.dateKey}`"
-          class="tabular-telemetry h-8 border text-xs font-mono transition-colors focus:outline-none focus-visible:border-signal"
-          :class="[
-            cell.dateKey === modelValue
-              ? 'border-accent bg-accent text-white font-semibold'
-              : cell.dateKey === todayDateKey
-                ? 'border-signal/50 bg-signal-soft text-signal font-medium hover:bg-signal/20'
-                : cell.inCurrentMonth
-                  ? 'border-transparent text-text-primary hover:border-border-hairline hover:bg-bg-hover'
-                  : 'border-transparent text-text-faint hover:text-text-muted',
-          ]"
-          @click="selectCalendarDate(cell.dateKey)"
-        >
-          {{ cell.dayOfMonth }}
-        </button>
-      </div>
-
-      <div class="flex items-center justify-between border-t border-border-hairline pt-2 text-xs font-mono">
-        <span class="tabular-telemetry text-text-muted">{{ placeholder }}</span>
-        <button
-          type="button"
-          data-testid="calendar-today-shortcut"
-          class="text-signal hover:underline"
-          @click="selectToday"
-        >
-          {{ $t('timer.timeRangePopover.todayShortcut') }}
-        </button>
-      </div>
-    </div>
+    </Transition>
   </div>
 
   <!-- Mode B: Floating Portal Popover Calendar (ideal for Page Forms like Manual Time Log) -->
@@ -369,7 +371,7 @@ defineExpose({
           :aria-invalid="!isValid"
           :title="!isValid ? $t('timer.timeRangePopover.invalidDate', { format: placeholder }) : placeholder"
           :data-testid="testId ?? 'ui-date-input'"
-          class="tabular-telemetry h-full w-full bg-transparent px-2.5 text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
+          class="tabular-telemetry h-full w-full bg-transparent px-2.5 text-ui text-text-primary placeholder:text-text-faint focus:outline-none"
           @focus="isInputFocused = true"
           @blur="handleBlur"
           @input="handleTextInput"
@@ -396,7 +398,7 @@ defineExpose({
         :side-offset="6"
         :collision-padding="12"
         data-testid="ui-date-calendar-popover"
-        class="relative z-50 w-72 overflow-hidden border border-border-hairline bg-bg-elevated p-3 shadow-2xl space-y-2 focus:outline-none"
+        class="orbital-popover relative z-50 w-72 overflow-hidden border border-border-hairline bg-bg-elevated p-3 shadow-2xl space-y-2 focus:outline-none"
         @open-auto-focus.prevent
       >
         <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
@@ -410,7 +412,7 @@ defineExpose({
             <ChevronLeft class="h-4 w-4" />
           </button>
 
-          <span class="tabular-telemetry text-xs font-mono font-semibold uppercase tracking-wider text-text-primary">
+          <span class="tabular-telemetry text-xs font-semibold uppercase tracking-wider text-text-primary">
             {{ monthYearLabel }}
           </span>
 
@@ -424,7 +426,7 @@ defineExpose({
           </button>
         </div>
 
-        <div class="grid grid-cols-7 gap-0.5 text-center text-xs font-mono uppercase text-text-muted">
+        <div class="grid grid-cols-7 gap-0.5 text-center text-xs font-medium uppercase text-text-muted">
           <span v-for="(wd, idx) in weekdayLabels" :key="idx" class="py-1">
             {{ wd }}
           </span>
@@ -436,7 +438,7 @@ defineExpose({
             :key="cell.dateKey"
             type="button"
             :data-testid="`calendar-day-${cell.dateKey}`"
-            class="tabular-telemetry h-8 border text-xs font-mono transition-colors focus:outline-none focus-visible:border-signal"
+            class="tabular-telemetry h-8 border text-xs transition-colors focus:outline-none focus-visible:border-signal"
             :class="[
               cell.dateKey === modelValue
                 ? 'border-accent bg-accent text-white font-semibold'
@@ -452,7 +454,7 @@ defineExpose({
           </button>
         </div>
 
-        <div class="flex items-center justify-between border-t border-border-hairline pt-2 text-xs font-mono">
+        <div class="flex items-center justify-between border-t border-border-hairline pt-2 text-xs">
           <span class="tabular-telemetry text-text-muted">{{ placeholder }}</span>
           <button
             type="button"

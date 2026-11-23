@@ -12,15 +12,29 @@ import {
   HelpCircle,
 } from 'lucide-vue-next';
 import { useAuthStore } from '~/stores/auth';
+import { useCatalogStore } from '~/stores/catalog';
 import { useOnboardingStore } from '~/stores/onboarding';
 import { usePreferencesStore } from '~/stores/preferences';
+import { useTimerStore } from '~/stores/timer';
 
 const colorMode = useColorMode();
 const { locale, setLocale } = useI18n();
 const localePath = useLocalePath();
 const authStore = useAuthStore();
+const catalogStore = useCatalogStore();
 const onboardingStore = useOnboardingStore();
 const prefsStore = usePreferencesStore();
+const timerStore = useTimerStore();
+
+useDynamicTabTitle();
+
+onMounted(async () => {
+  if (!authStore.user) return;
+  await Promise.all([
+    catalogStore.hydrate(authStore.user.uid, authStore.isDemoMode),
+    timerStore.hydrate(authStore.user.uid, authStore.isDemoMode),
+  ]);
+});
 
 function toggleTheme() {
   colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark';
@@ -107,7 +121,7 @@ async function handleSignOut() {
 
           <span
             v-if="authStore.isDemoMode"
-            class="tabular-telemetry hidden lg:inline-flex border border-signal/40 bg-signal-soft px-2.5 py-0.5 text-xs font-mono uppercase tracking-wider text-signal shrink-0"
+            class="tabular-telemetry hidden lg:inline-flex border border-signal/40 bg-signal-soft px-2.5 py-0.5 text-xs font-medium uppercase tracking-wider text-signal shrink-0"
           >
             {{ $t('app.demoBanner') }}
           </span>
@@ -116,7 +130,7 @@ async function handleSignOut() {
         <div class="flex items-center gap-2 shrink-0">
           <span
             v-if="authStore.user"
-            class="hidden xl:inline-block max-w-[180px] truncate text-ui font-mono text-text-muted"
+            class="hidden xl:inline-block max-w-[180px] truncate text-ui text-text-muted"
           >
             {{ authStore.user.email || authStore.user.displayName }}
           </span>
@@ -124,7 +138,7 @@ async function handleSignOut() {
           <button
             type="button"
             data-tour="nav-help"
-            class="tabular-telemetry inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+            class="tabular-telemetry btn-press inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
             :aria-label="$t('nav.help')"
             :title="`${$t('nav.help')} [?]`"
             @click="onboardingStore.isHelpSheetOpen = true"
@@ -135,7 +149,7 @@ async function handleSignOut() {
 
           <button
             type="button"
-            class="tabular-telemetry inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono uppercase text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+            class="tabular-telemetry btn-press inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs font-medium uppercase text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
             :aria-label="$t('nav.switchLanguage')"
             @click="toggleLocale"
           >
@@ -146,7 +160,7 @@ async function handleSignOut() {
           <ClientOnly>
             <button
               type="button"
-              class="inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+              class="btn-press inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
               :aria-label="$t('nav.toggleTheme')"
               @click="toggleTheme"
             >
@@ -160,7 +174,7 @@ async function handleSignOut() {
 
           <button
             type="button"
-            class="inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-mono uppercase text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+            class="btn-press inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-medium uppercase text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
             :aria-label="$t('nav.signOut')"
             @click="handleSignOut"
           >

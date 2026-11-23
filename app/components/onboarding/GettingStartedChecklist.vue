@@ -27,10 +27,10 @@ async function handleLaunchTour() {
     <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-3">
-        <span class="label-mono text-text-muted">
+        <span class="label-eyebrow text-text-muted">
           {{ $t('onboarding.checklist.title') }}
         </span>
-        <span class="tabular-telemetry border border-signal/40 bg-signal-soft px-2.5 py-0.5 font-mono text-xs font-semibold text-signal">
+        <span class="tabular-telemetry border border-signal/40 bg-signal-soft px-2.5 py-0.5 text-xs font-semibold text-signal">
           {{ onboardingStore.completedCount }} / {{ onboardingStore.totalChecklistCount }} ({{ progressPercent }}%)
         </span>
       </div>
@@ -38,7 +38,7 @@ async function handleLaunchTour() {
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="inline-flex h-8 items-center gap-1.5 border border-signal/50 bg-signal-soft px-3 text-xs font-mono uppercase tracking-wider text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
+          class="btn-press inline-flex h-8 items-center gap-1.5 border border-signal/50 bg-signal-soft px-3 text-xs font-semibold uppercase tracking-wider text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
           @click="handleLaunchTour"
         >
           <Compass class="h-3.5 w-3.5" />
@@ -47,7 +47,7 @@ async function handleLaunchTour() {
 
         <button
           type="button"
-          class="inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-mono text-text-muted hover:text-text-primary transition-colors"
+          class="btn-press inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-text-muted hover:text-text-primary transition-colors"
           @click="onboardingStore.dismissChecklist()"
         >
           <X class="h-3.5 w-3.5" />

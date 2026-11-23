@@ -148,11 +148,11 @@ function handleKeydown(event: KeyboardEvent) {
       <button
         type="button"
         :data-testid="`${testId}-trigger`"
-        class="flex h-10 w-full items-center justify-between gap-2 border bg-bg-primary px-3 text-left text-ui font-mono transition-colors hover:bg-bg-hover focus:border-signal focus:outline-none data-[state=open]:border-signal"
+        class="flex h-10 w-full items-center justify-between gap-2 border bg-bg-primary px-3 text-left text-ui transition-colors hover:bg-bg-hover focus:border-signal focus:outline-none data-[state=open]:border-signal"
         :class="modelValue.length > 0 ? 'border-signal/55' : 'border-border-input'"
       >
         <span class="flex items-center gap-1.5 min-w-0 truncate">
-          <span class="shrink-0 text-xs uppercase tracking-wider text-text-muted">
+          <span class="shrink-0 text-xs font-medium uppercase tracking-wider text-text-muted">
             {{ label }}:
           </span>
           <span
@@ -181,7 +181,7 @@ function handleKeydown(event: KeyboardEvent) {
         :side-offset="6"
         :collision-padding="12"
         :data-testid="`${testId}-popover`"
-        class="relative z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
+        class="orbital-popover relative z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
         @keydown="handleKeydown"
       >
         <div class="signal-line" aria-hidden="true" />
@@ -194,7 +194,7 @@ function handleKeydown(event: KeyboardEvent) {
             type="text"
             :data-testid="`${testId}-search`"
             :placeholder="searchPlaceholder || $t('dashboard.filters.searchFallback')"
-            class="w-full bg-transparent text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
+            class="w-full bg-transparent text-ui text-text-primary placeholder:text-text-faint focus:outline-none"
           />
           <button
             v-if="searchQuery"
@@ -209,7 +209,7 @@ function handleKeydown(event: KeyboardEvent) {
         <!-- Select All / Clear Action Bar -->
         <div
           v-if="options.length > 0"
-          class="flex items-center justify-between border-b border-border-hairline px-3 py-2 text-xs font-mono"
+          class="flex items-center justify-between border-b border-border-hairline px-3 py-2 text-xs font-medium"
         >
           <button
             type="button"
@@ -242,12 +242,12 @@ function handleKeydown(event: KeyboardEvent) {
         </div>
 
         <!-- Option List -->
-        <div v-if="options.length === 0" class="px-3 py-4 text-center text-ui font-mono text-text-muted">
+        <div v-if="options.length === 0" class="px-3 py-4 text-center text-ui text-text-muted">
           {{ emptyText || $t('dashboard.filters.noMatches', { query: '' }) }}
         </div>
         <div
           v-else-if="filteredOptions.length === 0"
-          class="px-3 py-4 text-center text-ui font-mono text-text-muted"
+          class="px-3 py-4 text-center text-ui text-text-muted"
         >
           {{ $t('dashboard.filters.noMatches', { query: searchQuery }) }}
         </div>
@@ -266,7 +266,7 @@ function handleKeydown(event: KeyboardEvent) {
             <button
               type="button"
               :data-testid="`${testId}-option-${opt.value}`"
-              class="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-ui font-mono transition-colors"
+              class="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-ui transition-colors"
               :class="[
                 idx === highlightedIdx ? 'bg-bg-hover' : 'hover:bg-bg-hover/70',
                 selectedSet.has(opt.value) ? 'text-signal font-medium' : 'text-text-primary',
