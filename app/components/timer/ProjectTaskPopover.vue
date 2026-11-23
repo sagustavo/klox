@@ -119,10 +119,10 @@ function handleSelectTask(nextTaskId: EntityId | null) {
         type="button"
         :data-testid="testId ?? 'tracker-project-trigger'"
         :title="$t('timer.projectSelect.changeProjectTooltip')"
-        class="inline-flex flex-wrap items-center gap-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        class="inline-flex flex-wrap items-center gap-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-signal"
         @click="handleTriggerClick"
       >
-        <span class="inline-flex items-center gap-1.5 border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs text-text-primary hover:border-accent/60 hover:bg-bg-hover transition-colors">
+        <span class="inline-flex items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 py-1 text-ui text-text-primary hover:border-signal/60 hover:bg-bg-hover transition-colors">
           <span
             class="h-2 w-2 shrink-0"
             :style="{ backgroundColor: resolvedColor }"
@@ -132,9 +132,9 @@ function handleSelectTask(nextTaskId: EntityId | null) {
 
         <span
           v-if="resolvedTaskLabel"
-          class="inline-flex items-center gap-1 border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[11px] font-mono text-text-muted hover:border-accent/60 hover:text-accent transition-colors"
+          class="inline-flex items-center gap-1 border border-border-hairline bg-bg-primary px-2 py-1 text-xs font-mono text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
         >
-          <CheckSquare class="h-3 w-3 text-accent shrink-0" />
+          <CheckSquare class="h-3.5 w-3.5 text-signal shrink-0" />
           <span>{{ resolvedTaskLabel }}</span>
         </span>
       </button>
@@ -146,19 +146,20 @@ function handleSelectTask(nextTaskId: EntityId | null) {
         :side-offset="6"
         :collision-padding="12"
         data-testid="tracker-project-popover"
-        class="z-50 w-72 border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
+        class="relative z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
         @click.stop
       >
+        <div class="signal-line" aria-hidden="true" />
         <!-- Search Input -->
-        <div class="flex items-center gap-2 border-b border-border-hairline bg-bg-primary/60 px-2.5 py-2">
-          <Search class="h-3.5 w-3.5 shrink-0 text-text-muted" />
+        <div class="flex items-center gap-2 border-b border-border-hairline bg-bg-primary/60 px-3 py-2.5">
+          <Search class="h-4 w-4 shrink-0 text-text-muted" />
           <input
             ref="searchInputRef"
             v-model="searchQuery"
             type="text"
             data-testid="tracker-project-search"
             :placeholder="$t('timer.projectSelect.searchPlaceholder')"
-            class="w-full bg-transparent text-xs font-mono text-text-primary placeholder:text-text-muted/60 focus:outline-none"
+            class="w-full bg-transparent text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
           />
           <button
             v-if="searchQuery"
@@ -166,28 +167,28 @@ function handleSelectTask(nextTaskId: EntityId | null) {
             class="text-text-muted hover:text-text-primary"
             @click="searchQuery = ''"
           >
-            <X class="h-3 w-3" />
+            <X class="h-3.5 w-3.5" />
           </button>
         </div>
 
         <!-- Projects Section -->
-        <div class="border-b border-border-hairline px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-text-muted">
+        <div class="border-b border-border-hairline px-3 py-1.5 text-xs font-mono uppercase tracking-wider text-text-muted">
           {{ $t('timer.projectSelect.projectsSection') }}
         </div>
 
         <div
           v-if="filteredProjects.length === 0"
-          class="px-3 py-3 text-center text-xs font-mono text-text-muted"
+          class="px-3 py-4 text-center text-ui font-mono text-text-muted"
         >
           {{ $t('timer.projectSelect.noMatches') }}
         </div>
-        <ul v-else class="max-h-44 overflow-y-auto divide-y divide-border-hairline/50">
+        <ul v-else class="max-h-48 overflow-y-auto divide-y divide-border-subtle">
           <li v-for="proj in filteredProjects" :key="proj.id">
             <button
               type="button"
               :data-testid="`tracker-project-option-${proj.id}`"
-              class="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left text-xs transition-colors hover:bg-bg-hover"
-              :class="proj.id === projectId ? 'bg-accent/10 text-accent font-medium' : 'text-text-primary'"
+              class="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-ui transition-colors hover:bg-bg-hover"
+              :class="proj.id === projectId ? 'bg-signal-soft text-signal font-medium' : 'text-text-primary'"
               @click="handleSelectProject(proj)"
             >
               <span class="inline-flex items-center gap-2 min-w-0 truncate">
@@ -201,11 +202,11 @@ function handleSelectTask(nextTaskId: EntityId | null) {
               <span class="inline-flex items-center gap-1.5 shrink-0">
                 <span
                   v-if="proj.isBillableDefault"
-                  class="border border-accent/40 bg-accent/10 px-1 text-[10px] font-mono text-accent"
+                  class="border border-signal/40 bg-signal-soft px-1.5 py-0.5 text-xs font-mono text-signal"
                 >
                   $
                 </span>
-                <Check v-if="proj.id === projectId" class="h-3.5 w-3.5 text-accent" />
+                <Check v-if="proj.id === projectId" class="h-4 w-4 text-signal" />
               </span>
             </button>
           </li>
@@ -213,33 +214,33 @@ function handleSelectTask(nextTaskId: EntityId | null) {
 
         <!-- Hierarchical Tasks Section (shown when active project has tasks) -->
         <template v-if="activeProjectTasks.length > 0 || taskId">
-          <div class="border-y border-border-hairline bg-bg-primary/40 px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-text-muted">
+          <div class="border-y border-border-hairline bg-bg-primary/40 px-3 py-1.5 text-xs font-mono uppercase tracking-wider text-text-muted">
             {{ $t('timer.projectSelect.tasksSection') }}
           </div>
-          <ul class="max-h-40 overflow-y-auto divide-y divide-border-hairline/50">
+          <ul class="max-h-44 overflow-y-auto divide-y divide-border-subtle">
             <li>
               <button
                 type="button"
-                class="flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs font-mono transition-colors hover:bg-bg-hover"
-                :class="!taskId ? 'text-accent font-medium' : 'text-text-muted'"
+                class="flex w-full items-center justify-between px-3 py-2 text-left text-ui font-mono transition-colors hover:bg-bg-hover"
+                :class="!taskId ? 'text-signal font-medium' : 'text-text-muted'"
                 @click="handleSelectTask(null)"
               >
                 <span>{{ $t('timer.taskSelectorPlaceholder') }}</span>
-                <Check v-if="!taskId" class="h-3.5 w-3.5 text-accent" />
+                <Check v-if="!taskId" class="h-4 w-4 text-signal" />
               </button>
             </li>
             <li v-for="node in activeProjectTasks" :key="node.task.id">
               <button
                 type="button"
                 :data-testid="`tracker-task-option-${node.task.id}`"
-                class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs font-mono transition-colors hover:bg-bg-hover"
-                :class="node.task.id === taskId ? 'bg-accent/10 text-accent font-medium' : 'text-text-primary'"
+                class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-ui font-mono transition-colors hover:bg-bg-hover"
+                :class="node.task.id === taskId ? 'bg-signal-soft text-signal font-medium' : 'text-text-primary'"
                 @click="handleSelectTask(node.task.id)"
               >
                 <span class="truncate">
                   {{ node.depth === 1 ? '↳ ' : node.depth === 2 ? '↳↳ ' : '' }}{{ node.task.name }}
                 </span>
-                <Check v-if="node.task.id === taskId" class="h-3.5 w-3.5 shrink-0 text-accent" />
+                <Check v-if="node.task.id === taskId" class="h-4 w-4 shrink-0 text-signal" />
               </button>
             </li>
           </ul>

@@ -110,7 +110,7 @@ function handleSubmit() {
           data-testid="tracker-log-time-trigger"
           :aria-label="$t('timer.clickToEditTimeRange')"
           :title="$t('timer.clickToEditTimeRange')"
-          class="tabular-telemetry border border-transparent px-1.5 py-0.5 text-xs font-mono text-text-muted transition-colors hover:border-accent/50 hover:bg-accent/5 hover:text-accent focus:outline-none focus-visible:border-accent data-[state=open]:border-accent/50 data-[state=open]:bg-accent/10 data-[state=open]:text-accent"
+          class="tabular-telemetry border border-transparent px-2 py-0.5 text-ui font-mono text-text-muted transition-colors hover:border-signal/50 hover:bg-signal-soft hover:text-signal focus:outline-none focus-visible:border-signal data-[state=open]:border-signal/50 data-[state=open]:bg-signal-soft data-[state=open]:text-signal"
           @click.prevent="openWithFocus('start')"
         >
           {{ formatTime(startTime) }} – {{ formatTime(endTime) }}
@@ -126,10 +126,10 @@ function handleSubmit() {
           })
         "
         :title="$t('timer.clickToEditTimeRange')"
-        class="tabular-telemetry border border-transparent px-1.5 py-0.5 font-mono transition-colors hover:border-accent/50 hover:bg-accent/5 hover:text-accent focus:outline-none focus-visible:border-accent"
+        class="tabular-telemetry border border-transparent px-2 py-0.5 font-mono transition-colors hover:border-signal/50 hover:bg-signal-soft hover:text-signal focus:outline-none focus-visible:border-signal"
         :class="[
-          compactDuration ? 'text-xs sm:text-sm font-medium' : 'text-sm font-semibold',
-          open ? 'border-accent/50 bg-accent/10 text-accent' : 'text-text-primary',
+          compactDuration ? 'text-ui sm:text-sm font-medium' : 'text-sm font-semibold',
+          open ? 'border-signal/50 bg-signal-soft text-signal' : 'text-text-primary',
         ]"
         @click.stop="openWithFocus('end')"
       >
@@ -143,11 +143,12 @@ function handleSubmit() {
         :side-offset="6"
         :collision-padding="12"
         data-testid="tracker-time-range-popover"
-        class="z-50 w-72 sm:w-80 border border-border-hairline bg-bg-elevated p-3 shadow-2xl focus:outline-none"
+        class="relative z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated p-3.5 shadow-2xl focus:outline-none"
         @click.stop
       >
-        <form class="space-y-2.5" @submit.prevent="handleSubmit">
-          <div class="flex items-center justify-between border-b border-border-hairline pb-1.5 text-[10px] font-mono uppercase tracking-wider text-accent">
+        <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
+        <form class="space-y-3" @submit.prevent="handleSubmit">
+          <div class="flex items-center justify-between border-b border-border-hairline pb-2 text-xs font-mono uppercase tracking-wider text-signal">
             <span>{{ $t('timer.timeRangePopover.title') }}</span>
             <button
               type="button"
@@ -155,13 +156,13 @@ function handleSubmit() {
               class="text-text-muted hover:text-text-primary"
               @click="open = false"
             >
-              <X class="h-3.5 w-3.5" />
+              <X class="h-4 w-4" />
             </button>
           </div>
 
           <!-- Editable Date Field (Typed Date + Interactive Calendar Picker) -->
           <div class="space-y-1">
-            <span class="block text-[10px] font-mono uppercase text-text-muted">
+            <span class="block text-xs font-mono uppercase text-text-muted">
               {{ $t('timer.timeRangePopover.dateLabel') }}
             </span>
             <UiDateInput
@@ -174,9 +175,9 @@ function handleSubmit() {
             />
           </div>
 
-          <div class="grid grid-cols-2 gap-1.5">
+          <div class="grid grid-cols-2 gap-2">
             <label class="space-y-1">
-              <span class="block text-[10px] font-mono uppercase text-text-muted">
+              <span class="block text-xs font-mono uppercase text-text-muted">
                 {{ $t('timer.inlineStartLabel') }}
               </span>
               <input
@@ -187,12 +188,12 @@ function handleSubmit() {
                 required
                 data-testid="tracker-inline-start-time"
                 :aria-label="$t('timer.inlineStartLabel')"
-                class="tabular-telemetry h-8 w-full border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+                class="tabular-telemetry h-9 w-full border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
               />
             </label>
 
             <label class="space-y-1">
-              <span class="block text-[10px] font-mono uppercase text-text-muted">
+              <span class="block text-xs font-mono uppercase text-text-muted">
                 {{ $t('timer.inlineStopLabel') }}
               </span>
               <input
@@ -203,7 +204,7 @@ function handleSubmit() {
                 required
                 data-testid="tracker-inline-stop-time"
                 :aria-label="$t('timer.inlineStopLabel')"
-                class="tabular-telemetry h-8 w-full border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+                class="tabular-telemetry h-9 w-full border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
               />
             </label>
           </div>
@@ -211,11 +212,11 @@ function handleSubmit() {
           <div class="flex items-center justify-between gap-2 pt-0.5">
             <span
               data-testid="tracker-inline-duration-preview"
-              class="tabular-telemetry inline-flex items-center gap-1 border px-2 py-1 text-xs font-mono font-semibold"
+              class="tabular-telemetry inline-flex items-center gap-1.5 border px-2.5 py-1 text-ui font-mono font-semibold"
               :class="
                 isValidRange
-                  ? 'border-accent/40 bg-accent/10 text-text-primary'
-                  : 'border-red-500/50 bg-red-500/10 text-red-400'
+                  ? 'border-signal/40 bg-signal-soft text-text-primary'
+                  : 'border-destructive/50 bg-destructive/10 text-destructive'
               "
               :title="isValidRange ? undefined : $t('timer.invalidTimeRange')"
             >
@@ -228,7 +229,7 @@ function handleSubmit() {
               </span>
               <span
                 v-if="resolvedPreview?.spansNextDay && isValidRange"
-                class="text-[10px] text-accent"
+                class="text-xs text-signal"
               >
                 {{ $t('timer.nextDayBadge') }}
               </span>
@@ -238,9 +239,9 @@ function handleSubmit() {
               type="submit"
               data-testid="tracker-inline-save"
               :disabled="!isValidRange"
-              class="inline-flex h-7 items-center gap-1 bg-accent px-2.5 text-[11px] font-mono uppercase text-white hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex h-8 items-center gap-1.5 bg-accent px-3 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Check class="h-3 w-3" />
+              <Check class="h-3.5 w-3.5" />
               <span>{{ $t('timer.timeRangePopover.applyButton') }}</span>
             </button>
           </div>

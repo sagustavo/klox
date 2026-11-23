@@ -146,27 +146,27 @@ function handleTriggerClick(event: MouseEvent) {
         type="button"
         :data-tour="dataTour"
         :data-testid="testId ?? 'tag-multiselect-trigger'"
-        class="inline-flex w-full items-center justify-between gap-1.5 border bg-bg-primary px-2.5 text-xs font-mono text-text-primary transition-colors hover:bg-bg-hover focus:border-accent focus:outline-none data-[state=open]:border-accent"
+        class="inline-flex w-full items-center justify-between gap-2 border bg-bg-primary px-3 text-ui font-mono text-text-primary transition-colors hover:bg-bg-hover focus:border-signal focus:outline-none data-[state=open]:border-signal"
         :class="[
-          size === 'md' ? 'h-10' : 'h-9',
-          modelValue.length > 0 ? 'border-accent/45' : 'border-border-hairline',
+          size === 'md' ? 'h-10 max-md:min-h-[44px]' : 'h-9',
+          modelValue.length > 0 ? 'border-signal/45' : 'border-border-input',
         ]"
         @click="handleTriggerClick"
       >
         <span class="inline-flex items-center gap-1.5 min-w-0 truncate">
-          <Tag class="h-3.5 w-3.5 shrink-0 text-accent" />
+          <Tag class="h-4 w-4 shrink-0 text-signal" />
           <span
             class="truncate"
-            :class="fieldSummaryLabel ? 'text-accent font-medium' : 'text-text-primary'"
+            :class="fieldSummaryLabel ? 'text-signal font-medium' : 'text-text-primary'"
           >
             {{ fieldSummaryLabel || $t('timer.scopedTagsButton') }}
           </span>
         </span>
-        <span class="inline-flex items-center gap-1 shrink-0">
-          <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
+        <span class="inline-flex items-center gap-1.5 shrink-0">
+          <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-xs text-text-muted">
             {{ modelValue.length }}/{{ tags.length }}
           </span>
-          <ChevronDown class="h-3 w-3 text-text-muted" />
+          <ChevronDown class="h-3.5 w-3.5 text-text-muted" />
         </span>
       </button>
 
@@ -177,13 +177,13 @@ function handleTriggerClick(event: MouseEvent) {
         :data-tour="dataTour"
         :data-testid="testId ?? 'tracker-row-tags-trigger'"
         :title="$t('timer.tagSelect.addTagsTooltip')"
-        class="inline-flex flex-wrap items-center gap-1 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        class="inline-flex flex-wrap items-center gap-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-signal"
         @click="handleTriggerClick"
       >
         <span
           v-for="(tagName, idx) in selectedTagNames"
           :key="idx"
-          class="border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[11px] font-mono text-text-muted hover:border-accent/60 hover:text-accent transition-colors"
+          class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs font-mono text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
         >
           #{{ tagName }}
         </span>
@@ -196,10 +196,10 @@ function handleTriggerClick(event: MouseEvent) {
         :data-testid="testId ?? 'tracker-row-tags-empty-trigger'"
         :aria-label="$t('timer.tagSelect.addTagsTooltip')"
         :title="$t('timer.tagSelect.addTagsTooltip')"
-        class="inline-flex h-7 w-7 shrink-0 items-center justify-center border border-transparent bg-transparent text-text-muted/70 transition-all hover:border-border-hairline hover:bg-bg-primary hover:text-accent focus:outline-none focus-visible:border-accent focus-visible:opacity-100 md:opacity-0 md:group-hover/row:opacity-100 data-[state=open]:opacity-100 data-[state=open]:border-accent/50 data-[state=open]:bg-accent/10 data-[state=open]:text-accent max-md:opacity-55"
+        class="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-transparent bg-transparent text-text-muted transition-all hover:border-border-hairline hover:bg-bg-primary hover:text-signal focus:outline-none focus-visible:border-signal focus-visible:opacity-100 md:opacity-0 md:group-hover/row:opacity-100 data-[state=open]:opacity-100 data-[state=open]:border-signal/50 data-[state=open]:bg-signal-soft data-[state=open]:text-signal max-md:opacity-60"
         @click="handleTriggerClick"
       >
-        <Tag class="h-3.5 w-3.5" />
+        <Tag class="h-4 w-4" />
       </button>
     </PopoverTrigger>
 
@@ -209,20 +209,21 @@ function handleTriggerClick(event: MouseEvent) {
         :side-offset="6"
         :collision-padding="12"
         data-testid="tag-multiselect-popover"
-        class="z-50 w-64 border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
+        class="relative z-50 w-72 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
         @keydown="handleKeydown"
         @click.stop
       >
+        <div class="signal-line" aria-hidden="true" />
         <!-- Search Input Header -->
-        <div class="flex items-center gap-2 border-b border-border-hairline bg-bg-primary/60 px-2.5 py-2">
-          <Search class="h-3.5 w-3.5 shrink-0 text-text-muted" />
+        <div class="flex items-center gap-2 border-b border-border-hairline bg-bg-primary/60 px-3 py-2.5">
+          <Search class="h-4 w-4 shrink-0 text-text-muted" />
           <input
             ref="searchInputRef"
             v-model="searchQuery"
             type="text"
             data-testid="tag-multiselect-search"
             :placeholder="$t('timer.tagSelect.searchPlaceholder')"
-            class="w-full bg-transparent text-xs font-mono text-text-primary placeholder:text-text-muted/60 focus:outline-none"
+            class="w-full bg-transparent text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
           />
           <button
             v-if="searchQuery"
@@ -230,20 +231,20 @@ function handleTriggerClick(event: MouseEvent) {
             class="text-text-muted hover:text-text-primary"
             @click="searchQuery = ''"
           >
-            <X class="h-3 w-3" />
+            <X class="h-3.5 w-3.5" />
           </button>
         </div>
 
         <!-- Select All / Clear Action Bar -->
         <div
           v-if="tags.length > 0"
-          class="flex items-center justify-between border-b border-border-hairline px-2.5 py-1.5 text-[10px] font-mono"
+          class="flex items-center justify-between border-b border-border-hairline px-3 py-2 text-xs font-mono"
         >
           <button
             type="button"
             data-testid="tag-multiselect-select-all"
             :disabled="filteredTags.length === 0"
-            class="text-accent hover:underline disabled:opacity-40 disabled:no-underline"
+            class="text-signal hover:underline disabled:opacity-40 disabled:no-underline"
             @click="toggleSelectAllFiltered"
           >
             {{
@@ -270,12 +271,12 @@ function handleTriggerClick(event: MouseEvent) {
         </div>
 
         <!-- Scoped Tag Option List -->
-        <div v-if="tags.length === 0" class="px-3 py-4 text-center text-xs font-mono text-text-muted">
+        <div v-if="tags.length === 0" class="px-3 py-4 text-center text-ui font-mono text-text-muted">
           {{ $t('timer.noScopedTags') }}
         </div>
         <div
           v-else-if="filteredTags.length === 0"
-          class="px-3 py-4 text-center text-xs font-mono text-text-muted"
+          class="px-3 py-4 text-center text-ui font-mono text-text-muted"
         >
           {{ $t('timer.tagSelect.noMatches', { query: searchQuery }) }}
         </div>
@@ -283,7 +284,7 @@ function handleTriggerClick(event: MouseEvent) {
           v-else
           role="listbox"
           aria-multiselectable="true"
-          class="max-h-56 overflow-y-auto divide-y divide-border-hairline/60 py-0.5"
+          class="max-h-56 overflow-y-auto divide-y divide-border-subtle py-0.5"
         >
           <li
             v-for="(tag, idx) in filteredTags"
@@ -294,24 +295,24 @@ function handleTriggerClick(event: MouseEvent) {
             <button
               type="button"
               :data-testid="`tag-multiselect-option-${tag.id}`"
-              class="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left text-xs font-mono transition-colors"
+              class="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-ui font-mono transition-colors"
               :class="[
                 idx === highlightedIdx ? 'bg-bg-hover' : 'hover:bg-bg-hover/70',
-                selectedSet.has(tag.id) ? 'text-accent font-medium' : 'text-text-primary',
+                selectedSet.has(tag.id) ? 'text-signal font-medium' : 'text-text-primary',
               ]"
               @mouseenter="highlightedIdx = idx"
               @click="toggleTag(tag.id)"
             >
               <span class="inline-flex items-center gap-2 min-w-0 truncate">
                 <span
-                  class="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center border transition-colors"
+                  class="inline-flex h-4 w-4 shrink-0 items-center justify-center border transition-colors"
                   :class="
                     selectedSet.has(tag.id)
                       ? 'border-accent bg-accent text-white'
-                      : 'border-border-hairline bg-bg-primary'
+                      : 'border-border-input bg-bg-primary'
                   "
                 >
-                  <Check v-if="selectedSet.has(tag.id)" class="h-2.5 w-2.5" />
+                  <Check v-if="selectedSet.has(tag.id)" class="h-3 w-3" />
                 </span>
                 <span class="truncate">#{{ tag.name }}</span>
               </span>

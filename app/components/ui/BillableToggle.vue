@@ -61,17 +61,17 @@ function handleSwitchUpdate(next: boolean) {
     :aria-pressed="modelValue"
     :aria-label="resolvedTooltip"
     :title="resolvedTooltip"
-    class="inline-flex h-7 w-7 shrink-0 items-center justify-center border font-mono transition-all focus:outline-none focus-visible:border-accent focus-visible:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
+    class="inline-flex h-8 w-8 shrink-0 items-center justify-center border font-mono transition-all focus:outline-none focus-visible:border-signal focus-visible:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
     :class="
       modelValue
-        ? 'opacity-100 border-accent/50 bg-accent/15 text-accent shadow-[0_0_10px_rgba(59,130,246,0.16)] hover:bg-accent/25'
+        ? 'opacity-100 border-signal/50 bg-signal-soft text-signal hover:bg-signal/25'
         : partial
-          ? 'opacity-100 border-dashed border-accent/50 bg-accent/10 text-accent/85 hover:border-solid hover:bg-accent/20'
-          : 'md:opacity-0 md:group-hover/row:opacity-100 max-md:opacity-55 border-transparent bg-transparent text-text-muted/70 hover:border-border-hairline hover:bg-bg-primary hover:text-accent'
+          ? 'opacity-100 border-dashed border-signal/50 bg-signal-soft text-signal/85 hover:border-solid hover:bg-signal/20'
+          : 'md:opacity-0 md:group-hover/row:opacity-100 max-md:opacity-60 border-transparent bg-transparent text-text-muted hover:border-border-hairline hover:bg-bg-primary hover:text-signal'
     "
     @click="handleRowIconClick"
   >
-    <DollarSign class="h-3.5 w-3.5" />
+    <DollarSign class="h-4 w-4" />
   </button>
 
   <!-- Variant 2: Command Timer Bar Full-Height Hardware Toggle -->
@@ -83,21 +83,21 @@ function handleSwitchUpdate(next: boolean) {
     :data-testid="testId"
     :aria-label="label || $t('timer.billableToggle')"
     :title="resolvedTooltip"
-    class="group/billable inline-flex h-10 w-full items-center justify-center gap-1.5 border px-2.5 text-xs font-mono transition-all select-none cursor-pointer focus:outline-none focus-visible:border-accent disabled:opacity-40 disabled:cursor-not-allowed"
+    class="group/billable inline-flex h-10 max-md:min-h-[44px] w-full items-center justify-center gap-1.5 border px-3 text-ui font-mono transition-all select-none cursor-pointer focus:outline-none focus-visible:border-signal disabled:opacity-40 disabled:cursor-not-allowed"
     :class="
       modelValue
-        ? 'border-accent/60 bg-accent/15 text-accent font-semibold shadow-[0_0_14px_rgba(59,130,246,0.16)]'
-        : 'border-border-hairline bg-bg-primary text-text-muted hover:border-text-muted/40 hover:text-text-primary'
+        ? 'border-signal/60 bg-signal-soft text-signal font-semibold'
+        : 'border-border-input bg-bg-primary text-text-muted hover:border-text-muted/60 hover:text-text-primary'
     "
     @update:model-value="handleSwitchUpdate"
   >
-    <DollarSign class="h-3.5 w-3.5 shrink-0 transition-transform group-active/billable:scale-95" />
+    <DollarSign class="h-4 w-4 shrink-0 transition-transform group-active/billable:scale-95" />
     <SwitchThumb
       class="h-1.5 w-1.5 shrink-0 transition-all"
       :class="
         modelValue
-          ? 'bg-accent shadow-[0_0_6px_#3B82F6]'
-          : 'bg-border-hairline group-hover/billable:bg-text-muted'
+          ? 'bg-signal'
+          : 'bg-border-input group-hover/billable:bg-text-muted'
       "
     />
   </SwitchRoot>
@@ -109,30 +109,30 @@ function handleSwitchUpdate(next: boolean) {
     :disabled="disabled"
     :data-tour="dataTour"
     :data-testid="testId"
-    class="group/billable inline-flex h-8 items-center gap-2 border px-2.5 text-xs font-mono transition-all select-none cursor-pointer focus:outline-none focus-visible:border-accent disabled:opacity-40 disabled:cursor-not-allowed"
+    class="group/billable inline-flex h-9 items-center gap-2 border px-3 text-ui font-mono transition-all select-none cursor-pointer focus:outline-none focus-visible:border-signal disabled:opacity-40 disabled:cursor-not-allowed"
     :class="
       modelValue
-        ? 'border-accent/60 bg-accent/15 text-accent shadow-[0_0_12px_rgba(59,130,246,0.14)]'
-        : 'border-border-hairline bg-bg-primary text-text-muted hover:border-text-muted/40 hover:text-text-primary'
+        ? 'border-signal/60 bg-signal-soft text-signal'
+        : 'border-border-input bg-bg-primary text-text-muted hover:border-text-muted/60 hover:text-text-primary'
     "
     @update:model-value="handleSwitchUpdate"
   >
     <DollarSign
-      class="h-3.5 w-3.5 shrink-0 transition-colors"
-      :class="modelValue ? 'text-accent' : 'text-text-muted group-hover/billable:text-text-primary'"
+      class="h-4 w-4 shrink-0 transition-colors"
+      :class="modelValue ? 'text-signal' : 'text-text-muted group-hover/billable:text-text-primary'"
     />
     <span class="truncate">{{ label || $t('timer.billableToggle') }}</span>
     <span
       aria-hidden="true"
-      class="relative inline-flex h-3.5 w-6 shrink-0 items-center border p-0.5 transition-colors"
+      class="relative inline-flex h-4 w-7 shrink-0 items-center border p-0.5 transition-colors"
       :class="
         modelValue
-          ? 'border-accent/60 bg-accent/25'
-          : 'border-border-hairline bg-bg-elevated'
+          ? 'border-signal/60 bg-signal-soft'
+          : 'border-border-input bg-bg-elevated'
       "
     >
       <SwitchThumb
-        class="block h-2 w-2 transition-transform data-[state=checked]:translate-x-2.5 data-[state=checked]:bg-accent data-[state=unchecked]:translate-x-0 data-[state=unchecked]:bg-text-muted"
+        class="block h-2.5 w-2.5 transition-transform data-[state=checked]:translate-x-3 data-[state=checked]:bg-signal data-[state=unchecked]:translate-x-0 data-[state=unchecked]:bg-text-muted"
       />
     </span>
   </SwitchRoot>

@@ -21,14 +21,14 @@ const formatted = computed(() => formatHMS(props.seconds));
     class="tabular-telemetry inline-flex items-center gap-2 font-mono font-semibold tracking-tight select-none"
     :class="[
       size === 'sm' && 'text-sm',
-      size === 'md' && 'text-lg',
+      size === 'md' && 'text-lg sm:text-xl',
       size === 'lg' && 'text-2xl sm:text-3xl',
       running ? 'text-text-primary' : 'text-text-muted',
     ]"
   >
     <span
       v-if="running"
-      class="inline-block h-2 w-2 bg-accent animate-pulse"
+      class="inline-block h-2 w-2 bg-signal motion-safe:animate-pulse"
       aria-hidden="true"
     />
     <span>{{ formatted }}</span>

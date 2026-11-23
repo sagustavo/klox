@@ -148,29 +148,29 @@ function handleKeydown(event: KeyboardEvent) {
       <button
         type="button"
         :data-testid="`${testId}-trigger`"
-        class="flex h-9 w-full items-center justify-between gap-2 border bg-bg-primary px-2.5 text-left text-xs font-mono transition-colors hover:bg-bg-hover focus:border-accent focus:outline-none data-[state=open]:border-accent"
-        :class="modelValue.length > 0 ? 'border-accent/55' : 'border-border-hairline'"
+        class="flex h-10 w-full items-center justify-between gap-2 border bg-bg-primary px-3 text-left text-ui font-mono transition-colors hover:bg-bg-hover focus:border-signal focus:outline-none data-[state=open]:border-signal"
+        :class="modelValue.length > 0 ? 'border-signal/55' : 'border-border-input'"
       >
         <span class="flex items-center gap-1.5 min-w-0 truncate">
-          <span class="shrink-0 text-[10px] uppercase tracking-wider text-text-muted">
+          <span class="shrink-0 text-xs uppercase tracking-wider text-text-muted">
             {{ label }}:
           </span>
           <span
             class="truncate"
-            :class="modelValue.length > 0 ? 'text-accent font-medium' : 'text-text-primary'"
+            :class="modelValue.length > 0 ? 'text-signal font-medium' : 'text-text-primary'"
           >
             {{ summaryLabel }}
           </span>
         </span>
 
-        <span class="inline-flex items-center gap-1 shrink-0">
+        <span class="inline-flex items-center gap-1.5 shrink-0">
           <span
-            class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px]"
-            :class="modelValue.length > 0 ? 'border-accent/40 text-accent' : 'text-text-muted'"
+            class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-xs"
+            :class="modelValue.length > 0 ? 'border-signal/40 text-signal' : 'text-text-muted'"
           >
             {{ modelValue.length }}/{{ options.length }}
           </span>
-          <ChevronDown class="h-3 w-3 text-text-muted" />
+          <ChevronDown class="h-3.5 w-3.5 text-text-muted" />
         </span>
       </button>
     </PopoverTrigger>
@@ -181,19 +181,20 @@ function handleKeydown(event: KeyboardEvent) {
         :side-offset="6"
         :collision-padding="12"
         :data-testid="`${testId}-popover`"
-        class="z-50 w-72 border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
+        class="relative z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
         @keydown="handleKeydown"
       >
+        <div class="signal-line" aria-hidden="true" />
         <!-- Search Input Header -->
-        <div class="flex items-center gap-2 border-b border-border-hairline bg-bg-primary/60 px-2.5 py-2">
-          <Search class="h-3.5 w-3.5 shrink-0 text-text-muted" />
+        <div class="flex items-center gap-2 border-b border-border-hairline bg-bg-primary/60 px-3 py-2.5">
+          <Search class="h-4 w-4 shrink-0 text-text-muted" />
           <input
             ref="searchInputRef"
             v-model="searchQuery"
             type="text"
             :data-testid="`${testId}-search`"
             :placeholder="searchPlaceholder || $t('dashboard.filters.searchFallback')"
-            class="w-full bg-transparent text-xs font-mono text-text-primary placeholder:text-text-muted/60 focus:outline-none"
+            class="w-full bg-transparent text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
           />
           <button
             v-if="searchQuery"
@@ -201,20 +202,20 @@ function handleKeydown(event: KeyboardEvent) {
             class="text-text-muted hover:text-text-primary"
             @click="searchQuery = ''"
           >
-            <X class="h-3 w-3" />
+            <X class="h-3.5 w-3.5" />
           </button>
         </div>
 
         <!-- Select All / Clear Action Bar -->
         <div
           v-if="options.length > 0"
-          class="flex items-center justify-between border-b border-border-hairline px-2.5 py-1.5 text-[10px] font-mono"
+          class="flex items-center justify-between border-b border-border-hairline px-3 py-2 text-xs font-mono"
         >
           <button
             type="button"
             :data-testid="`${testId}-select-all`"
             :disabled="filteredOptions.length === 0"
-            class="text-accent hover:underline disabled:opacity-40 disabled:no-underline"
+            class="text-signal hover:underline disabled:opacity-40 disabled:no-underline"
             @click="toggleSelectAllFiltered"
           >
             {{
@@ -241,12 +242,12 @@ function handleKeydown(event: KeyboardEvent) {
         </div>
 
         <!-- Option List -->
-        <div v-if="options.length === 0" class="px-3 py-4 text-center text-xs font-mono text-text-muted">
+        <div v-if="options.length === 0" class="px-3 py-4 text-center text-ui font-mono text-text-muted">
           {{ emptyText || $t('dashboard.filters.noMatches', { query: '' }) }}
         </div>
         <div
           v-else-if="filteredOptions.length === 0"
-          class="px-3 py-4 text-center text-xs font-mono text-text-muted"
+          class="px-3 py-4 text-center text-ui font-mono text-text-muted"
         >
           {{ $t('dashboard.filters.noMatches', { query: searchQuery }) }}
         </div>
@@ -254,7 +255,7 @@ function handleKeydown(event: KeyboardEvent) {
           v-else
           role="listbox"
           aria-multiselectable="true"
-          class="max-h-60 overflow-y-auto divide-y divide-border-hairline/60 py-0.5"
+          class="max-h-60 overflow-y-auto divide-y divide-border-subtle py-0.5"
         >
           <li
             v-for="(opt, idx) in filteredOptions"
@@ -265,35 +266,35 @@ function handleKeydown(event: KeyboardEvent) {
             <button
               type="button"
               :data-testid="`${testId}-option-${opt.value}`"
-              class="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left text-xs font-mono transition-colors"
+              class="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-ui font-mono transition-colors"
               :class="[
                 idx === highlightedIdx ? 'bg-bg-hover' : 'hover:bg-bg-hover/70',
-                selectedSet.has(opt.value) ? 'text-accent font-medium' : 'text-text-primary',
+                selectedSet.has(opt.value) ? 'text-signal font-medium' : 'text-text-primary',
               ]"
               @mouseenter="highlightedIdx = idx"
               @click="toggleOption(opt.value)"
             >
               <span class="inline-flex items-center gap-2 min-w-0 flex-1">
                 <span
-                  class="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center border transition-colors"
+                  class="inline-flex h-4 w-4 shrink-0 items-center justify-center border transition-colors"
                   :class="
                     selectedSet.has(opt.value)
                       ? 'border-accent bg-accent text-white'
-                      : 'border-border-hairline bg-bg-primary'
+                      : 'border-border-input bg-bg-primary'
                   "
                 >
-                  <Check v-if="selectedSet.has(opt.value)" class="h-2.5 w-2.5" />
+                  <Check v-if="selectedSet.has(opt.value)" class="h-3 w-3" />
                 </span>
                 <span
                   v-if="opt.color"
-                  class="h-2 w-2 shrink-0"
+                  class="h-2.5 w-2.5 shrink-0"
                   :style="{ backgroundColor: opt.color }"
                 />
                 <span class="truncate">{{ opt.label }}</span>
               </span>
               <span
                 v-if="opt.secondaryLabel"
-                class="shrink-0 truncate max-w-[96px] text-[10px] text-text-muted"
+                class="shrink-0 truncate max-w-[110px] text-xs text-text-muted"
               >
                 {{ opt.secondaryLabel }}
               </span>

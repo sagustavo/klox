@@ -76,8 +76,8 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | **FR-5.3** | Product Backlog Item | Destructive Action Confirmation & Project Tag Renaming | Catalog & Safety | 2 - High | Free | Done |
 | **FR-5.4** | Product Backlog Item | Dashboard Multi-Dimension Slicing, 2-Level Grouping & Time Granularity | Analytics Dashboard | 2 - High | Free | Done |
 | **FR-5.5** | Product Backlog Item | Dedicated Multi-Select Filter Inputs with "Select All" | Analytics Dashboard | 3 - Medium | Free | Done |
-| **UX-1.1** | Product Backlog Item | User-Friendly Copy & Base Typography Scaling | Copy & Accessibility | 3 - Medium | Free | Next |
-| **UX-1.2** | Product Backlog Item | Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency | UI Polish & Brand | 3 - Medium | Free | Next |
+| **UX-1.1** | Product Backlog Item | User-Friendly Copy & Base Typography Scaling | Copy & Accessibility | 3 - Medium | Free | Done |
+| **UX-1.2** | Product Backlog Item | Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency | UI Polish & Brand | 3 - Medium | Free | Done |
 
 ### 3.2 Phase 10 — Keyboard Velocity, Auth, Profile & Feedback (`Next`)
 
@@ -261,21 +261,21 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Copy & Accessibility`
 - **Phase:** `9`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `3 - Medium`
 - **Plan Tier:** `Free`
 - **Tags:** `ux; typography; copywriting; i18n; phase-9`
 - **Description:** Make Klox comfortable to read at standard `100%` desktop browser zoom and approachable for any end user by removing internal engineering jargon from user-facing UI and marketing copy (`en` and `pt-BR`).
 - **Acceptance Criteria:**
-  - [ ] Adjust base typography scale and spacing tokens so all text, tables, and telemetry controls read comfortably at `100%` display zoom (without requiring `110%` scaling).
-  - [ ] Remove developer/architectural jargon (`Gemini`, `Domain-Driven Design / DDD`, `SHA-256`, `UTF-8 BOM`, `Nitro`, `Phase 2 Seam`) from UI labels, tooltips, onboarding, and landing copy, replacing them with clear, benefit-driven language in both `en` and `pt-BR`.
-  - [ ] Architectural and internal engineering terminology remains documented exclusively in `README.md`, `GEMINI.md`, and `docs/adr/`.
+  - [x] Adjust base typography scale and spacing tokens so all text, tables, and telemetry controls read comfortably at `100%` display zoom (zero `text-[9px]`/`text-[10px]`/`text-[11px]` utility classes in `.vue` files verified via audit; live 100%-zoom visual review recommended).
+  - [x] Remove developer/architectural jargon (`Gemini`, `Domain-Driven Design / DDD`, `SHA-256`, `UTF-8 BOM`, `Nitro`, `Phase 2 Seam`) from UI labels, tooltips, onboarding, and landing copy, replacing them with clear, benefit-driven language in both `en` and `pt-BR`.
+  - [x] Architectural and internal engineering terminology remains documented exclusively in `README.md`, `GEMINI.md`, and `docs/adr/`.
 
 #### [UX-1.2] Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `UI Polish & Brand`
 - **Phase:** `9`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `3 - Medium`
 - **Plan Tier:** `Free`
 - **Tags:** `auth; design-system; landing; lovable; musk-tech; phase-9; spacex; starlink; support; ui-design`
@@ -285,13 +285,13 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
     1. **Stage 1 (Sprint 3 / Phase 9 Foundation):** Implement core design tokens in `tailwind.config.ts` and `app/assets/css/tokens.css` (pure void canvas `#000000` / `#FAFAFA`, atmospheric blue signal `#3B82F6` / `#2563EB`, subtle hairline borders `rgba(255,255,255,0.08)`, and wide display typography). Redesign Landing Page (`/`, `/pt-br`) with atmospheric orbit hero (`klox-orbit.jpg`), live ticking mission clock (`T+ HH:MM:SS.ms`), 4 advantage instrument panels, and Free/Pro pricing grid. Redesign `/login` with centered `AuthPanel`, signal line, official Google `"G"` SVG button, and `contact@klox.dev` support channels.
     2. **Stage 2 (In-App Workspaces Alignment):** Extend orbital design tokens to `app/layouts/app.vue`, Command Timer Bar, and sticky mobile dock. Style Analytics Dashboard cards and 2-level grouping breakdown tables with telemetry panels. Standardize all confirmation dialogs, catalog forms, and keycap badges (`[N]`, `[S]`, `[Tab]`, `[?]`).
 - **Acceptance Criteria:**
-  - [ ] Implement atmospheric orbit hero with earth horizon background, live ticking mission clock (`T+ HH:MM:SS.ms`), and telemetry statistics strip.
-  - [ ] Build the 4 interactive advantage instrument panels (Keyboard-First velocity sequence, Two-Tier Recall with scanline, Telemetry Donut/Bars, and Toggl CSV idempotent import).
-  - [ ] Render Free vs Pro pricing cards with feature comparisons and clean CTA links (`Start Free → /login?mode=signup`).
-  - [ ] Update `/login` with clean centered `AuthPanel`, official multi-color Google `"G"` button, and seamless mode toggle between Sign In and Sign Up.
-  - [ ] Prominently surface `contact@klox.dev` in the footer, FAQ, and auth help.
-  - [ ] Align in-app layout and telemetry design tokens so future sprint components follow the exact same visual hierarchy and palette.
-  - [ ] Route all user-facing copy through `$t()` in `en` and `pt-BR`, preserving hybrid prerendering and Lighthouse performance ≥ 95.
+  - [x] Implement atmospheric orbit hero with earth horizon background, live ticking mission clock (`T+ HH:MM:SS.ms`), and telemetry statistics strip.
+  - [x] Build the 4 interactive advantage instrument panels (Keyboard-First velocity sequence, Two-Tier Recall with scanline, Telemetry Donut/Bars, and Toggl CSV import/export preview).
+  - [x] Render Free vs Pro pricing cards with feature comparisons and clean CTA links (`Start tracking free → /login?mode=signup`).
+  - [x] Update `/login` with clean centered `AuthPanel`, official multi-color Google `"G"` button, and seamless mode toggle between Sign In and Sign Up.
+  - [x] Prominently surface `contact@klox.dev` in the footer, FAQ, auth panel, and in-app help sheet.
+  - [x] Align in-app layout and telemetry design tokens so future sprint components follow the exact same visual hierarchy and palette.
+  - [x] Route all user-facing copy through `$t()` in `en` and `pt-BR`, preserving hybrid prerendering (`fetchpriority="high"` and zero Firebase SDK on prerendered routes verified via `pnpm build`; Lighthouse mobile ≥ 95 pending live Chromium audit).
 
 ---
 

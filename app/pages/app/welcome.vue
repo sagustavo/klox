@@ -115,22 +115,22 @@ async function handleFinish(startTourAfter: boolean) {
 <template>
   <div class="mx-auto max-w-2xl space-y-6 py-4">
     <!-- Top Banner -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-hairline pb-4">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-hairline pb-5">
       <div>
-        <div class="inline-flex items-center gap-1.5 border border-accent/40 bg-accent/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-accent">
+        <div class="label-mono inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-3 py-1 text-signal">
           {{ $t('onboarding.wizard.badge') }}
         </div>
-        <h1 class="mt-2 text-xl font-semibold tracking-tight">
+        <h1 class="display-wide mt-3 text-2xl text-text-primary">
           {{ $t('onboarding.wizard.title') }}
         </h1>
-        <p class="mt-0.5 text-xs text-text-muted">
+        <p class="mt-1.5 text-sm text-text-muted">
           {{ $t('onboarding.wizard.subtitle') }}
         </p>
       </div>
 
       <button
         type="button"
-        class="h-8 border border-border-hairline bg-bg-elevated px-3 font-mono text-xs text-text-muted hover:text-text-primary"
+        class="h-9 border border-border-hairline bg-bg-elevated px-3.5 font-mono text-xs text-text-muted hover:text-text-primary transition-colors"
         @click="handleSkipAll"
       >
         {{ $t('onboarding.wizard.skipAll') }}
@@ -138,14 +138,14 @@ async function handleFinish(startTourAfter: boolean) {
     </div>
 
     <!-- Step Indicator -->
-    <div class="grid grid-cols-3 gap-2">
+    <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
       <button
         type="button"
-        class="border px-3 py-2 text-left font-mono text-xs transition-colors"
+        class="border px-3.5 py-2.5 text-left font-mono text-ui transition-colors"
         :class="
           step === 1
-            ? 'border-accent bg-accent/10 text-accent font-semibold'
-            : 'border-border-hairline bg-bg-elevated text-text-muted'
+            ? 'border-signal bg-signal-soft text-signal font-semibold'
+            : 'border-border-hairline bg-bg-elevated text-text-muted hover:text-text-primary'
         "
         @click="step = 1"
       >
@@ -153,11 +153,11 @@ async function handleFinish(startTourAfter: boolean) {
       </button>
       <button
         type="button"
-        class="border px-3 py-2 text-left font-mono text-xs transition-colors"
+        class="border px-3.5 py-2.5 text-left font-mono text-ui transition-colors"
         :class="
           step === 2
-            ? 'border-accent bg-accent/10 text-accent font-semibold'
-            : 'border-border-hairline bg-bg-elevated text-text-muted'
+            ? 'border-signal bg-signal-soft text-signal font-semibold'
+            : 'border-border-hairline bg-bg-elevated text-text-muted hover:text-text-primary'
         "
         @click="step = 2"
       >
@@ -165,11 +165,11 @@ async function handleFinish(startTourAfter: boolean) {
       </button>
       <button
         type="button"
-        class="border px-3 py-2 text-left font-mono text-xs transition-colors"
+        class="border px-3.5 py-2.5 text-left font-mono text-ui transition-colors"
         :class="
           step === 3
-            ? 'border-accent bg-accent/10 text-accent font-semibold'
-            : 'border-border-hairline bg-bg-elevated text-text-muted'
+            ? 'border-signal bg-signal-soft text-signal font-semibold'
+            : 'border-border-hairline bg-bg-elevated text-text-muted hover:text-text-primary'
         "
         @click="step = 3"
       >
@@ -178,28 +178,29 @@ async function handleFinish(startTourAfter: boolean) {
     </div>
 
     <!-- STEP 1: Regional Preferences -->
-    <div v-if="step === 1" class="border border-border-hairline bg-bg-elevated p-6 space-y-5">
+    <div v-if="step === 1" class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-6 space-y-5">
+      <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
       <div>
-        <label class="block text-xs font-mono uppercase tracking-wider text-text-muted mb-1.5">
+        <label class="label-mono block text-text-muted mb-2">
           {{ $t('settings.languageLabel') }}
         </label>
         <select
           :value="prefsStore.preferences.locale"
-          class="h-10 w-full border border-border-hairline bg-bg-primary px-3 text-sm text-text-primary focus:border-accent focus:outline-none"
+          class="h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
           @change="onChangeLocale"
         >
-          <option value="en">English (en)</option>
-          <option value="pt-br">Português — Brasil (pt-BR)</option>
+          <option value="en">English (EN)</option>
+          <option value="pt-br">Português — Brasil (PT-BR)</option>
         </select>
       </div>
 
       <div>
-        <label class="block text-xs font-mono uppercase tracking-wider text-text-muted mb-1.5">
+        <label class="label-mono block text-text-muted mb-2">
           {{ $t('settings.timeZoneLabel') }}
         </label>
         <select
           :value="prefsStore.preferences.timeZone"
-          class="h-10 w-full border border-border-hairline bg-bg-primary px-3 font-mono text-xs text-text-primary focus:border-accent focus:outline-none"
+          class="tabular-telemetry h-10 w-full border border-border-input bg-bg-primary px-3 font-mono text-sm text-text-primary focus:border-signal focus:outline-none"
           @change="onChangeTimeZone"
         >
           <option v-for="tz in timeZoneOptions" :key="tz" :value="tz">
@@ -210,17 +211,17 @@ async function handleFinish(startTourAfter: boolean) {
 
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label class="block text-xs font-mono uppercase tracking-wider text-text-muted mb-1.5">
+          <label class="label-mono block text-text-muted mb-2">
             {{ $t('settings.weekStartsOnLabel') }}
           </label>
           <div class="grid grid-cols-3 gap-1.5">
             <button
               type="button"
-              class="h-9 border text-xs font-mono"
+              class="h-10 border text-xs font-mono transition-colors"
               :class="
                 prefsStore.preferences.weekStartsOn === 1
-                  ? 'border-accent bg-accent/15 text-text-primary font-semibold'
-                  : 'border-border-hairline bg-bg-primary text-text-muted'
+                  ? 'border-signal bg-signal-soft text-text-primary font-semibold'
+                  : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
               "
               @click="onChangeWeekStart(1)"
             >
@@ -228,11 +229,11 @@ async function handleFinish(startTourAfter: boolean) {
             </button>
             <button
               type="button"
-              class="h-9 border text-xs font-mono"
+              class="h-10 border text-xs font-mono transition-colors"
               :class="
                 prefsStore.preferences.weekStartsOn === 0
-                  ? 'border-accent bg-accent/15 text-text-primary font-semibold'
-                  : 'border-border-hairline bg-bg-primary text-text-muted'
+                  ? 'border-signal bg-signal-soft text-text-primary font-semibold'
+                  : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
               "
               @click="onChangeWeekStart(0)"
             >
@@ -240,11 +241,11 @@ async function handleFinish(startTourAfter: boolean) {
             </button>
             <button
               type="button"
-              class="h-9 border text-xs font-mono"
+              class="h-10 border text-xs font-mono transition-colors"
               :class="
                 prefsStore.preferences.weekStartsOn === 6
-                  ? 'border-accent bg-accent/15 text-text-primary font-semibold'
-                  : 'border-border-hairline bg-bg-primary text-text-muted'
+                  ? 'border-signal bg-signal-soft text-text-primary font-semibold'
+                  : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
               "
               @click="onChangeWeekStart(6)"
             >
@@ -254,17 +255,17 @@ async function handleFinish(startTourAfter: boolean) {
         </div>
 
         <div>
-          <label class="block text-xs font-mono uppercase tracking-wider text-text-muted mb-1.5">
+          <label class="label-mono block text-text-muted mb-2">
             {{ $t('settings.hourCycleLabel') }}
           </label>
           <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              class="h-9 border text-xs font-mono"
+              class="h-10 border text-xs font-mono transition-colors"
               :class="
                 prefsStore.preferences.hourCycle === 'h23'
-                  ? 'border-accent bg-accent/15 text-text-primary font-semibold'
-                  : 'border-border-hairline bg-bg-primary text-text-muted'
+                  ? 'border-signal bg-signal-soft text-text-primary font-semibold'
+                  : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
               "
               @click="onChangeHourCycle('h23')"
             >
@@ -272,11 +273,11 @@ async function handleFinish(startTourAfter: boolean) {
             </button>
             <button
               type="button"
-              class="h-9 border text-xs font-mono"
+              class="h-10 border text-xs font-mono transition-colors"
               :class="
                 prefsStore.preferences.hourCycle === 'h12'
-                  ? 'border-accent bg-accent/15 text-text-primary font-semibold'
-                  : 'border-border-hairline bg-bg-primary text-text-muted'
+                  ? 'border-signal bg-signal-soft text-text-primary font-semibold'
+                  : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
               "
               @click="onChangeHourCycle('h12')"
             >
@@ -289,7 +290,7 @@ async function handleFinish(startTourAfter: boolean) {
       <div class="flex justify-end pt-2">
         <button
           type="button"
-          class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent/90"
+          class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
           @click="step = 2"
         >
           <span>{{ $t('onboarding.wizard.nextButton') }}</span>
@@ -297,25 +298,26 @@ async function handleFinish(startTourAfter: boolean) {
       </div>
     </div>
 
-    <!-- STEP 2: Execution Profile -->
-    <div v-else-if="step === 2" class="border border-border-hairline bg-bg-elevated p-6 space-y-4">
+    <!-- STEP 2: Focus Profile -->
+    <div v-else-if="step === 2" class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-6 space-y-4">
+      <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
       <div class="grid grid-cols-1 gap-3">
         <button
           type="button"
-          class="flex items-start gap-3 border p-4 text-left transition-colors"
+          class="flex items-start gap-3.5 border p-4 text-left transition-colors"
           :class="
             selectedProfile === 'both'
-              ? 'border-accent bg-accent/10'
+              ? 'border-signal bg-signal-soft'
               : 'border-border-hairline bg-bg-primary hover:border-text-muted'
           "
           @click="selectedProfile = 'both'"
         >
-          <Layers class="h-5 w-5 shrink-0 text-accent mt-0.5" />
+          <Layers class="h-5 w-5 shrink-0 text-signal mt-0.5" />
           <div>
-            <div class="text-sm font-semibold text-text-primary">
+            <div class="text-base font-semibold text-text-primary">
               {{ $t('onboarding.wizard.profileBoth') }}
             </div>
-            <p class="mt-0.5 text-xs text-text-muted">
+            <p class="mt-1 text-ui text-text-muted">
               {{ $t('onboarding.wizard.profileBothDesc') }}
             </p>
           </div>
@@ -323,20 +325,20 @@ async function handleFinish(startTourAfter: boolean) {
 
         <button
           type="button"
-          class="flex items-start gap-3 border p-4 text-left transition-colors"
+          class="flex items-start gap-3.5 border p-4 text-left transition-colors"
           :class="
             selectedProfile === 'work'
-              ? 'border-accent bg-accent/10'
+              ? 'border-signal bg-signal-soft'
               : 'border-border-hairline bg-bg-primary hover:border-text-muted'
           "
           @click="selectedProfile = 'work'"
         >
-          <Briefcase class="h-5 w-5 shrink-0 text-accent mt-0.5" />
+          <Briefcase class="h-5 w-5 shrink-0 text-signal mt-0.5" />
           <div>
-            <div class="text-sm font-semibold text-text-primary">
+            <div class="text-base font-semibold text-text-primary">
               {{ $t('onboarding.wizard.profileWork') }}
             </div>
-            <p class="mt-0.5 text-xs text-text-muted">
+            <p class="mt-1 text-ui text-text-muted">
               {{ $t('onboarding.wizard.profileWorkDesc') }}
             </p>
           </div>
@@ -344,20 +346,20 @@ async function handleFinish(startTourAfter: boolean) {
 
         <button
           type="button"
-          class="flex items-start gap-3 border p-4 text-left transition-colors"
+          class="flex items-start gap-3.5 border p-4 text-left transition-colors"
           :class="
             selectedProfile === 'personal'
-              ? 'border-accent bg-accent/10'
+              ? 'border-signal bg-signal-soft'
               : 'border-border-hairline bg-bg-primary hover:border-text-muted'
           "
           @click="selectedProfile = 'personal'"
         >
-          <Target class="h-5 w-5 shrink-0 text-accent mt-0.5" />
+          <Target class="h-5 w-5 shrink-0 text-signal mt-0.5" />
           <div>
-            <div class="text-sm font-semibold text-text-primary">
+            <div class="text-base font-semibold text-text-primary">
               {{ $t('onboarding.wizard.profilePersonal') }}
             </div>
-            <p class="mt-0.5 text-xs text-text-muted">
+            <p class="mt-1 text-ui text-text-muted">
               {{ $t('onboarding.wizard.profilePersonalDesc') }}
             </p>
           </div>
@@ -375,7 +377,7 @@ async function handleFinish(startTourAfter: boolean) {
 
         <button
           type="button"
-          class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent/90"
+          class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
           @click="step = 3"
         >
           <span>{{ $t('onboarding.wizard.nextButton') }}</span>
@@ -384,48 +386,49 @@ async function handleFinish(startTourAfter: boolean) {
     </div>
 
     <!-- STEP 3: Starting Point & Finish -->
-    <div v-else class="border border-border-hairline bg-bg-elevated p-6 space-y-5">
-      <div class="space-y-2.5">
+    <div v-else class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-6 space-y-5">
+      <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
+      <div class="space-y-3">
         <button
           type="button"
-          class="flex w-full items-center justify-between border p-4 text-left text-xs font-mono transition-colors"
+          class="flex w-full items-center justify-between border p-4 text-left text-sm font-mono transition-colors"
           :class="
             startingMode === 'templates'
-              ? 'border-accent bg-accent/10 text-text-primary font-semibold'
-              : 'border-border-hairline bg-bg-primary text-text-muted'
+              ? 'border-signal bg-signal-soft text-text-primary font-semibold'
+              : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
           "
           @click="startingMode = 'templates'"
         >
           <span>{{ $t('onboarding.wizard.startTemplates') }}</span>
-          <Check v-if="startingMode === 'templates'" class="h-4 w-4 text-accent" />
+          <Check v-if="startingMode === 'templates'" class="h-4 w-4 text-signal" />
         </button>
 
         <button
           type="button"
-          class="flex w-full items-center justify-between border p-4 text-left text-xs font-mono transition-colors"
+          class="flex w-full items-center justify-between border p-4 text-left text-sm font-mono transition-colors"
           :class="
             startingMode === 'import'
-              ? 'border-accent bg-accent/10 text-text-primary font-semibold'
-              : 'border-border-hairline bg-bg-primary text-text-muted'
+              ? 'border-signal bg-signal-soft text-text-primary font-semibold'
+              : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
           "
           @click="startingMode = 'import'"
         >
           <span>{{ $t('onboarding.wizard.startImport') }}</span>
-          <Check v-if="startingMode === 'import'" class="h-4 w-4 text-accent" />
+          <Check v-if="startingMode === 'import'" class="h-4 w-4 text-signal" />
         </button>
 
         <button
           type="button"
-          class="flex w-full items-center justify-between border p-4 text-left text-xs font-mono transition-colors"
+          class="flex w-full items-center justify-between border p-4 text-left text-sm font-mono transition-colors"
           :class="
             startingMode === 'empty'
-              ? 'border-accent bg-accent/10 text-text-primary font-semibold'
-              : 'border-border-hairline bg-bg-primary text-text-muted'
+              ? 'border-signal bg-signal-soft text-text-primary font-semibold'
+              : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
           "
           @click="startingMode = 'empty'"
         >
           <span>{{ $t('onboarding.wizard.startEmpty') }}</span>
-          <Check v-if="startingMode === 'empty'" class="h-4 w-4 text-accent" />
+          <Check v-if="startingMode === 'empty'" class="h-4 w-4 text-signal" />
         </button>
       </div>
 
@@ -442,7 +445,7 @@ async function handleFinish(startTourAfter: boolean) {
           <button
             type="button"
             :disabled="isSubmitting"
-            class="h-10 border border-border-hairline bg-bg-primary px-4 font-mono text-xs text-text-primary hover:border-accent"
+            class="h-10 border border-border-hairline bg-bg-primary px-4 font-mono text-xs text-text-primary hover:border-signal transition-colors"
             @click="handleFinish(false)"
           >
             {{ $t('onboarding.wizard.finishWithoutTour') }}
@@ -451,12 +454,12 @@ async function handleFinish(startTourAfter: boolean) {
           <button
             type="button"
             :disabled="isSubmitting"
-            class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent/90"
+            class="inline-flex h-10 items-center gap-2 bg-accent px-5 font-mono text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
             @click="handleFinish(true)"
           >
             <Compass class="h-4 w-4" />
             <span>{{ $t('onboarding.wizard.finishWithTour') }}</span>
-            <ArrowRight class="h-3.5 w-3.5" />
+            <ArrowRight class="h-4 w-4" />
           </button>
         </div>
       </div>

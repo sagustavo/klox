@@ -56,6 +56,8 @@ definePageMeta({
 });
 
 const { t } = useI18n();
+const colorMode = useColorMode();
+const isDark = computed(() => colorMode.value === 'dark');
 const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 const prefsStore = usePreferencesStore();
@@ -286,7 +288,7 @@ const doughnutChartData = computed(() => ({
     {
       data: pizzaData.value.slices.map((s) => Math.round((s.seconds / 3600) * 100) / 100),
       backgroundColor: pizzaData.value.slices.map((s) => s.color),
-      borderColor: '#0C0C0E',
+      borderColor: isDark.value ? '#0B0B0E' : '#FFFFFF',
       borderWidth: 2,
     },
   ],
@@ -326,28 +328,32 @@ const stackedBarChartData = computed(() => ({
   })),
 }));
 
-const stackedBarChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  scales: {
-    x: {
-      stacked: true,
-      grid: { color: 'rgba(142, 142, 147, 0.12)' },
-      ticks: { color: '#8E8E93', font: { family: 'JetBrains Mono', size: 10 } },
+const stackedBarChartOptions = computed(() => {
+  const gridColor = isDark.value ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
+  const tickColor = isDark.value ? '#9E9EA6' : '#48484F';
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: {
+        stacked: true,
+        grid: { color: gridColor },
+        ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 12 } },
+      },
+      y: {
+        stacked: true,
+        grid: { color: gridColor },
+        ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 12 } },
+      },
     },
-    y: {
-      stacked: true,
-      grid: { color: 'rgba(142, 142, 147, 0.12)' },
-      ticks: { color: '#8E8E93', font: { family: 'JetBrains Mono', size: 10 } },
+    plugins: {
+      legend: {
+        position: 'bottom' as const,
+        labels: { color: tickColor, boxWidth: 12, font: { family: 'JetBrains Mono', size: 12 } },
+      },
     },
-  },
-  plugins: {
-    legend: {
-      position: 'bottom' as const,
-      labels: { color: '#8E8E93', boxWidth: 10, font: { family: 'JetBrains Mono', size: 11 } },
-    },
-  },
-};
+  };
+});
 
 // Visualization 3: 2-Level Hierarchical Breakdown & Paginated Table
 const secondaryDimensionOptions = computed(() => {
@@ -465,14 +471,13 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
 
 <template>
   <div class="space-y-6">
-    <!-- Header -->
-    <div>
+    <!-- Header Streaming Indicator -->
+    <div v-if="timeLogsStore.streaming">
       <span
-        v-if="timeLogsStore.streaming"
         data-testid="dashboard-streaming-badge"
-        class="inline-flex items-center gap-1.5 border border-accent/40 bg-accent/10 px-2.5 py-1 text-[11px] font-mono text-accent"
+        class="inline-flex items-center gap-2 border border-signal/40 bg-signal-soft px-3 py-1 text-xs font-mono text-signal"
       >
-        <span class="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+        <span class="h-1.5 w-1.5 rounded-full bg-signal motion-safe:animate-pulse" />
         <span class="tabular-telemetry">
           {{ $t('timer.streamingHistory', { count: timeLogsStore.streamedCount }) }}
         </span>
@@ -480,19 +485,20 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
     </div>
 
     <!-- Global Reactive Filter Bar (FR-5.5) -->
-    <div class="border border-border-hairline bg-bg-elevated p-4 space-y-3">
+    <div class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-5 space-y-4">
+      <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
       <div class="flex flex-wrap items-center justify-between gap-3">
         <!-- Time Range Segmented Presets -->
-        <div class="flex flex-wrap items-center gap-1">
+        <div class="flex flex-wrap items-center gap-1.5">
           <button
             v-for="p in presets"
             :key="p"
             type="button"
             :data-testid="`dashboard-preset-${p}`"
-            class="border px-2.5 py-1 text-xs font-mono transition-colors"
+            class="h-9 border px-3 text-ui font-mono transition-colors"
             :class="
               filters.preset === p
-                ? 'border-accent bg-accent text-white'
+                ? 'border-accent bg-accent font-medium text-white'
                 : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
             "
             @click="selectPreset(p)"
@@ -506,7 +512,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
           v-if="filters.preset === 'custom'"
           class="flex flex-wrap items-center gap-2"
         >
-          <div class="w-36">
+          <div class="w-40">
             <UiDateInput
               v-model="filters.customStartDate!"
               v-model:valid="isCustomStartValid"
@@ -515,8 +521,8 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
               test-id="dashboard-custom-start"
             />
           </div>
-          <span class="text-xs text-text-muted">→</span>
-          <div class="w-36">
+          <span class="text-sm text-text-muted">→</span>
+          <div class="w-40">
             <UiDateInput
               v-model="filters.customEndDate!"
               v-model:valid="isCustomEndValid"
@@ -531,26 +537,26 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
         <div class="flex items-center gap-2">
           <span
             v-if="activeFiltersCount > 0"
-            class="tabular-telemetry border border-accent/40 bg-accent/10 px-2 py-1 text-[11px] font-mono text-accent"
+            class="tabular-telemetry border border-signal/40 bg-signal-soft px-2.5 py-1 text-xs font-mono text-signal"
           >
             {{ $t('dashboard.filters.activeCount', { count: activeFiltersCount }) }}
           </span>
           <button
             type="button"
             data-testid="dashboard-clear-filters"
-            class="inline-flex h-8 items-center gap-1 border border-border-hairline bg-bg-primary px-2.5 text-[11px] font-mono uppercase text-text-muted hover:text-text-primary transition-colors"
+            class="inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-mono uppercase text-text-muted hover:text-text-primary transition-colors"
             @click="clearAllFilters"
           >
-            <X class="h-3 w-3" />
+            <X class="h-3.5 w-3.5" />
             <span>{{ $t('dashboard.clearFilters') }}</span>
           </button>
         </div>
       </div>
 
-      <!-- 4 Dedicated Multi-Select Filter Dropdowns (Project, Task, Tag, Log Description) -->
-      <div class="border-t border-border-hairline pt-3 space-y-2">
-        <div class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-text-muted">
-          <Filter class="h-3 w-3 text-accent" />
+      <!-- 4 Dedicated Multi-Select Filter Dropdowns (Project, Task, Tag, Description) -->
+      <div class="border-t border-border-hairline pt-4 space-y-2.5">
+        <div class="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-text-muted">
+          <Filter class="h-3.5 w-3.5 text-signal" />
           <span>{{ $t('dashboard.filters.projectLabel') }} · {{ $t('dashboard.filters.taskLabel') }} · {{ $t('dashboard.filters.tagLabel') }} · {{ $t('dashboard.filters.descriptionLabel') }}</span>
         </div>
 
@@ -598,21 +604,22 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
     <!-- Visualizations 1 & 2 Grid -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <!-- Visualization 1: Pizza (Donut) Chart (4 Dimensions) -->
-      <div class="lg:col-span-5 border border-border-hairline bg-bg-elevated p-5 flex flex-col">
+      <div class="relative overflow-hidden lg:col-span-5 border border-border-hairline bg-bg-elevated p-5 sm:p-6 flex flex-col">
+        <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border-hairline pb-3">
-          <span class="text-xs font-mono uppercase tracking-wider text-accent">
+          <span class="label-mono text-signal">
             {{ $t('dashboard.pizzaTitle') }}
           </span>
-          <div class="inline-flex flex-wrap border border-border-hairline bg-bg-primary text-[11px] font-mono">
+          <div class="inline-flex flex-wrap border border-border-hairline bg-bg-primary text-xs font-mono">
             <button
               v-for="dim in dimensions"
               :key="dim"
               type="button"
               :data-testid="`dashboard-pizza-dim-${dim}`"
-              class="px-2 py-0.5 transition-colors"
+              class="px-2.5 py-1 transition-colors"
               :class="
                 pizzaDimension === dim
-                  ? 'bg-accent text-white'
+                  ? 'bg-accent text-white font-medium'
                   : 'text-text-muted hover:text-text-primary'
               "
               @click="pizzaDimension = dim"
@@ -622,7 +629,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
           </div>
         </div>
 
-        <div class="relative mt-5 h-56 flex items-center justify-center">
+        <div class="relative mt-5 h-60 flex items-center justify-center">
           <ClientOnly>
             <Doughnut
               v-if="pizzaData.slices.length > 0"
@@ -631,26 +638,26 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
             />
           </ClientOnly>
           <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span class="text-[10px] font-mono uppercase tracking-wider text-text-muted">
+            <span class="text-xs font-mono uppercase tracking-wider text-text-muted">
               {{ $t('dashboard.centerTotalLabel') }}
             </span>
-            <span class="tabular-telemetry mt-0.5 font-mono text-lg font-semibold text-text-primary">
+            <span class="tabular-telemetry mt-1 font-mono text-xl font-semibold text-text-primary">
               {{ formatDuration(pizzaData.totalTrackedSeconds) }}
             </span>
-            <span class="tabular-telemetry text-[11px] font-mono text-accent">
+            <span class="tabular-telemetry text-ui font-mono text-signal">
               {{ formatDecimalHours(pizzaData.totalTrackedSeconds) }} h
             </span>
           </div>
         </div>
 
         <!-- Legend Breakdown -->
-        <ul class="mt-5 divide-y divide-border-hairline text-xs max-h-48 overflow-y-auto">
+        <ul class="mt-5 divide-y divide-border-hairline text-ui max-h-52 overflow-y-auto">
           <li
             v-for="slice in pizzaData.slices"
             :key="slice.key"
-            class="flex items-center justify-between py-1.5"
+            class="flex items-center justify-between py-2"
           >
-            <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center gap-2.5 min-w-0">
               <span class="h-2.5 w-2.5 shrink-0" :style="{ backgroundColor: slice.color }" />
               <span class="truncate text-text-primary">{{ slice.label }}</span>
             </div>
@@ -663,9 +670,10 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
       </div>
 
       <!-- Visualization 2: Stacked Histogram (4 Dimensions + 5 Time Granularities) -->
-      <div class="lg:col-span-7 border border-border-hairline bg-bg-elevated p-5 flex flex-col">
+      <div class="relative overflow-hidden lg:col-span-7 border border-border-hairline bg-bg-elevated p-5 sm:p-6 flex flex-col">
+        <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border-hairline pb-3">
-          <span class="text-xs font-mono uppercase tracking-wider text-accent">
+          <span class="label-mono text-signal">
             {{ $t('dashboard.dailyBarTitle') }}
           </span>
 
@@ -674,17 +682,17 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
             <div
               role="group"
               :aria-label="$t('dashboard.granularityLabel')"
-              class="inline-flex border border-border-hairline bg-bg-primary text-[11px] font-mono"
+              class="inline-flex border border-border-hairline bg-bg-primary text-xs font-mono"
             >
               <button
                 v-for="gran in granularities"
                 :key="gran"
                 type="button"
                 :data-testid="`dashboard-bar-granularity-${gran}`"
-                class="px-2 py-0.5 transition-colors"
+                class="px-2.5 py-1 transition-colors"
                 :class="
                   barGranularity === gran
-                    ? 'bg-accent/20 text-accent font-semibold'
+                    ? 'bg-signal-soft text-signal font-semibold'
                     : 'text-text-muted hover:text-text-primary'
                 "
                 @click="barGranularity = gran"
@@ -694,16 +702,16 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
             </div>
 
             <!-- 4-Dimension Slicing Selector -->
-            <div class="inline-flex flex-wrap border border-border-hairline bg-bg-primary text-[11px] font-mono">
+            <div class="inline-flex flex-wrap border border-border-hairline bg-bg-primary text-xs font-mono">
               <button
                 v-for="dim in dimensions"
                 :key="dim"
                 type="button"
                 :data-testid="`dashboard-bar-dim-${dim}`"
-                class="px-2 py-0.5 transition-colors"
+                class="px-2.5 py-1 transition-colors"
                 :class="
                   barDimension === dim
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-white font-medium'
                     : 'text-text-muted hover:text-text-primary'
                 "
                 @click="barDimension = dim"
@@ -723,29 +731,30 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
     </div>
 
     <!-- Visualization 3: 2-Level Hierarchical Breakdown & Paginated TimeLogs Table (FR-5.4) -->
-    <div class="border border-border-hairline bg-bg-elevated">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-hairline p-4">
+    <div class="relative overflow-hidden border border-border-hairline bg-bg-elevated">
+      <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-hairline p-4 sm:p-5">
         <div class="flex flex-wrap items-center gap-3">
-          <span class="text-xs font-mono uppercase tracking-wider text-accent">
+          <span class="label-mono text-signal">
             {{ $t('dashboard.tableTitle') }} ({{ filteredLogs.length }})
           </span>
           <span
             v-if="primaryGroup === 'tag' || secondaryGroup === 'tag'"
-            class="hidden md:inline text-[11px] text-text-muted"
+            class="hidden md:inline text-ui text-text-muted"
           >
             {{ $t('dashboard.multiTagNote') }}
           </span>
         </div>
 
         <!-- Primary & Secondary Group Controls + Page Size -->
-        <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+        <div class="flex flex-wrap items-center gap-2 text-ui font-mono">
           <label class="inline-flex items-center gap-1.5 text-text-muted">
-            <Layers class="h-3.5 w-3.5 text-accent" />
+            <Layers class="h-4 w-4 text-signal" />
             <span>{{ $t('dashboard.grouping.primaryLabel') }}:</span>
             <select
               v-model="primaryGroup"
               data-testid="dashboard-primary-group"
-              class="h-8 border border-border-hairline bg-bg-primary px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              class="h-9 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
             >
               <option value="none">{{ $t('dashboard.grouping.noneOption') }}</option>
               <option v-for="dim in dimensions" :key="dim" :value="dim">
@@ -762,7 +771,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
             <select
               v-model="secondaryGroup"
               data-testid="dashboard-secondary-group"
-              class="h-8 border border-border-hairline bg-bg-primary px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              class="h-9 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
             >
               <option value="none">{{ $t('dashboard.grouping.noneOption') }}</option>
               <option
@@ -781,14 +790,14 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
           >
             <button
               type="button"
-              class="h-8 px-2 text-[11px] text-text-muted hover:text-text-primary border-r border-border-hairline transition-colors"
+              class="h-9 px-2.5 text-xs text-text-muted hover:text-text-primary border-r border-border-hairline transition-colors"
               @click="expandAllGroups"
             >
               {{ $t('dashboard.grouping.expandAll') }}
             </button>
             <button
               type="button"
-              class="h-8 px-2 text-[11px] text-text-muted hover:text-text-primary transition-colors"
+              class="h-9 px-2.5 text-xs text-text-muted hover:text-text-primary transition-colors"
               @click="collapseAllGroups"
             >
               {{ $t('dashboard.grouping.collapseAll') }}
@@ -800,7 +809,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
             <select
               v-model.number="tablePageSize"
               data-testid="dashboard-table-page-size"
-              class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+              class="tabular-telemetry h-9 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
             >
               <option v-for="sz in pageSizeOptions" :key="sz" :value="sz">
                 {{ sz }}
@@ -812,7 +821,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
 
       <div
         v-if="filteredLogs.length === 0"
-        class="p-8 text-center text-xs font-mono text-text-muted"
+        class="p-8 text-center text-sm font-mono text-text-muted"
       >
         {{ $t('dashboard.emptyFiltered') }}
       </div>
@@ -830,26 +839,26 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
         >
           <button
             type="button"
-            class="flex w-full items-center justify-between bg-bg-primary/60 px-4 py-2.5 text-left text-xs font-mono hover:bg-bg-hover transition-colors"
+            class="flex w-full items-center justify-between bg-bg-primary/60 px-4 py-3 text-left text-ui font-mono hover:bg-bg-hover transition-colors"
             @click="togglePrimaryGroup(grp.key)"
           >
-            <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center gap-2.5 min-w-0">
               <ChevronDown
                 v-if="expandedPrimaryGroups.has(grp.key)"
-                class="h-3.5 w-3.5 shrink-0 text-accent"
+                class="h-4 w-4 shrink-0 text-signal"
               />
-              <ChevronRight v-else class="h-3.5 w-3.5 shrink-0 text-accent" />
+              <ChevronRight v-else class="h-4 w-4 shrink-0 text-signal" />
               <span
                 v-if="grp.color"
                 class="h-2.5 w-2.5 shrink-0"
                 :style="{ backgroundColor: grp.color }"
               />
               <span class="truncate font-semibold text-text-primary">{{ grp.label }}</span>
-              <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
+              <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-2 py-0.5 text-xs text-text-muted">
                 {{ grp.count }}
               </span>
             </div>
-            <span class="tabular-telemetry shrink-0 font-semibold text-text-primary">
+            <span class="tabular-telemetry shrink-0 text-sm font-semibold text-text-primary">
               {{ formatDuration(grp.subtotalSeconds) }}
             </span>
           </button>
@@ -867,26 +876,26 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
               >
                 <button
                   type="button"
-                  class="flex w-full items-center justify-between bg-bg-elevated pl-8 pr-4 py-2 text-left text-xs font-mono hover:bg-bg-hover/60 transition-colors"
+                  class="flex w-full items-center justify-between bg-bg-elevated pl-8 pr-4 py-2.5 text-left text-ui font-mono hover:bg-bg-hover/60 transition-colors"
                   @click="toggleSubgroup(`${grp.key}::${sub.key}`)"
                 >
                   <div class="flex items-center gap-2 min-w-0">
                     <ChevronDown
                       v-if="expandedSubgroups.has(`${grp.key}::${sub.key}`)"
-                      class="h-3 w-3 shrink-0 text-text-muted"
+                      class="h-3.5 w-3.5 shrink-0 text-text-muted"
                     />
-                    <ChevronRight v-else class="h-3 w-3 shrink-0 text-text-muted" />
+                    <ChevronRight v-else class="h-3.5 w-3.5 shrink-0 text-text-muted" />
                     <span
                       v-if="sub.color"
-                      class="h-2 w-2 shrink-0"
+                      class="h-2.5 w-2.5 shrink-0"
                       :style="{ backgroundColor: sub.color }"
                     />
                     <span class="truncate font-medium text-text-primary">{{ sub.label }}</span>
-                    <span class="tabular-telemetry border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[10px] text-text-muted">
+                    <span class="tabular-telemetry border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs text-text-muted">
                       {{ sub.count }}
                     </span>
                   </div>
-                  <span class="tabular-telemetry shrink-0 text-text-primary font-medium">
+                  <span class="tabular-telemetry shrink-0 text-sm text-text-primary font-medium">
                     {{ formatDuration(sub.subtotalSeconds) }}
                   </span>
                 </button>
@@ -895,23 +904,23 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                   v-if="expandedSubgroups.has(`${grp.key}::${sub.key}`)"
                   class="overflow-x-auto border-t border-border-hairline/70 bg-bg-primary/25"
                 >
-                  <table class="w-full text-left text-xs">
+                  <table class="w-full text-left text-sm">
                     <tbody class="divide-y divide-border-hairline">
                       <tr
                         v-for="log in getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).items"
                         :key="`${grp.key}-${sub.key}-${log.id}`"
                         class="hover:bg-bg-hover/40"
                       >
-                        <td class="tabular-telemetry whitespace-nowrap pl-12 pr-4 py-2 font-mono text-text-muted">
+                        <td class="tabular-telemetry whitespace-nowrap pl-12 pr-4 py-2.5 font-mono text-ui text-text-muted">
                           {{ formatDateKey(log.dateKey) }}
                         </td>
-                        <td class="px-4 py-2 font-medium text-text-primary">
+                        <td class="px-4 py-2.5 font-medium text-text-primary">
                           {{ log.description }}
                         </td>
-                        <td class="whitespace-nowrap px-4 py-2">
+                        <td class="whitespace-nowrap px-4 py-2.5 text-ui">
                           <span class="inline-flex items-center gap-1.5">
                             <span
-                              class="h-2 w-2"
+                              class="h-2.5 w-2.5"
                               :style="{ backgroundColor: displayProjectColor(log) }"
                             />
                             <span>
@@ -924,10 +933,10 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                             </span>
                           </span>
                         </td>
-                        <td class="whitespace-nowrap px-4 py-2 text-text-muted">
+                        <td class="whitespace-nowrap px-4 py-2.5 text-ui text-text-muted">
                           {{ displayTaskLabel(log) }}
                         </td>
-                        <td class="px-4 py-2 font-mono text-[11px] text-text-muted">
+                        <td class="px-4 py-2.5 font-mono text-xs text-text-muted">
                           <span
                             v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
                             :key="idx"
@@ -936,7 +945,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                             #{{ tn }}
                           </span>
                         </td>
-                        <td class="tabular-telemetry whitespace-nowrap px-4 py-2 text-right font-mono font-semibold text-text-primary">
+                        <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 text-right font-mono font-semibold text-text-primary">
                           {{ formatDuration(log.durationSeconds) }}
                         </td>
                       </tr>
@@ -946,7 +955,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                   <!-- Compact Inner Pagination for large Subgroup -->
                   <div
                     v-if="getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).totalPages > 1"
-                    class="flex items-center justify-between border-t border-border-hairline bg-bg-primary/50 pl-12 pr-4 py-1.5 text-[11px] font-mono text-text-muted"
+                    class="flex items-center justify-between border-t border-border-hairline bg-bg-primary/50 pl-12 pr-4 py-2 text-xs font-mono text-text-muted"
                   >
                     <span class="tabular-telemetry">
                       {{
@@ -957,11 +966,11 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                         })
                       }}
                     </span>
-                    <div class="flex items-center gap-1">
+                    <div class="flex items-center gap-1.5">
                       <button
                         type="button"
                         :disabled="!getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).hasPreviousPage"
-                        class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-text-primary disabled:opacity-35"
+                        class="h-7 border border-border-hairline bg-bg-elevated px-2.5 text-text-primary disabled:opacity-35"
                         @click="setInnerPage(`${grp.key}::${sub.key}`, getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).pageIndex - 1)"
                       >
                         {{ $t('dashboard.pagination.previous') }}
@@ -977,7 +986,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                       <button
                         type="button"
                         :disabled="!getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).hasNextPage"
-                        class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-text-primary disabled:opacity-35"
+                        class="h-7 border border-border-hairline bg-bg-elevated px-2.5 text-text-primary disabled:opacity-35"
                         @click="setInnerPage(`${grp.key}::${sub.key}`, getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).pageIndex + 1)"
                       >
                         {{ $t('dashboard.pagination.next') }}
@@ -990,23 +999,23 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
 
             <!-- 1-Level Group Inner Rows (Secondary = None) -->
             <div v-else class="overflow-x-auto border-t border-border-hairline">
-              <table class="w-full text-left text-xs">
+              <table class="w-full text-left text-sm">
                 <tbody class="divide-y divide-border-hairline">
                   <tr
                     v-for="log in getInnerPageSlice(grp.key, grp.logs).items"
                     :key="`${grp.key}-${log.id}`"
                     class="hover:bg-bg-hover/40"
                   >
-                    <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 font-mono text-text-muted">
+                    <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 font-mono text-ui text-text-muted">
                       {{ formatDateKey(log.dateKey) }}
                     </td>
                     <td class="px-4 py-2.5 font-medium text-text-primary">
                       {{ log.description }}
                     </td>
-                    <td class="whitespace-nowrap px-4 py-2.5">
+                    <td class="whitespace-nowrap px-4 py-2.5 text-ui">
                       <span class="inline-flex items-center gap-1.5">
                         <span
-                          class="h-2 w-2"
+                          class="h-2.5 w-2.5"
                           :style="{ backgroundColor: displayProjectColor(log) }"
                         />
                         <span>
@@ -1019,10 +1028,10 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                         </span>
                       </span>
                     </td>
-                    <td class="whitespace-nowrap px-4 py-2.5 text-text-muted">
+                    <td class="whitespace-nowrap px-4 py-2.5 text-ui text-text-muted">
                       {{ displayTaskLabel(log) }}
                     </td>
-                    <td class="px-4 py-2.5 font-mono text-[11px] text-text-muted">
+                    <td class="px-4 py-2.5 font-mono text-xs text-text-muted">
                       <span
                         v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
                         :key="idx"
@@ -1040,7 +1049,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
 
               <div
                 v-if="getInnerPageSlice(grp.key, grp.logs).totalPages > 1"
-                class="flex items-center justify-between border-t border-border-hairline bg-bg-primary/50 px-4 py-1.5 text-[11px] font-mono text-text-muted"
+                class="flex items-center justify-between border-t border-border-hairline bg-bg-primary/50 px-4 py-2 text-xs font-mono text-text-muted"
               >
                 <span class="tabular-telemetry">
                   {{
@@ -1051,11 +1060,11 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                     })
                   }}
                 </span>
-                <div class="flex items-center gap-1">
+                <div class="flex items-center gap-1.5">
                   <button
                     type="button"
                     :disabled="!getInnerPageSlice(grp.key, grp.logs).hasPreviousPage"
-                    class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-text-primary disabled:opacity-35"
+                    class="h-7 border border-border-hairline bg-bg-elevated px-2.5 text-text-primary disabled:opacity-35"
                     @click="setInnerPage(grp.key, getInnerPageSlice(grp.key, grp.logs).pageIndex - 1)"
                   >
                     {{ $t('dashboard.pagination.previous') }}
@@ -1071,7 +1080,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                   <button
                     type="button"
                     :disabled="!getInnerPageSlice(grp.key, grp.logs).hasNextPage"
-                    class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-text-primary disabled:opacity-35"
+                    class="h-7 border border-border-hairline bg-bg-elevated px-2.5 text-text-primary disabled:opacity-35"
                     @click="setInnerPage(grp.key, getInnerPageSlice(grp.key, grp.logs).pageIndex + 1)"
                   >
                     {{ $t('dashboard.pagination.next') }}
@@ -1085,15 +1094,15 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
 
       <!-- Flat Table Mode (Paginated) -->
       <div v-else class="overflow-x-auto" data-testid="dashboard-flat-table">
-        <table class="w-full text-left text-xs">
-          <thead class="border-b border-border-hairline bg-bg-primary/60 font-mono text-[11px] uppercase text-text-muted">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-border-hairline bg-bg-primary/60 font-mono text-xs uppercase text-text-muted">
             <tr>
-              <th class="px-4 py-2">{{ $t('dashboard.colDate') }}</th>
-              <th class="px-4 py-2">{{ $t('dashboard.colDescription') }}</th>
-              <th class="px-4 py-2">{{ $t('dashboard.colProject') }}</th>
-              <th class="px-4 py-2">{{ $t('dashboard.colTask') }}</th>
-              <th class="px-4 py-2">{{ $t('dashboard.colTags') }}</th>
-              <th class="px-4 py-2 text-right">{{ $t('dashboard.colDuration') }}</th>
+              <th class="px-4 py-2.5">{{ $t('dashboard.colDate') }}</th>
+              <th class="px-4 py-2.5">{{ $t('dashboard.colDescription') }}</th>
+              <th class="px-4 py-2.5">{{ $t('dashboard.colProject') }}</th>
+              <th class="px-4 py-2.5">{{ $t('dashboard.colTask') }}</th>
+              <th class="px-4 py-2.5">{{ $t('dashboard.colTags') }}</th>
+              <th class="px-4 py-2.5 text-right">{{ $t('dashboard.colDuration') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border-hairline">
@@ -1103,15 +1112,15 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
               data-testid="dashboard-flat-row"
               class="hover:bg-bg-hover/40"
             >
-              <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 font-mono text-text-muted">
+              <td class="tabular-telemetry whitespace-nowrap px-4 py-3 font-mono text-ui text-text-muted">
                 {{ formatDateKey(log.dateKey) }}
               </td>
-              <td class="px-4 py-2.5 font-medium text-text-primary">
+              <td class="px-4 py-3 font-medium text-text-primary">
                 {{ log.description }}
               </td>
-              <td class="whitespace-nowrap px-4 py-2.5">
+              <td class="whitespace-nowrap px-4 py-3 text-ui">
                 <span class="inline-flex items-center gap-1.5">
-                  <span class="h-2 w-2" :style="{ backgroundColor: displayProjectColor(log) }" />
+                  <span class="h-2.5 w-2.5" :style="{ backgroundColor: displayProjectColor(log) }" />
                   <span>
                     {{
                       displayProjectName(
@@ -1122,10 +1131,10 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                   </span>
                 </span>
               </td>
-              <td class="whitespace-nowrap px-4 py-2.5 text-text-muted">
+              <td class="whitespace-nowrap px-4 py-3 text-ui text-text-muted">
                 {{ displayTaskLabel(log) }}
               </td>
-              <td class="px-4 py-2.5 font-mono text-[11px] text-text-muted">
+              <td class="px-4 py-3 font-mono text-xs text-text-muted">
                 <span
                   v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
                   :key="idx"
@@ -1134,7 +1143,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                   #{{ tn }}
                 </span>
               </td>
-              <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 text-right font-mono font-semibold text-text-primary">
+              <td class="tabular-telemetry whitespace-nowrap px-4 py-3 text-right font-mono font-semibold text-text-primary">
                 {{ formatDuration(log.durationSeconds) }}
               </td>
             </tr>
@@ -1146,7 +1155,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
       <div
         v-if="filteredLogs.length > 0 && activeTablePagination.totalItems > 0"
         data-testid="dashboard-table-pagination"
-        class="flex flex-wrap items-center justify-between gap-3 border-t border-border-hairline bg-bg-primary/50 px-4 py-2.5 text-xs font-mono"
+        class="flex flex-wrap items-center justify-between gap-3 border-t border-border-hairline bg-bg-primary/50 px-4 py-3 text-ui font-mono"
       >
         <span class="tabular-telemetry text-text-muted">
           {{
@@ -1164,24 +1173,24 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
             data-testid="dashboard-pagination-first"
             :disabled="!activeTablePagination.hasPreviousPage"
             :aria-label="$t('dashboard.pagination.first')"
-            class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-primary hover:bg-bg-hover disabled:opacity-35"
+            class="inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-elevated text-text-primary hover:bg-bg-hover disabled:opacity-35"
             @click="tablePageIndex = 0"
           >
-            <ChevronsLeft class="h-3.5 w-3.5" />
+            <ChevronsLeft class="h-4 w-4" />
           </button>
           <button
             type="button"
             data-testid="dashboard-pagination-prev"
             :disabled="!activeTablePagination.hasPreviousPage"
-            class="inline-flex h-7 items-center gap-1 border border-border-hairline bg-bg-elevated px-2 text-text-primary hover:bg-bg-hover disabled:opacity-35"
+            class="inline-flex h-8 items-center gap-1 border border-border-hairline bg-bg-elevated px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-35"
             @click="tablePageIndex = Math.max(0, activeTablePagination.pageIndex - 1)"
           >
-            <ChevronLeft class="h-3.5 w-3.5" />
+            <ChevronLeft class="h-4 w-4" />
             <span>{{ $t('dashboard.pagination.previous') }}</span>
           </button>
           <span
             data-testid="dashboard-pagination-page"
-            class="tabular-telemetry border border-border-hairline bg-bg-elevated px-2.5 py-1 text-text-muted"
+            class="tabular-telemetry inline-flex h-8 items-center border border-border-hairline bg-bg-elevated px-2.5 text-xs text-text-muted"
           >
             {{
               $t('dashboard.pagination.pageOf', {
@@ -1194,21 +1203,21 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
             type="button"
             data-testid="dashboard-pagination-next"
             :disabled="!activeTablePagination.hasNextPage"
-            class="inline-flex h-7 items-center gap-1 border border-border-hairline bg-bg-elevated px-2 text-text-primary hover:bg-bg-hover disabled:opacity-35"
+            class="inline-flex h-8 items-center gap-1 border border-border-hairline bg-bg-elevated px-2.5 text-xs text-text-primary hover:bg-bg-hover disabled:opacity-35"
             @click="tablePageIndex = activeTablePagination.pageIndex + 1"
           >
             <span>{{ $t('dashboard.pagination.next') }}</span>
-            <ChevronRight class="h-3.5 w-3.5" />
+            <ChevronRight class="h-4 w-4" />
           </button>
           <button
             type="button"
             data-testid="dashboard-pagination-last"
             :disabled="!activeTablePagination.hasNextPage"
             :aria-label="$t('dashboard.pagination.last')"
-            class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-primary hover:bg-bg-hover disabled:opacity-35"
+            class="inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-elevated text-text-primary hover:bg-bg-hover disabled:opacity-35"
             @click="tablePageIndex = activeTablePagination.totalPages - 1"
           >
-            <ChevronsRight class="h-3.5 w-3.5" />
+            <ChevronsRight class="h-4 w-4" />
           </button>
         </div>
       </div>

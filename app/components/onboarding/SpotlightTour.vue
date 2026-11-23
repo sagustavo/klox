@@ -113,15 +113,16 @@ onBeforeUnmount(() => {
 <template>
   <div
     v-if="onboardingStore.isTourActive"
-    class="border-2 border-accent bg-bg-elevated p-4 shadow-2xl"
+    class="relative overflow-hidden border-2 border-signal bg-bg-elevated p-5 shadow-2xl"
   >
+    <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-2.5">
-        <Compass class="h-4 w-4 text-accent animate-pulse" />
-        <span class="font-mono text-[11px] font-semibold uppercase tracking-widest text-accent">
+        <Compass class="h-4 w-4 text-signal motion-safe:animate-pulse" />
+        <span class="label-mono font-semibold text-signal">
           {{ $t('onboarding.tour.badge') }}
         </span>
-        <span class="tabular-telemetry border border-border-hairline bg-bg-primary px-2 py-0.5 font-mono text-[10px] text-text-muted">
+        <span class="tabular-telemetry border border-border-hairline bg-bg-primary px-2.5 py-0.5 font-mono text-xs text-text-muted">
           {{ t('onboarding.tour.stepCounter', { current: onboardingStore.tourStep, total: 6 }) }}
         </span>
       </div>
@@ -129,32 +130,32 @@ onBeforeUnmount(() => {
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="inline-flex h-7 items-center gap-1 border border-accent bg-accent/10 px-2.5 text-[11px] font-mono uppercase text-accent hover:bg-accent hover:text-white transition-colors"
+          class="inline-flex h-8 items-center gap-1.5 border border-signal bg-signal-soft px-3 text-xs font-mono uppercase text-signal hover:bg-accent hover:border-accent hover:text-white transition-colors"
           @click="onboardingStore.nextTourStep()"
         >
           <span>{{ $t('onboarding.tour.nextStep') }}</span>
-          <ArrowRight class="h-3 w-3" />
+          <ArrowRight class="h-3.5 w-3.5" />
         </button>
 
         <button
           type="button"
-          class="inline-flex h-7 items-center gap-1 border border-border-hairline bg-bg-primary px-2 text-[11px] font-mono text-text-muted hover:text-text-primary"
+          class="inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-mono text-text-muted hover:text-text-primary transition-colors"
           @click="onboardingStore.completeTour()"
         >
-          <X class="h-3 w-3" />
+          <X class="h-3.5 w-3.5" />
           <span>{{ $t('onboarding.tour.skipTour') }}</span>
         </button>
       </div>
     </div>
 
-    <div class="mt-3 flex flex-wrap items-center gap-3">
-      <BrandKeycapBadge :keys="stepMeta.keycap" />
+    <div class="mt-3.5 flex flex-wrap items-center gap-3.5">
+      <BrandKeycapBadge :keys="stepMeta.keycap" size="md" />
       <div>
-        <div class="text-sm font-semibold text-text-primary">
-          {{ stepMeta.title }}
+        <div class="text-base font-semibold text-text-primary">
+          <BrandWithKeys :text="stepMeta.title" />
         </div>
-        <p class="text-xs text-text-muted mt-0.5">
-          {{ stepMeta.body }}
+        <p class="mt-1 text-ui text-text-muted">
+          <BrandWithKeys :text="stepMeta.body" />
         </p>
       </div>
     </div>

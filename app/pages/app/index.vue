@@ -221,7 +221,7 @@ async function handleSaveManualLog() {
   const created = await timeLogsStore.createTimeLog({
     uid: authStore.user.uid,
     isDemo: authStore.isDemoMode,
-    description: manualDescription.value.trim() || 'Manual entry',
+    description: manualDescription.value.trim() || t('timer.manualFallbackDescription'),
     projectId: manualProjectId.value,
     taskId: manualTaskId.value,
     tagIds: manualTagIds.value,
@@ -572,38 +572,39 @@ function goToPage(nextIndex: number, scrollToTop = false) {
 </script>
 
 <template>
-  <div class="space-y-6 pb-24 md:pb-6">
+  <div class="space-y-6 pb-32 md:pb-8">
     <!-- Interactive Keyboard Tour Banner (FR-2) -->
     <OnboardingSpotlightTour />
 
     <!-- Persistent Top Command Timer Bar (transforms into sticky bottom thumb-zone dock on mobile < 768px) -->
     <TimerCommandTimerBar />
 
-    <!-- Dismissible Getting-Started Telemetry Checklist (FR-2) -->
+    <!-- Dismissible Getting-Started Checklist (FR-2) -->
     <OnboardingGettingStartedChecklist />
 
     <!-- Manual Entry Toggle & Collapsible Form -->
     <div ref="feedTopRef" class="flex items-center justify-between">
-      <div class="text-xs font-mono uppercase tracking-wider text-text-muted">
+      <div class="label-mono text-text-muted">
         {{ $t('timer.logsHeader') }} ({{ timeLogsStore.logs.length }})
       </div>
       <button
         type="button"
         data-tour="manual-log-toggle"
-        class="inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-elevated px-3 text-xs font-mono text-text-primary hover:bg-bg-hover transition-colors"
+        class="inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-elevated px-3.5 text-xs font-mono text-text-primary hover:bg-bg-hover transition-colors"
         @click="showManualForm = !showManualForm"
       >
-        <Plus class="h-3.5 w-3.5 text-accent" />
+        <Plus class="h-4 w-4 text-signal" />
         <span>{{ $t('timer.manualEntryToggle') }}</span>
       </button>
     </div>
 
     <form
       v-if="showManualForm"
-      class="border border-border-hairline bg-bg-elevated p-4 space-y-4"
+      class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-5 space-y-4"
       @submit.prevent="handleSaveManualLog"
     >
-      <div class="text-xs font-mono uppercase tracking-wider text-accent">
+      <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
+      <div class="label-mono text-signal">
         {{ $t('timer.manualTitle') }}
       </div>
 
@@ -613,12 +614,12 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           type="text"
           required
           :placeholder="$t('timer.descriptionPlaceholder')"
-          class="sm:col-span-3 h-9 border border-border-hairline bg-bg-primary px-3 text-xs text-text-primary focus:border-accent focus:outline-none"
+          class="sm:col-span-3 h-10 border border-border-input bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
         />
 
         <select
           :value="manualProjectId"
-          class="sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+          class="sm:col-span-2 h-10 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
           @change="handleManualProjectChange(($event.target as HTMLSelectElement).value)"
         >
           <option
@@ -649,7 +650,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           required
           :aria-label="$t('timer.manualStartLabel')"
           :title="$t('timer.manualStartLabel')"
-          class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+          class="tabular-telemetry sm:col-span-2 h-10 border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
           @input="handleManualRangeChange"
         />
 
@@ -660,7 +661,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           required
           :aria-label="$t('timer.manualStopLabel')"
           :title="$t('timer.manualStopLabel')"
-          class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+          class="tabular-telemetry sm:col-span-2 h-10 border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
           @input="handleManualRangeChange"
         />
 
@@ -671,13 +672,13 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           placeholder="01:00:00"
           :aria-label="$t('timer.manualDurationLabel')"
           :title="$t('timer.manualDurationLabel')"
-          class="tabular-telemetry sm:col-span-1 h-9 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+          class="tabular-telemetry sm:col-span-1 h-10 border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
           @input="handleManualDurationInput"
         />
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2.5">
           <div class="w-56">
             <UiTagMultiSelect
               v-model="manualTagIds"
@@ -692,7 +693,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
             v-if="manualScopedTaskNodes.length > 0"
             :value="manualTaskId ?? ''"
             :aria-label="$t('timer.taskSelectorPlaceholder')"
-            class="h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+            class="h-9 border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
             @change="manualTaskId = ($event.target as HTMLSelectElement).value || undefined"
           >
             <option value="">{{ $t('timer.taskSelectorPlaceholder') }}</option>
@@ -714,7 +715,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
 
         <button
           type="submit"
-          class="inline-flex h-8 items-center bg-accent px-4 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors"
+          class="inline-flex h-9 items-center bg-accent px-4 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors"
         >
           {{ $t('timer.manualSaveButton') }}
         </button>
@@ -730,44 +731,44 @@ function goToPage(nextIndex: number, scrollToTop = false) {
       class="space-y-4"
     >
       <!-- Skeleton 7-Day Pagination Bar -->
-      <div class="flex flex-wrap items-center justify-between gap-3 border border-border-hairline bg-bg-elevated px-4 py-2.5">
+      <div class="flex flex-wrap items-center justify-between gap-3 border border-border-hairline bg-bg-elevated px-4 py-3">
         <div class="flex items-center gap-2.5">
-          <div class="h-5 w-24 animate-pulse bg-bg-hover" />
-          <div class="h-4 w-40 animate-pulse bg-bg-hover" />
-          <div class="h-4 w-28 animate-pulse bg-bg-hover" />
+          <div class="h-5 w-24 motion-safe:animate-pulse bg-bg-hover" />
+          <div class="h-4 w-40 motion-safe:animate-pulse bg-bg-hover" />
+          <div class="h-4 w-28 motion-safe:animate-pulse bg-bg-hover" />
         </div>
         <div class="flex items-center gap-1.5">
-          <div class="h-8 w-28 animate-pulse border border-border-hairline bg-bg-primary" />
-          <div class="h-8 w-24 animate-pulse border border-border-hairline bg-bg-primary" />
+          <div class="h-9 w-28 motion-safe:animate-pulse border border-border-hairline bg-bg-primary" />
+          <div class="h-9 w-24 motion-safe:animate-pulse border border-border-hairline bg-bg-primary" />
         </div>
       </div>
 
       <!-- Expanded First Day Card Skeleton -->
       <div class="border border-border-hairline bg-bg-elevated">
-        <div class="flex items-center justify-between bg-bg-primary/60 px-4 py-2.5 border-b border-border-hairline">
+        <div class="flex items-center justify-between bg-bg-primary/60 px-4 py-3 border-b border-border-hairline">
           <div class="flex items-center gap-2">
-            <div class="h-3.5 w-3.5 animate-pulse bg-bg-hover" />
-            <div class="h-4 w-24 animate-pulse bg-bg-hover" />
-            <div class="h-4 w-16 animate-pulse bg-bg-hover" />
+            <div class="h-4 w-4 motion-safe:animate-pulse bg-bg-hover" />
+            <div class="h-4 w-24 motion-safe:animate-pulse bg-bg-hover" />
+            <div class="h-4 w-16 motion-safe:animate-pulse bg-bg-hover" />
           </div>
-          <div class="h-4 w-24 animate-pulse bg-bg-hover" />
+          <div class="h-4 w-24 motion-safe:animate-pulse bg-bg-hover" />
         </div>
         <ul class="divide-y divide-border-hairline">
           <li
             v-for="rowIdx in 3"
             :key="rowIdx"
-            class="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+            class="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5"
           >
             <div class="flex items-center gap-2.5 min-w-0">
-              <div class="h-4 w-48 sm:w-64 animate-pulse bg-bg-hover" />
-              <div class="h-5 w-24 animate-pulse bg-bg-hover" />
-              <div class="h-5 w-16 animate-pulse bg-bg-hover" />
+              <div class="h-4 w-48 sm:w-64 motion-safe:animate-pulse bg-bg-hover" />
+              <div class="h-6 w-24 motion-safe:animate-pulse bg-bg-hover" />
+              <div class="h-6 w-16 motion-safe:animate-pulse bg-bg-hover" />
             </div>
             <div class="flex items-center gap-2.5">
-              <div class="hidden sm:block h-4 w-24 animate-pulse bg-bg-hover" />
-              <div class="h-5 w-16 animate-pulse bg-bg-hover" />
-              <div class="h-7 w-7 animate-pulse border border-border-hairline bg-bg-primary" />
-              <div class="h-7 w-7 animate-pulse border border-border-hairline bg-bg-primary" />
+              <div class="hidden sm:block h-4 w-24 motion-safe:animate-pulse bg-bg-hover" />
+              <div class="h-5 w-16 motion-safe:animate-pulse bg-bg-hover" />
+              <div class="h-8 w-8 motion-safe:animate-pulse border border-border-hairline bg-bg-primary" />
+              <div class="h-8 w-8 motion-safe:animate-pulse border border-border-hairline bg-bg-primary" />
             </div>
           </li>
         </ul>
@@ -777,20 +778,20 @@ function goToPage(nextIndex: number, scrollToTop = false) {
       <div
         v-for="dayIdx in 3"
         :key="dayIdx"
-        class="flex items-center justify-between border border-border-hairline bg-bg-elevated px-4 py-2.5"
+        class="flex items-center justify-between border border-border-hairline bg-bg-elevated px-4 py-3"
       >
         <div class="flex items-center gap-2">
-          <div class="h-3.5 w-3.5 animate-pulse bg-bg-hover" />
-          <div class="h-4 w-24 animate-pulse bg-bg-hover" />
-          <div class="h-4 w-14 animate-pulse bg-bg-hover" />
+          <div class="h-4 w-4 motion-safe:animate-pulse bg-bg-hover" />
+          <div class="h-4 w-24 motion-safe:animate-pulse bg-bg-hover" />
+          <div class="h-4 w-14 motion-safe:animate-pulse bg-bg-hover" />
         </div>
-        <div class="h-4 w-24 animate-pulse bg-bg-hover" />
+        <div class="h-4 w-24 motion-safe:animate-pulse bg-bg-hover" />
       </div>
     </div>
 
     <div
       v-else-if="feedWindow.days.length === 0"
-      class="border border-border-hairline bg-bg-elevated p-8 text-center text-xs font-mono text-text-muted"
+      class="border border-border-hairline bg-bg-elevated p-8 text-center text-sm font-mono text-text-muted"
     >
       {{ $t('timer.emptyLogs') }}
     </div>
@@ -827,16 +828,16 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   ? $t('timer.dayGroup.collapseDayAria', { date: formatDateKey(group.dateKey) })
                   : $t('timer.dayGroup.expandDayAria', { date: formatDateKey(group.dateKey) })
               "
-              class="flex w-full items-center justify-between gap-3 bg-bg-primary/60 px-4 py-2.5 text-xs font-mono hover:bg-bg-hover/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              class="flex w-full items-center justify-between gap-3 bg-bg-primary/60 px-4 py-3 text-ui font-mono hover:bg-bg-hover/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-signal"
             >
-              <span class="flex items-center gap-2 min-w-0">
+              <span class="flex items-center gap-2.5 min-w-0">
                 <ChevronDown
                   v-if="isDayExpanded(group.dateKey)"
-                  class="h-3.5 w-3.5 shrink-0 text-accent"
+                  class="h-4 w-4 shrink-0 text-signal"
                 />
                 <ChevronRight
                   v-else
-                  class="h-3.5 w-3.5 shrink-0 text-accent"
+                  class="h-4 w-4 shrink-0 text-signal"
                 />
                 <span
                   data-testid="tracker-day-date"
@@ -844,7 +845,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                 >
                   {{ formatDateKey(group.dateKey) }}
                 </span>
-                <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
+                <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-2 py-0.5 text-xs text-text-muted">
                   {{ $t('timer.dayGroup.entriesCount', { count: group.items.length }) }}
                 </span>
               </span>
@@ -867,11 +868,11 @@ function goToPage(nextIndex: number, scrollToTop = false) {
             >
               <div
                 data-testid="tracker-log-group-header"
-                class="group/row flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-bg-hover/50 transition-colors cursor-pointer select-none"
+                class="group/row flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 hover:bg-bg-hover/50 transition-colors cursor-pointer select-none"
                 :class="isGroupExpanded(entryGroup.groupKey) ? 'bg-bg-hover/30' : ''"
                 @click="toggleGroupExpanded(entryGroup)"
               >
-                <div class="flex flex-wrap items-center gap-2 min-w-0">
+                <div class="flex flex-wrap items-center gap-2.5 min-w-0">
                   <button
                     type="button"
                     data-testid="tracker-log-group-toggle"
@@ -887,22 +888,22 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                             description: entryGroup.description,
                           })
                     "
-                    class="inline-flex items-center gap-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                    class="inline-flex items-center gap-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-signal"
                     @click.stop="toggleGroupExpanded(entryGroup)"
                   >
                     <ChevronDown
                       v-if="isGroupExpanded(entryGroup.groupKey)"
-                      class="h-3.5 w-3.5 shrink-0 text-accent"
+                      class="h-4 w-4 shrink-0 text-signal"
                     />
                     <ChevronRight
                       v-else
-                      class="h-3.5 w-3.5 shrink-0 text-accent"
+                      class="h-4 w-4 shrink-0 text-signal"
                     />
 
                     <span
                       data-testid="tracker-log-group-count"
                       :title="$t('timer.group.entriesBadgeTitle', { count: entryGroup.count })"
-                      class="tabular-telemetry inline-flex h-5 min-w-5 items-center justify-center border border-accent/40 bg-accent/10 px-1.5 text-[11px] font-mono font-semibold text-accent"
+                      class="tabular-telemetry inline-flex h-6 min-w-6 items-center justify-center border border-signal/40 bg-signal-soft px-2 text-xs font-mono font-semibold text-signal"
                     >
                       {{ entryGroup.count }}
                     </span>
@@ -946,7 +947,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                     @update:model-value="handleGroupBillableSave(entryGroup, $event)"
                   />
 
-                  <span class="tabular-telemetry hidden sm:inline text-xs font-mono text-text-muted">
+                  <span class="tabular-telemetry hidden sm:inline text-ui font-mono text-text-muted">
                     {{ formatTime(entryGroup.earliestStartTime) }} – {{ formatTime(entryGroup.latestEndTime) }}
                   </span>
                   <span
@@ -959,23 +960,23 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   <button
                     type="button"
                     data-testid="tracker-log-group-continue"
-                    class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-accent/60 hover:text-accent transition-colors"
+                    class="inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
                     :aria-label="$t('timer.continueAria', { description: entryGroup.description })"
                     :title="$t('timer.continueButton')"
                     @click.stop="handleContinueActivity(entryGroup.items[0]!)"
                   >
-                    <Play class="h-3 w-3" />
+                    <Play class="h-3.5 w-3.5" />
                   </button>
 
                   <button
                     type="button"
                     data-testid="tracker-log-group-delete"
-                    class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
+                    class="inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-destructive transition-colors"
                     :aria-label="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
                     :title="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
                     @click.stop="requestDeleteGroup(entryGroup)"
                   >
-                    <Trash2 class="h-3 w-3" />
+                    <Trash2 class="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
@@ -991,12 +992,12 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   :key="log.id"
                   data-testid="tracker-log-row"
                   data-subrow="true"
-                  class="group/row pl-9 sm:pl-11 pr-4 py-2.5 hover:bg-bg-hover/50 transition-colors"
+                  class="group/row pl-9 sm:pl-11 pr-4 py-3 hover:bg-bg-hover/50 transition-colors"
                 >
                   <div class="flex flex-wrap items-center justify-between gap-3">
                     <div class="flex flex-wrap items-center gap-2 min-w-0">
-                      <CornerDownRight class="h-3 w-3 shrink-0 text-text-muted" />
-                      <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px] font-mono text-text-muted">
+                      <CornerDownRight class="h-3.5 w-3.5 shrink-0 text-text-muted" />
+                      <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-2 py-0.5 text-xs font-mono text-text-muted">
                         #{{ entryGroup.count - subIdx }}
                       </span>
 
@@ -1042,22 +1043,22 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                       <button
                         type="button"
                         data-testid="tracker-log-continue"
-                        class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-accent/60 hover:text-accent transition-colors"
+                        class="inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
                         :aria-label="$t('timer.continueAria', { description: log.description })"
                         :title="$t('timer.continueButton')"
                         @click="handleContinueActivity(log)"
                       >
-                        <Play class="h-3 w-3" />
+                        <Play class="h-3.5 w-3.5" />
                       </button>
 
                       <button
                         type="button"
                         data-testid="tracker-log-delete"
-                        class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
+                        class="inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-destructive transition-colors"
                         :aria-label="$t('timer.deleteButton')"
                         @click="requestDeleteLog(log)"
                       >
-                        <Trash2 class="h-3 w-3" />
+                        <Trash2 class="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
@@ -1069,10 +1070,10 @@ function goToPage(nextIndex: number, scrollToTop = false) {
             <li
               v-else
               data-testid="tracker-log-row"
-              class="group/row px-4 py-3 hover:bg-bg-hover/50 transition-colors"
+              class="group/row px-4 py-3.5 hover:bg-bg-hover/50 transition-colors"
             >
               <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="flex flex-wrap items-center gap-2 min-w-0">
+                <div class="flex flex-wrap items-center gap-2.5 min-w-0">
                   <TimerInlineDescriptionInput
                     :value="entryGroup.items[0]!.description"
                     @save="handleSingleDescriptionSave(entryGroup.items[0]!, $event)"
@@ -1113,22 +1114,22 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   <button
                     type="button"
                     data-testid="tracker-log-continue"
-                    class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-accent/60 hover:text-accent transition-colors"
+                    class="inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
                     :aria-label="$t('timer.continueAria', { description: entryGroup.items[0]!.description })"
                     :title="$t('timer.continueButton')"
                     @click="handleContinueActivity(entryGroup.items[0]!)"
                   >
-                    <Play class="h-3 w-3" />
+                    <Play class="h-3.5 w-3.5" />
                   </button>
 
                   <button
                     type="button"
                     data-testid="tracker-log-delete"
-                    class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
+                    class="inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-destructive transition-colors"
                     :aria-label="$t('timer.deleteButton')"
                     @click="requestDeleteLog(entryGroup.items[0]!)"
                   >
-                    <Trash2 class="h-3 w-3" />
+                    <Trash2 class="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>

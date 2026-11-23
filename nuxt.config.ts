@@ -32,14 +32,15 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'Klox — AI-Native Time & Execution Telemetry',
+      title: 'Klox — Keyboard-First Time Tracking & Analytics',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { name: 'color-scheme', content: 'dark light' },
         {
           name: 'description',
           content:
-            'High-velocity, keyboard-first, AI-augmented time tracking and execution analytics with seamless Toggl Track CSV compatibility.',
+            'Fast, keyboard-first time tracking with instant suggestions, AI auto-fill, clear analytics, and Toggl Track CSV support.',
         },
       ],
       link: [
@@ -47,7 +48,7 @@ export default defineNuxtConfig({
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         {
           rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap',
+          href: 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Michroma&display=swap',
         },
       ],
     },

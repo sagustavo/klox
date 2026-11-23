@@ -52,6 +52,12 @@ We establish the **Orbital "Musk-Tech" Design System** across the entire applica
   - Apply 2-level grouping styling and telemetry cards to Analytics Dashboard (`app/pages/app/dashboard.vue`).
   - Align Catalog, Onboarding Checklist, and Modal dialogs with confirmation standards.
 
+### 2.4 Implementation Refinements (Sprint 3 Rollout)
+- **Tailwind v3 OKLCH Alpha Channels:** Core color tokens are exposed as space-separated OKLCH channel tuples (`--*-ch`) mapped via `'oklch(var(--*-ch) / <alpha-value>)'` in `tailwind.config.ts`, preserving utility alpha modifiers (`/10`, `/40`, `/60`) across `html.dark` and `html.light`.
+- **Contrast Polarity & Scrims:** `--launch-bg` / `--launch-fg` invert cleanly across themes (`#FAFAFA`/`#09090B` in Dark, `#09090B`/`#FAFAFA` in Light); Light Mode strengthens `.bg-void-fade` (`88%` → `78%` → `95%` → `100%`) over `klox-orbit.jpg` and lowers `--text-muted` lightness to maintain WCAG AA contrast.
+- **Font Fallback Metrics & Chart.js Compatibility:** A `'Michroma Fallback'` `@font-face` (`size-adjust` / ascent-override) minimizes CLS before `Michroma` swaps in, while `dashboard.vue` resolves Chart.js stroke/tick/grid colors to hex/`rgba()` values reactive to `useColorMode()` (avoiding `@kurkle/color` parse failures on OKLCH CSS custom properties).
+- **Motion & Modal Accessibility:** Continuous orbital animations (`.animate-scan`, `.animate-press`, `.animate-blink`, `.animate-rise`) are gated behind `@media (prefers-reduced-motion: no-preference)` with a user Pause/Play toggle (`.motion-paused`), and `reka-ui` dialogs (`ConfirmDialog`, `HelpCommandSheet`) apply `overscroll-contain` for scroll containment.
+
 ---
 
 ## 3. Consequences

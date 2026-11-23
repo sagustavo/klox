@@ -326,15 +326,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="border border-border-hairline bg-bg-elevated p-3 sm:p-5 max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-40 max-md:border-x-0 max-md:border-b-0 max-md:border-t-2 max-md:border-accent/60 max-md:shadow-2xl">
+  <div
+    class="relative border bg-bg-elevated p-4 sm:p-5 max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-40 max-md:border-x-0 max-md:border-b-0 max-md:border-t-2 max-md:border-signal/60 max-md:bg-bg-elevated/95 max-md:backdrop-blur-md max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-2xl"
+    :class="timerStore.isRunning ? 'border-signal/40 glow-signal' : 'border-border-hairline'"
+  >
+    <div
+      v-if="timerStore.isRunning"
+      class="signal-line absolute inset-x-0 top-0"
+      aria-hidden="true"
+    />
+
     <!-- Top Telemetry Status Bar -->
-    <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono uppercase tracking-wider text-text-muted">
-      <div class="flex flex-wrap items-center gap-2">
+    <div class="mb-3.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono uppercase tracking-wider text-text-muted">
+      <div class="flex flex-wrap items-center gap-2.5">
         <span
           class="h-2 w-2"
-          :class="timerStore.isRunning ? 'bg-accent animate-pulse' : 'bg-border-hairline'"
+          :class="timerStore.isRunning ? 'bg-signal motion-safe:animate-pulse' : 'bg-border-input'"
         />
-        <span :class="timerStore.isRunning ? 'text-accent' : 'text-text-muted'">
+        <span :class="timerStore.isRunning ? 'text-signal font-semibold' : 'text-text-muted'">
           {{ timerStore.isRunning ? $t('timer.statusRunning') : $t('timer.statusIdle') }}
         </span>
 
@@ -344,10 +353,10 @@ onUnmounted(() => {
           type="button"
           data-testid="active-timer-start-trigger"
           :title="$t('timer.liveStart.adjustTooltip')"
-          class="tabular-telemetry inline-flex items-center gap-1 border border-border-hairline bg-bg-primary px-2 py-0.5 text-[10px] normal-case tracking-normal text-text-muted hover:border-accent/60 hover:text-accent transition-colors focus:outline-none focus-visible:border-accent"
+          class="tabular-telemetry inline-flex h-7 items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs normal-case tracking-normal text-text-muted hover:border-signal/60 hover:text-signal transition-colors focus:outline-none focus-visible:border-signal"
           @click="toggleStartAdjustPopover"
         >
-          <Clock class="h-2.5 w-2.5 text-accent" />
+          <Clock class="h-3.5 w-3.5 text-signal" />
           <span>
             {{ $t('timer.liveStart.startedAt', { time: formatTime(timerStore.activeTimer.startTimeUTC) }) }}
           </span>
@@ -355,33 +364,34 @@ onUnmounted(() => {
       </div>
 
       <div class="hidden md:flex items-center gap-3">
-        <span class="inline-flex items-center gap-1">
-          <BrandKeycapBadge keys="N" />
+        <span class="inline-flex items-center gap-1.5">
+          <BrandKeycapBadge keys="N" size="sm" />
           <span>{{ $t('landing.shortcutFocus') }}</span>
         </span>
-        <span class="inline-flex items-center gap-1">
-          <BrandKeycapBadge keys="Tab" />
+        <span class="inline-flex items-center gap-1.5">
+          <BrandKeycapBadge keys="Tab" size="sm" />
           <span>{{ $t('landing.shortcutCycle') }}</span>
         </span>
-        <span class="inline-flex items-center gap-1">
-          <BrandKeycapBadge :keys="['⌘', 'I']" />
+        <span class="inline-flex items-center gap-1.5">
+          <BrandKeycapBadge :keys="['⌘', 'I']" size="sm" />
           <span>{{ $t('landing.shortcutAi') }}</span>
         </span>
-        <span class="inline-flex items-center gap-1">
-          <BrandKeycapBadge keys="S" />
+        <span class="inline-flex items-center gap-1.5">
+          <BrandKeycapBadge keys="S" size="sm" />
           <span>{{ $t('landing.shortcutStop') }}</span>
         </span>
-        <span class="inline-flex items-center gap-1">
-          <BrandKeycapBadge keys="Esc" />
+        <span class="inline-flex items-center gap-1.5">
+          <BrandKeycapBadge keys="Esc" size="sm" />
         </span>
       </div>
     </div>
 
     <div
       v-if="aiErrorCode"
-      class="mb-3 flex items-center gap-2 border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400"
+      role="alert"
+      class="mb-3 flex items-center gap-2 border border-destructive/50 bg-destructive/10 px-3 py-2 text-ui text-destructive"
     >
-      <AlertCircle class="h-3.5 w-3.5 shrink-0" />
+      <AlertCircle class="h-4 w-4 shrink-0" />
       <span>{{ $t(`timer.errors.${aiErrorCode}`) }}</span>
     </div>
 
@@ -389,7 +399,7 @@ onUnmounted(() => {
          1. Description Input -> 2. Project Selector -> 3. Project-Scoped Tag Selector ->
          4. Billable Toggle -> 5. Start/Stop Button ( plus [✨ AI Auto-Fill] button ) -->
     <div class="grid grid-cols-1 gap-2.5 lg:grid-cols-12 lg:items-center">
-      <!-- 1. Description Input + Fuse.js Top-10 Recall Dropdown -->
+      <!-- 1. Description Input + Top-10 Recall Dropdown -->
       <div class="relative lg:col-span-4">
         <input
           ref="descriptionInputRef"
@@ -397,25 +407,26 @@ onUnmounted(() => {
           type="text"
           data-tour="timer-description"
           :placeholder="$t('timer.descriptionPlaceholder')"
-          class="h-10 w-full border border-border-hairline bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-muted/60 focus:border-accent focus:outline-none"
+          class="h-10 max-md:min-h-[44px] w-full border border-border-input bg-bg-primary px-3.5 text-sm text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
           @focus="showRecallDropdown = topMatches.length > 0"
           @input="showRecallDropdown = topMatches.length > 0"
           @keydown="handleDescriptionKeydown"
         />
 
-        <!-- Floating Fuse.js Top-10 Recall Dropdown -->
+        <!-- Floating Top-10 Recall Dropdown -->
         <div
           v-if="showRecallDropdown && topMatches.length > 0"
-          class="absolute left-0 right-0 top-11 z-40 border border-border-hairline bg-bg-elevated shadow-xl"
+          class="absolute left-0 right-0 top-11 z-40 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl max-md:bottom-12 max-md:top-auto"
         >
-          <div class="flex items-center justify-between border-b border-border-hairline px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-text-muted">
+          <div class="signal-line" aria-hidden="true" />
+          <div class="flex items-center justify-between border-b border-border-hairline px-3.5 py-2 text-xs font-mono uppercase tracking-wider text-text-muted">
             <span>{{ $t('timer.recallHeader') }}</span>
             <button
               type="button"
-              class="hover:text-text-primary"
+              class="inline-flex items-center hover:text-text-primary"
               @click="showRecallDropdown = false"
             >
-              [ESC]
+              <BrandKeycapBadge keys="Esc" size="sm" />
             </button>
           </div>
           <ul class="max-h-60 overflow-y-auto divide-y divide-border-hairline">
@@ -425,10 +436,10 @@ onUnmounted(() => {
             >
               <button
                 type="button"
-                class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs transition-colors"
+                class="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm transition-colors"
                 :class="
                   idx === highlightedRecallIdx
-                    ? 'bg-accent/15 text-text-primary'
+                    ? 'bg-signal-soft text-text-primary'
                     : 'hover:bg-bg-hover text-text-primary'
                 "
                 @mousedown.prevent="selectRecallTemplate(tpl)"
@@ -439,11 +450,11 @@ onUnmounted(() => {
                     :style="{ backgroundColor: tpl.projectColorSnapshot }"
                   />
                   <span class="truncate font-medium">{{ tpl.description }}</span>
-                  <span class="truncate text-[11px] font-mono text-text-muted">
+                  <span class="truncate text-xs font-mono text-text-muted">
                     · {{ tpl.projectNameSnapshot }}
                   </span>
                 </div>
-                <span class="tabular-telemetry shrink-0 text-[10px] font-mono text-text-muted">
+                <span class="tabular-telemetry shrink-0 text-xs font-mono text-text-muted">
                   {{ tpl.frequency }}× {{ $t('timer.recallUses') }}
                 </span>
               </button>
@@ -458,7 +469,7 @@ onUnmounted(() => {
           :value="timerStore.projectId"
           data-tour="timer-project"
           :aria-label="$t('timer.projectLabel')"
-          class="h-10 w-full border border-border-hairline bg-bg-primary px-2 text-xs font-medium text-text-primary focus:border-accent focus:outline-none"
+          class="h-10 max-md:min-h-[44px] w-full border border-border-input bg-bg-primary px-2.5 text-ui font-medium text-text-primary focus:border-signal focus:outline-none"
           @change="timerStore.selectProject(($event.target as HTMLSelectElement).value)"
         >
           <option
@@ -475,7 +486,7 @@ onUnmounted(() => {
           :value="timerStore.taskId ?? ''"
           data-tour="timer-task"
           :aria-label="$t('timer.taskSelectorPlaceholder')"
-          class="h-10 w-full border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+          class="h-10 max-md:min-h-[44px] w-full border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
           @change="timerStore.selectTask(($event.target as HTMLSelectElement).value || undefined)"
         >
           <option value="">{{ $t('timer.taskSelectorPlaceholder') }}</option>
@@ -518,10 +529,10 @@ onUnmounted(() => {
           data-tour="timer-ai-autofill"
           :disabled="aiLoading"
           :title="`${$t('timer.aiAutofillButton')} (⌘I / Ctrl+I)`"
-          class="inline-flex h-10 items-center gap-1 border border-accent/40 bg-accent/10 px-2.5 text-xs font-mono text-accent hover:bg-accent/20 disabled:opacity-50 transition-colors focus:border-accent focus:outline-none"
+          class="inline-flex h-10 max-md:min-h-[44px] items-center gap-1.5 border border-signal/45 bg-signal-soft px-3 text-ui font-mono text-signal hover:bg-signal/20 disabled:opacity-50 transition-colors focus:border-signal focus:outline-none"
           @click="triggerAiAutofill"
         >
-          <Sparkles class="h-3.5 w-3.5" />
+          <Sparkles class="h-4 w-4" />
           <span class="hidden xl:inline">
             {{ aiLoading ? $t('timer.aiLoading') : '✨' }}
           </span>
@@ -534,7 +545,7 @@ onUnmounted(() => {
           data-testid="active-timer-clock-trigger"
           :aria-expanded="showStartAdjustPopover"
           :title="$t('timer.liveStart.adjustTooltip')"
-          class="inline-flex h-10 items-center px-1.5 border border-transparent hover:border-accent/50 hover:bg-accent/5 transition-colors focus:outline-none focus-visible:border-accent cursor-pointer"
+          class="inline-flex h-10 max-md:min-h-[44px] items-center px-2 border border-transparent hover:border-signal/50 hover:bg-signal-soft transition-colors focus:outline-none focus-visible:border-signal cursor-pointer"
           @click="toggleStartAdjustPopover"
         >
           <BrandTimerDigits
@@ -554,11 +565,12 @@ onUnmounted(() => {
         <form
           v-if="showStartAdjustPopover && timerStore.isRunning"
           data-testid="active-timer-adjust-popover"
-          class="absolute right-0 max-md:bottom-12 md:top-12 z-50 w-72 border border-border-hairline bg-bg-elevated p-3 shadow-2xl space-y-2.5"
+          class="absolute right-0 max-md:bottom-14 md:top-12 z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated p-3.5 shadow-2xl space-y-3"
           @submit.prevent="handleApplyAdjustedStart"
           @keydown.esc.stop="showStartAdjustPopover = false"
         >
-          <div class="flex items-center justify-between border-b border-border-hairline pb-1.5 text-[10px] font-mono uppercase tracking-wider text-accent">
+          <div class="signal-line -mx-3.5 -mt-3.5 mb-2.5" aria-hidden="true" />
+          <div class="flex items-center justify-between border-b border-border-hairline pb-2 text-xs font-mono uppercase tracking-wider text-signal">
             <span>{{ $t('timer.liveStart.popoverTitle') }}</span>
             <button
               type="button"
@@ -566,7 +578,7 @@ onUnmounted(() => {
               class="text-text-muted hover:text-text-primary"
               @click="showStartAdjustPopover = false"
             >
-              <X class="h-3.5 w-3.5" />
+              <X class="h-4 w-4" />
             </button>
           </div>
 
@@ -577,14 +589,14 @@ onUnmounted(() => {
               :key="mins"
               type="button"
               :data-testid="`active-timer-shift-${Math.abs(mins)}m`"
-              class="tabular-telemetry h-7 border border-border-hairline bg-bg-primary text-[11px] font-mono text-text-primary hover:border-accent hover:text-accent transition-colors"
+              class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary text-xs font-mono text-text-primary hover:border-signal hover:text-signal transition-colors"
               @click="handleQuickShiftMinutes(mins)"
             >
               {{ mins === -60 ? '-1h' : `${mins}m` }}
             </button>
           </div>
 
-          <div class="space-y-1.5">
+          <div class="space-y-2">
             <UiDateInput
               v-model="draftStartDateKey"
               v-model:valid="isDraftStartDateValid"
@@ -601,12 +613,12 @@ onUnmounted(() => {
               required
               data-testid="active-timer-start-time"
               :aria-label="$t('timer.liveStart.timeLabel')"
-              class="tabular-telemetry h-8 w-full border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+              class="tabular-telemetry h-9 w-full border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
             />
           </div>
 
           <div class="flex items-center justify-between gap-2 pt-0.5">
-            <span class="tabular-telemetry text-[11px] font-mono text-text-muted">
+            <span class="tabular-telemetry text-xs font-mono text-text-muted">
               {{
                 $t('timer.liveStart.previewElapsed', {
                   duration: formatHMS(
@@ -620,9 +632,9 @@ onUnmounted(() => {
               type="submit"
               data-testid="active-timer-apply-start"
               :disabled="!draftAdjustedPreview"
-              class="inline-flex h-7 items-center gap-1 bg-accent px-2.5 text-[11px] font-mono uppercase text-white hover:bg-accent-hover transition-colors disabled:opacity-40"
+              class="inline-flex h-8 items-center gap-1.5 bg-accent px-3 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors disabled:opacity-40"
             >
-              <Check class="h-3 w-3" />
+              <Check class="h-3.5 w-3.5" />
               <span>{{ $t('timer.liveStart.applyButton') }}</span>
             </button>
           </div>
@@ -631,7 +643,7 @@ onUnmounted(() => {
         <button
           type="button"
           data-tour="timer-submit"
-          class="inline-flex h-10 items-center gap-1.5 px-3.5 text-xs font-mono uppercase tracking-wider text-white transition-colors focus:outline-none"
+          class="inline-flex h-10 max-md:min-h-[44px] items-center gap-2 px-4 text-xs font-mono font-semibold uppercase tracking-wider text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-signal"
           :class="
             timerStore.isRunning
               ? 'bg-red-600 hover:bg-red-500'
@@ -639,8 +651,8 @@ onUnmounted(() => {
           "
           @click="handlePrimaryAction"
         >
-          <Square v-if="timerStore.isRunning" class="h-3 w-3 fill-current" />
-          <Play v-else class="h-3 w-3 fill-current" />
+          <Square v-if="timerStore.isRunning" class="h-3.5 w-3.5 fill-current" />
+          <Play v-else class="h-3.5 w-3.5 fill-current" />
           <span>{{ timerStore.isRunning ? $t('timer.stopButton') : $t('timer.startButton') }}</span>
         </button>
       </div>

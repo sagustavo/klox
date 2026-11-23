@@ -65,8 +65,8 @@ function handleBlur() {
     v-model="draft"
     type="text"
     :data-testid="testId ? `${testId}-input` : 'tracker-inline-description-input'"
-    class="h-7 min-w-[11rem] sm:min-w-[15rem] border border-accent bg-bg-primary px-2 text-text-primary focus:outline-none"
-    :class="compact ? 'text-xs sm:text-sm' : 'text-sm font-medium'"
+    class="h-8 min-w-[11rem] sm:min-w-[15rem] border border-signal bg-bg-primary px-2.5 text-text-primary focus:outline-none"
+    :class="compact ? 'text-ui sm:text-sm' : 'text-sm font-medium'"
     @click.stop
     @blur="handleBlur"
     @keydown.enter.prevent.stop="commitEdit"
@@ -77,8 +77,8 @@ function handleBlur() {
     type="button"
     :data-testid="testId ?? 'tracker-log-description-trigger'"
     :title="$t('timer.clickToEditDescription')"
-    class="text-left text-text-primary transition-colors hover:text-accent focus:outline-none focus-visible:underline"
-    :class="compact ? 'text-xs sm:text-sm' : 'text-sm font-medium'"
+    class="text-left text-text-primary transition-colors hover:text-signal focus:outline-none focus-visible:underline"
+    :class="compact ? 'text-ui sm:text-sm' : 'text-sm font-medium'"
     @click="startEditing"
   >
     {{ value }}

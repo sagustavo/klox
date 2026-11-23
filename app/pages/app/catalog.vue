@@ -320,11 +320,12 @@ async function confirmCatalogDelete() {
 
 <template>
   <div class="space-y-6">
-    <div class="border border-border-hairline bg-bg-elevated p-5">
-      <h1 class="text-lg font-semibold text-text-primary">
+    <div class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-5 sm:p-6">
+      <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
+      <h1 class="text-xl font-semibold text-text-primary">
         {{ $t('catalog.title') }}
       </h1>
-      <p class="mt-1 text-xs text-text-muted">
+      <p class="mt-1.5 text-sm text-text-muted">
         {{ $t('catalog.subtitle') }}
       </p>
     </div>
@@ -332,8 +333,9 @@ async function confirmCatalogDelete() {
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <!-- Left Column: Projects List + Create Project Form -->
       <div class="lg:col-span-5 space-y-4">
-        <div class="border border-border-hairline bg-bg-elevated p-5">
-          <div class="border-b border-border-hairline pb-3 text-xs font-mono uppercase tracking-wider text-accent">
+        <div class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-5">
+          <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
+          <div class="label-mono border-b border-border-hairline pb-3 text-signal">
             {{ $t('catalog.projectsTitle') }} ({{ catalogStore.sortedProjects.length }})
           </div>
 
@@ -344,7 +346,7 @@ async function confirmCatalogDelete() {
               type="text"
               required
               :placeholder="$t('catalog.newProjectPlaceholder')"
-              class="h-9 w-full border border-border-hairline bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+              class="h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
             />
 
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -353,16 +355,16 @@ async function confirmCatalogDelete() {
                   v-model="newProjectColor"
                   type="color"
                   :aria-label="$t('catalog.colorLabel')"
-                  class="h-7 w-7 cursor-pointer border border-border-hairline bg-bg-primary p-0.5"
+                  class="h-8 w-8 cursor-pointer border border-border-input bg-bg-primary p-0.5"
                 />
                 <button
                   v-for="swatch in PROJECT_COLOR_PALETTE"
                   :key="swatch"
                   type="button"
-                  class="h-5 w-5 border transition-transform"
+                  class="h-6 w-6 border transition-transform"
                   :class="
                     newProjectColor.toUpperCase() === swatch
-                      ? 'border-white scale-110'
+                      ? 'border-text-primary scale-110'
                       : 'border-border-hairline opacity-75 hover:opacity-100'
                   "
                   :style="{ backgroundColor: swatch }"
@@ -379,9 +381,9 @@ async function confirmCatalogDelete() {
 
             <button
               type="submit"
-              class="inline-flex h-8 w-full items-center justify-center gap-1.5 bg-accent px-3 text-xs font-mono uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
+              class="inline-flex h-10 w-full items-center justify-center gap-1.5 bg-accent px-4 text-xs font-mono font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
             >
-              <Plus class="h-3.5 w-3.5" />
+              <Plus class="h-4 w-4" />
               <span>{{ $t('catalog.addProject') }}</span>
             </button>
           </form>
@@ -394,7 +396,7 @@ async function confirmCatalogDelete() {
             >
               <button
                 type="button"
-                class="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors"
+                class="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition-colors"
                 :class="
                   selectedProjectId === proj.id
                     ? 'bg-bg-hover text-text-primary'
@@ -415,17 +417,17 @@ async function confirmCatalogDelete() {
                 <div class="flex items-center gap-1.5 shrink-0">
                   <span
                     v-if="proj.systemKey === 'unassigned'"
-                    class="border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[10px] font-mono text-text-muted"
+                    class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs font-mono text-text-muted"
                   >
                     {{ $t('catalog.systemBadge') }}
                   </span>
                   <span
                     v-if="proj.isBillableDefault"
-                    class="border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-mono text-accent"
+                    class="border border-signal/40 bg-signal-soft px-2 py-0.5 text-xs font-mono text-signal"
                   >
                     $
                   </span>
-                  <span class="tabular-telemetry text-[11px] font-mono text-text-muted">
+                  <span class="tabular-telemetry text-xs font-mono text-text-muted">
                     {{ catalogStore.getTagsForProject(proj.id).length }} #
                   </span>
                 </div>
@@ -438,9 +440,10 @@ async function confirmCatalogDelete() {
       <!-- Right Column: Selected Project Settings + Project-Scoped Tags + Tasks -->
       <div v-if="selectedProject" class="lg:col-span-7 space-y-6">
         <!-- Project Inspector Header -->
-        <div class="border border-border-hairline bg-bg-elevated p-5">
+        <div class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-5 sm:p-6">
+          <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-hairline pb-4">
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-wrap items-center gap-2.5">
               <span
                 class="h-3.5 w-3.5"
                 :style="{ backgroundColor: selectedProject.color }"
@@ -449,10 +452,10 @@ async function confirmCatalogDelete() {
                 {{ displayProjectName(selectedProject) }}
               </h2>
               <span
-                class="border px-1.5 py-0.5 text-[10px] font-mono"
+                class="border px-2 py-0.5 text-xs font-mono"
                 :class="
                   selectedProject.isBillableDefault
-                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    ? 'border-signal/40 bg-signal-soft text-signal'
                     : 'border-border-hairline bg-bg-primary text-text-muted'
                 "
               >
@@ -468,10 +471,10 @@ async function confirmCatalogDelete() {
               v-if="selectedProject.systemKey !== 'unassigned'"
               type="button"
               data-testid="catalog-project-delete"
-              class="inline-flex h-7 items-center gap-1 border border-red-500/40 bg-red-500/10 px-2.5 text-[11px] font-mono uppercase text-red-400 hover:bg-red-500/20"
+              class="inline-flex h-8 items-center gap-1.5 border border-destructive/40 bg-destructive/10 px-3 text-xs font-mono uppercase text-destructive hover:bg-destructive/20"
               @click="requestDeleteSelectedProject"
             >
-              <Trash2 class="h-3 w-3" />
+              <Trash2 class="h-3.5 w-3.5" />
               <span>{{ $t('catalog.deleteProject') }}</span>
             </button>
           </div>
@@ -485,12 +488,12 @@ async function confirmCatalogDelete() {
               v-model="editName"
               type="text"
               required
-              class="h-8 flex-1 min-w-[180px] border border-border-hairline bg-bg-primary px-2.5 text-xs text-text-primary focus:border-accent focus:outline-none"
+              class="h-9 flex-1 min-w-[180px] border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
             />
             <input
               v-model="editColor"
               type="color"
-              class="h-8 w-8 cursor-pointer border border-border-hairline bg-bg-primary p-0.5"
+              class="h-9 w-9 cursor-pointer border border-border-input bg-bg-primary p-0.5"
             />
             <UiBillableToggle
               v-model="editBillable"
@@ -499,7 +502,7 @@ async function confirmCatalogDelete() {
             />
             <button
               type="submit"
-              class="inline-flex h-8 items-center border border-border-hairline bg-bg-primary px-3 text-xs font-mono uppercase text-text-primary hover:bg-bg-hover"
+              class="inline-flex h-9 items-center border border-border-hairline bg-bg-primary px-3.5 text-xs font-mono uppercase text-text-primary hover:bg-bg-hover"
             >
               {{ $t('catalog.saveChanges') }}
             </button>
@@ -507,52 +510,53 @@ async function confirmCatalogDelete() {
         </div>
 
         <!-- Project-Scoped Tags -->
-        <div class="border border-border-hairline bg-bg-elevated p-5">
+        <div class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-5 sm:p-6">
+          <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
           <div class="flex items-center justify-between border-b border-border-hairline pb-3">
-            <div class="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-accent">
-              <Tag class="h-3.5 w-3.5" />
+            <div class="label-mono flex items-center gap-2 text-signal">
+              <Tag class="h-4 w-4" />
               <span>{{ $t('catalog.scopedTagsTitle') }} ({{ scopedTags.length }})</span>
             </div>
           </div>
-          <p class="mt-2 text-xs text-text-muted">
+          <p class="mt-2.5 text-ui text-text-muted">
             {{ $t('catalog.scopedTagsHint') }}
           </p>
 
-          <form class="mt-3 flex gap-2" @submit.prevent="handleCreateTag">
+          <form class="mt-3.5 flex gap-2" @submit.prevent="handleCreateTag">
             <input
               v-model="newTagName"
               type="text"
               required
               :placeholder="$t('catalog.newTagPlaceholder')"
-              class="h-9 flex-1 border border-border-hairline bg-bg-primary px-3 text-xs text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+              class="h-10 flex-1 border border-border-input bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
             />
             <button
               type="submit"
-              class="inline-flex h-9 items-center gap-1.5 bg-accent px-3.5 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors"
+              class="inline-flex h-10 items-center gap-1.5 bg-accent px-4 text-xs font-mono font-semibold uppercase text-white hover:bg-accent-hover transition-colors"
             >
-              <Plus class="h-3.5 w-3.5" />
+              <Plus class="h-4 w-4" />
               <span>{{ $t('catalog.addTag') }}</span>
             </button>
           </form>
 
-          <div v-if="scopedTags.length === 0" class="mt-4 text-xs font-mono text-text-muted">
+          <div v-if="scopedTags.length === 0" class="mt-4 text-ui font-mono text-text-muted">
             {{ $t('catalog.noTagsYet') }}
           </div>
 
-          <div v-else class="mt-4 space-y-2">
+          <div v-else class="mt-4 space-y-2.5">
             <div class="flex flex-wrap gap-2">
               <span
                 v-for="tag in scopedTags"
                 :key="tag.id"
                 :data-testid="`catalog-tag-chip-${tag.id}`"
-                class="inline-flex items-center gap-1.5 border bg-bg-primary px-2.5 py-1 text-xs font-mono text-text-primary transition-colors"
+                class="inline-flex items-center gap-1.5 border bg-bg-primary px-3 py-1.5 text-ui font-mono text-text-primary transition-colors"
                 :class="
                   editingTagId === tag.id
-                    ? 'border-accent'
+                    ? 'border-signal'
                     : 'border-border-hairline'
                 "
               >
-                <span class="text-accent">#</span>
+                <span class="text-signal">#</span>
                 <form
                   v-if="editingTagId === tag.id"
                   class="inline-flex items-center gap-1"
@@ -565,34 +569,34 @@ async function confirmCatalogDelete() {
                     maxlength="80"
                     data-testid="catalog-tag-rename-input"
                     :aria-label="$t('catalog.renameTagAria', { name: tag.name })"
-                    class="h-6 w-32 border border-border-hairline bg-bg-elevated px-1.5 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+                    class="h-7 w-36 border border-border-input bg-bg-elevated px-2 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
                     @keydown.esc.stop.prevent="cancelEditTag"
                   />
                   <button
                     type="submit"
                     data-testid="catalog-tag-rename-save"
-                    class="inline-flex h-5 w-5 items-center justify-center text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                    class="inline-flex h-6 w-6 items-center justify-center text-emerald-500 hover:bg-emerald-500/15 transition-colors"
                     :aria-label="$t('catalog.renameTagSave')"
                     :title="$t('catalog.renameTagSave')"
                   >
-                    <Check class="h-3 w-3" />
+                    <Check class="h-3.5 w-3.5" />
                   </button>
                   <button
                     type="button"
                     data-testid="catalog-tag-rename-cancel"
-                    class="inline-flex h-5 w-5 items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+                    class="inline-flex h-6 w-6 items-center justify-center text-text-muted hover:text-text-primary transition-colors"
                     :aria-label="$t('catalog.renameTagCancel')"
                     :title="$t('catalog.renameTagCancel')"
                     @click="cancelEditTag"
                   >
-                    <X class="h-3 w-3" />
+                    <X class="h-3.5 w-3.5" />
                   </button>
                 </form>
 
                 <template v-else>
                   <button
                     type="button"
-                    class="hover:text-accent transition-colors text-left"
+                    class="hover:text-signal transition-colors text-left"
                     :title="$t('catalog.renameTagAria', { name: tag.name })"
                     @click="startEditTag(tag)"
                   >
@@ -601,22 +605,22 @@ async function confirmCatalogDelete() {
                   <button
                     type="button"
                     data-testid="catalog-tag-rename-trigger"
-                    class="inline-flex h-5 w-5 items-center justify-center text-text-muted hover:text-accent transition-colors"
+                    class="inline-flex h-6 w-6 items-center justify-center text-text-muted hover:text-signal transition-colors"
                     :aria-label="$t('catalog.renameTagAria', { name: tag.name })"
                     :title="$t('catalog.renameTagAria', { name: tag.name })"
                     @click="startEditTag(tag)"
                   >
-                    <Pencil class="h-2.5 w-2.5" />
+                    <Pencil class="h-3 w-3" />
                   </button>
                   <button
                     type="button"
                     data-testid="catalog-tag-delete-trigger"
-                    class="inline-flex h-5 w-5 items-center justify-center text-text-muted hover:text-red-400 transition-colors"
+                    class="inline-flex h-6 w-6 items-center justify-center text-text-muted hover:text-destructive transition-colors"
                     :aria-label="$t('catalog.deleteTagAria', { name: tag.name })"
                     :title="$t('catalog.deleteTagAria', { name: tag.name })"
                     @click="requestDeleteTag(tag)"
                   >
-                    <Trash2 class="h-2.5 w-2.5" />
+                    <Trash2 class="h-3 w-3" />
                   </button>
                 </template>
               </span>
@@ -625,7 +629,7 @@ async function confirmCatalogDelete() {
             <p
               v-if="tagRenameError"
               data-testid="catalog-tag-rename-error"
-              class="text-xs font-mono text-red-400"
+              class="text-ui font-mono text-destructive"
             >
               {{ $t(`catalog.tagRenameErrors.${tagRenameError}`) }}
             </p>
@@ -633,16 +637,17 @@ async function confirmCatalogDelete() {
         </div>
 
         <!-- Project-Scoped Tasks, Subtasks & Sub-subtasks (FR-4) -->
-        <div class="border border-border-hairline bg-bg-elevated p-5">
-          <div class="flex items-center gap-2 border-b border-border-hairline pb-3 text-xs font-mono uppercase tracking-wider text-accent">
-            <CheckSquare class="h-3.5 w-3.5" />
+        <div class="relative overflow-hidden border border-border-hairline bg-bg-elevated p-5 sm:p-6">
+          <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
+          <div class="label-mono flex items-center gap-2 border-b border-border-hairline pb-3 text-signal">
+            <CheckSquare class="h-4 w-4" />
             <span>{{ $t('catalog.tasksTitle') }} ({{ flattenedTasks.length }})</span>
           </div>
-          <p class="mt-2 text-xs text-text-muted">
+          <p class="mt-2.5 text-ui text-text-muted">
             {{ $t('catalog.tasksHint') }}
           </p>
 
-          <form class="mt-3 space-y-2.5" @submit.prevent="handleCreateTask">
+          <form class="mt-3.5 space-y-2.5" @submit.prevent="handleCreateTask">
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-12">
               <input
                 ref="taskNameInputRef"
@@ -650,12 +655,12 @@ async function confirmCatalogDelete() {
                 type="text"
                 required
                 :placeholder="$t('catalog.newTaskPlaceholder')"
-                class="sm:col-span-5 h-9 border border-border-hairline bg-bg-primary px-3 text-xs text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+                class="sm:col-span-5 h-10 border border-border-input bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
               />
               <select
                 v-model="newTaskParentId"
                 :aria-label="$t('catalog.parentTaskLabel')"
-                class="sm:col-span-3 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary focus:border-accent focus:outline-none"
+                class="sm:col-span-3 h-10 border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary focus:border-signal focus:outline-none"
               >
                 <option value="">{{ $t('catalog.parentTaskNone') }}</option>
                 <option
@@ -672,13 +677,13 @@ async function confirmCatalogDelete() {
                 min="0"
                 step="0.5"
                 :placeholder="$t('catalog.targetHoursPlaceholder')"
-                class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+                class="tabular-telemetry sm:col-span-2 h-10 border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
               />
               <input
                 v-model="newTaskAdoId"
                 type="text"
                 :placeholder="$t('catalog.adoWorkItemPlaceholder')"
-                class="tabular-telemetry sm:col-span-2 h-9 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+                class="tabular-telemetry sm:col-span-2 h-10 border border-border-input bg-bg-primary px-2.5 text-ui font-mono text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
               />
             </div>
 
@@ -687,19 +692,19 @@ async function confirmCatalogDelete() {
                 v-model="newTaskDescription"
                 rows="2"
                 :placeholder="$t('catalog.taskDescriptionPlaceholder')"
-                class="flex-1 border border-border-hairline bg-bg-primary p-2.5 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:border-accent focus:outline-none"
+                class="flex-1 border border-border-input bg-bg-primary p-3 text-ui font-mono text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
               />
               <button
                 type="submit"
-                class="inline-flex h-9 sm:h-auto sm:w-36 shrink-0 items-center justify-center gap-1 bg-accent px-3 text-xs font-mono uppercase text-white hover:bg-accent-hover transition-colors"
+                class="inline-flex h-10 sm:h-auto sm:w-40 shrink-0 items-center justify-center gap-1.5 bg-accent px-3.5 text-xs font-mono font-semibold uppercase text-white hover:bg-accent-hover transition-colors"
               >
-                <Plus class="h-3.5 w-3.5" />
+                <Plus class="h-4 w-4" />
                 <span>{{ $t('catalog.addTask') }}</span>
               </button>
             </div>
           </form>
 
-          <div v-if="flattenedTasks.length === 0" class="mt-4 text-xs font-mono text-text-muted">
+          <div v-if="flattenedTasks.length === 0" class="mt-4 text-ui font-mono text-text-muted">
             {{ $t('catalog.noTasksYet') }}
           </div>
 
@@ -707,25 +712,25 @@ async function confirmCatalogDelete() {
             <li
               v-for="node in flattenedTasks"
               :key="node.task.id"
-              class="px-3 py-2.5 text-xs transition-colors hover:bg-bg-hover/40"
+              class="px-3.5 py-3 text-sm transition-colors hover:bg-bg-hover/40"
               :class="{
-                'pl-7': node.depth === 1,
-                'pl-12': node.depth === 2,
+                'pl-8': node.depth === 1,
+                'pl-14': node.depth === 2,
               }"
             >
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex items-center gap-2 min-w-0">
+                <div class="flex items-center gap-2.5 min-w-0">
                   <CornerDownRight
                     v-if="node.depth > 0"
                     class="h-3.5 w-3.5 shrink-0 text-text-muted"
                   />
                   <button
                     type="button"
-                    class="tabular-telemetry border px-1.5 py-0.5 text-[10px] font-mono uppercase shrink-0"
+                    class="tabular-telemetry border px-2 py-0.5 text-xs font-mono uppercase shrink-0"
                     :class="{
                       'border-border-hairline text-text-muted': node.task.status === 'todo',
-                      'border-accent/40 bg-accent/10 text-accent': node.task.status === 'in_progress',
-                      'border-emerald-500/40 bg-emerald-500/10 text-emerald-400': node.task.status === 'done',
+                      'border-signal/40 bg-signal-soft text-signal': node.task.status === 'in_progress',
+                      'border-emerald-500/40 bg-emerald-500/10 text-emerald-500': node.task.status === 'done',
                     }"
                     @click="handleCycleTaskStatus(node.task.id, node.task.status)"
                   >
@@ -740,22 +745,22 @@ async function confirmCatalogDelete() {
                   <span class="truncate font-medium text-text-primary">{{ node.task.name }}</span>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-2 shrink-0 font-mono text-[11px] text-text-muted">
+                <div class="flex flex-wrap items-center gap-2 shrink-0 font-mono text-xs text-text-muted">
                   <span v-if="node.task.targetHours" class="tabular-telemetry">
                     {{ node.task.targetHours }}h
                   </span>
                   <span
                     v-if="node.task.externalWorkItemId"
-                    class="tabular-telemetry border border-border-hairline px-1.5 py-0.5 text-[10px]"
+                    class="tabular-telemetry border border-border-hairline px-2 py-0.5 text-xs"
                   >
-                    ADO #{{ node.task.externalWorkItemId }}
+                    #{{ node.task.externalWorkItemId }}
                   </span>
 
                   <!-- + Subtask / + Sub-subtask button for depth 0 and depth 1 -->
                   <button
                     v-if="node.depth < MAX_TASK_DEPTH"
                     type="button"
-                    class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-[10px] text-text-muted hover:border-accent hover:text-text-primary transition-colors"
+                    class="border border-border-hairline bg-bg-elevated px-2.5 py-1 text-xs text-text-muted hover:border-signal hover:text-text-primary transition-colors"
                     @click="prefillParentForSubtask(node.task.id)"
                   >
                     {{ node.depth === 0 ? $t('catalog.addSubtask') : $t('catalog.addSubSubtask') }}
@@ -764,30 +769,30 @@ async function confirmCatalogDelete() {
                   <!-- Direct [▶ Start] Timer Button (FR-4.3) -->
                   <span
                     v-if="timerStore.isRunning && timerStore.taskId === node.task.id"
-                    class="inline-flex items-center gap-1 border border-accent bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent"
+                    class="inline-flex items-center gap-1.5 border border-signal bg-signal-soft px-2.5 py-1 text-xs font-semibold text-signal"
                   >
-                    <span class="h-1.5 w-1.5 bg-accent animate-pulse" />
+                    <span class="h-1.5 w-1.5 bg-signal motion-safe:animate-pulse" />
                     <span>{{ $t('catalog.runningTaskBadge') }}</span>
                   </span>
                   <button
                     v-else
                     type="button"
-                    class="inline-flex items-center gap-1 border border-accent/50 bg-accent/10 px-2 py-0.5 text-[10px] uppercase text-accent hover:bg-accent hover:text-white transition-colors"
+                    class="inline-flex items-center gap-1.5 border border-signal/50 bg-signal-soft px-2.5 py-1 text-xs uppercase text-signal hover:bg-accent hover:text-white transition-colors"
                     @click="handleStartTimerFromTask(node.task.id)"
                   >
-                    <Play class="h-2.5 w-2.5 fill-current" />
+                    <Play class="h-3 w-3 fill-current" />
                     <span>{{ $t('catalog.startTaskTimer') }}</span>
                   </button>
 
                   <button
                     type="button"
                     data-testid="catalog-task-delete-trigger"
-                    class="text-text-muted hover:text-red-400 px-1"
+                    class="inline-flex h-7 w-7 items-center justify-center text-text-muted hover:text-destructive"
                     :aria-label="$t('catalog.deleteTaskAria', { name: node.task.name })"
                     :title="$t('catalog.deleteTaskAria', { name: node.task.name })"
                     @click="requestDeleteTask(node.task)"
                   >
-                    <Trash2 class="h-3 w-3" />
+                    <Trash2 class="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
@@ -796,7 +801,7 @@ async function confirmCatalogDelete() {
               <!-- eslint-disable-next-line vue/no-v-html -->
               <div
                 v-if="node.task.description"
-                class="mt-1.5 border-l-2 border-border-hairline pl-2.5 text-xs text-text-muted space-y-1"
+                class="mt-2 border-l-2 border-border-hairline pl-3 text-ui leading-relaxed text-text-muted space-y-1"
                 v-html="renderBasicMarkdown(node.task.description)"
               />
             </li>

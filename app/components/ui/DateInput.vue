@@ -235,12 +235,12 @@ defineExpose({
 
 <template>
   <!-- Mode A: Inline Expandable Calendar (ideal inside existing Popovers like TimeRangePopover) -->
-  <div v-if="calendarPlacement === 'inline'" class="space-y-1.5">
+  <div v-if="calendarPlacement === 'inline'" class="space-y-2">
     <div
-      class="flex items-center border bg-bg-primary transition-colors focus-within:border-accent"
+      class="flex items-center border bg-bg-primary transition-colors focus-within:border-signal"
       :class="[
-        size === 'md' ? 'h-9' : 'h-8',
-        isValid ? 'border-border-hairline' : 'border-red-500/70',
+        size === 'md' ? 'h-10' : 'h-9',
+        isValid ? 'border-border-input' : 'border-destructive/70',
       ]"
     >
       <input
@@ -255,7 +255,7 @@ defineExpose({
         :aria-invalid="!isValid"
         :title="!isValid ? $t('timer.timeRangePopover.invalidDate', { format: placeholder }) : placeholder"
         :data-testid="testId ?? 'ui-date-input'"
-        class="tabular-telemetry h-full w-full bg-transparent px-2 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none"
+        class="tabular-telemetry h-full w-full bg-transparent px-2.5 text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
         @focus="isInputFocused = true"
         @blur="handleBlur"
         @input="handleTextInput"
@@ -267,28 +267,28 @@ defineExpose({
         :aria-expanded="calendarOpen"
         :aria-label="$t('timer.timeRangePopover.openCalendar')"
         :title="$t('timer.timeRangePopover.openCalendar')"
-        class="inline-flex h-full w-8 shrink-0 items-center justify-center border-l border-border-hairline text-text-muted transition-colors hover:bg-bg-hover hover:text-accent focus:outline-none focus-visible:text-accent"
-        :class="calendarOpen ? 'bg-accent/15 text-accent' : ''"
+        class="inline-flex h-full w-9 shrink-0 items-center justify-center border-l border-border-hairline text-text-muted transition-colors hover:bg-bg-hover hover:text-signal focus:outline-none focus-visible:text-signal"
+        :class="calendarOpen ? 'bg-signal-soft text-signal' : ''"
         @click="toggleCalendar"
       >
-        <Calendar class="h-3.5 w-3.5" />
+        <Calendar class="h-4 w-4" />
       </button>
     </div>
 
     <div
       v-if="calendarOpen"
       data-testid="ui-date-calendar-grid"
-      class="border border-border-hairline bg-bg-primary p-2.5 space-y-2"
+      class="border border-border-hairline bg-bg-primary p-3 space-y-2"
       @keydown.esc.stop="calendarOpen = false"
     >
       <div class="flex items-center justify-between">
         <button
           type="button"
           :aria-label="$t('timer.timeRangePopover.previousMonth')"
-          class="inline-flex h-6 w-6 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted hover:border-accent/50 hover:text-text-primary transition-colors"
+          class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted hover:border-signal/50 hover:text-text-primary transition-colors"
           @click="goPrevMonth"
         >
-          <ChevronLeft class="h-3.5 w-3.5" />
+          <ChevronLeft class="h-4 w-4" />
         </button>
 
         <span class="tabular-telemetry text-xs font-mono font-semibold uppercase tracking-wider text-text-primary">
@@ -298,15 +298,15 @@ defineExpose({
         <button
           type="button"
           :aria-label="$t('timer.timeRangePopover.nextMonth')"
-          class="inline-flex h-6 w-6 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted hover:border-accent/50 hover:text-text-primary transition-colors"
+          class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted hover:border-signal/50 hover:text-text-primary transition-colors"
           @click="goNextMonth"
         >
-          <ChevronRight class="h-3.5 w-3.5" />
+          <ChevronRight class="h-4 w-4" />
         </button>
       </div>
 
-      <div class="grid grid-cols-7 gap-0.5 text-center text-[10px] font-mono uppercase text-text-muted">
-        <span v-for="(wd, idx) in weekdayLabels" :key="idx" class="py-0.5">
+      <div class="grid grid-cols-7 gap-0.5 text-center text-xs font-mono uppercase text-text-muted">
+        <span v-for="(wd, idx) in weekdayLabels" :key="idx" class="py-1">
           {{ wd }}
         </span>
       </div>
@@ -317,15 +317,15 @@ defineExpose({
           :key="cell.dateKey"
           type="button"
           :data-testid="`calendar-day-${cell.dateKey}`"
-          class="tabular-telemetry h-7 border text-[11px] font-mono transition-colors focus:outline-none focus-visible:border-accent"
+          class="tabular-telemetry h-8 border text-xs font-mono transition-colors focus:outline-none focus-visible:border-signal"
           :class="[
             cell.dateKey === modelValue
               ? 'border-accent bg-accent text-white font-semibold'
               : cell.dateKey === todayDateKey
-                ? 'border-accent/50 bg-accent/10 text-accent font-medium hover:bg-accent/20'
+                ? 'border-signal/50 bg-signal-soft text-signal font-medium hover:bg-signal/20'
                 : cell.inCurrentMonth
                   ? 'border-transparent text-text-primary hover:border-border-hairline hover:bg-bg-hover'
-                  : 'border-transparent text-text-muted/40 hover:text-text-muted',
+                  : 'border-transparent text-text-faint hover:text-text-muted',
           ]"
           @click="selectCalendarDate(cell.dateKey)"
         >
@@ -333,12 +333,12 @@ defineExpose({
         </button>
       </div>
 
-      <div class="flex items-center justify-between border-t border-border-hairline pt-1.5 text-[10px] font-mono">
+      <div class="flex items-center justify-between border-t border-border-hairline pt-2 text-xs font-mono">
         <span class="tabular-telemetry text-text-muted">{{ placeholder }}</span>
         <button
           type="button"
           data-testid="calendar-today-shortcut"
-          class="text-accent hover:underline"
+          class="text-signal hover:underline"
           @click="selectToday"
         >
           {{ $t('timer.timeRangePopover.todayShortcut') }}
@@ -351,10 +351,10 @@ defineExpose({
   <PopoverRoot v-else v-model:open="calendarOpen">
     <PopoverAnchor as-child>
       <div
-        class="flex items-center border bg-bg-primary transition-colors focus-within:border-accent"
+        class="flex items-center border bg-bg-primary transition-colors focus-within:border-signal"
         :class="[
-          size === 'md' ? 'h-9' : 'h-8',
-          isValid ? 'border-border-hairline' : 'border-red-500/70',
+          size === 'md' ? 'h-10' : 'h-9',
+          isValid ? 'border-border-input' : 'border-destructive/70',
         ]"
       >
         <input
@@ -369,7 +369,7 @@ defineExpose({
           :aria-invalid="!isValid"
           :title="!isValid ? $t('timer.timeRangePopover.invalidDate', { format: placeholder }) : placeholder"
           :data-testid="testId ?? 'ui-date-input'"
-          class="tabular-telemetry h-full w-full bg-transparent px-2 text-xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none"
+          class="tabular-telemetry h-full w-full bg-transparent px-2.5 text-ui font-mono text-text-primary placeholder:text-text-faint focus:outline-none"
           @focus="isInputFocused = true"
           @blur="handleBlur"
           @input="handleTextInput"
@@ -381,11 +381,11 @@ defineExpose({
           :aria-expanded="calendarOpen"
           :aria-label="$t('timer.timeRangePopover.openCalendar')"
           :title="$t('timer.timeRangePopover.openCalendar')"
-          class="inline-flex h-full w-8 shrink-0 items-center justify-center border-l border-border-hairline text-text-muted transition-colors hover:bg-bg-hover hover:text-accent focus:outline-none focus-visible:text-accent"
-          :class="calendarOpen ? 'bg-accent/15 text-accent' : ''"
+          class="inline-flex h-full w-9 shrink-0 items-center justify-center border-l border-border-hairline text-text-muted transition-colors hover:bg-bg-hover hover:text-signal focus:outline-none focus-visible:text-signal"
+          :class="calendarOpen ? 'bg-signal-soft text-signal' : ''"
           @click="toggleCalendar"
         >
-          <Calendar class="h-3.5 w-3.5" />
+          <Calendar class="h-4 w-4" />
         </button>
       </div>
     </PopoverAnchor>
@@ -396,17 +396,18 @@ defineExpose({
         :side-offset="6"
         :collision-padding="12"
         data-testid="ui-date-calendar-popover"
-        class="z-50 w-64 border border-border-hairline bg-bg-elevated p-2.5 shadow-2xl space-y-2 focus:outline-none"
+        class="relative z-50 w-72 overflow-hidden border border-border-hairline bg-bg-elevated p-3 shadow-2xl space-y-2 focus:outline-none"
         @open-auto-focus.prevent
       >
-        <div class="flex items-center justify-between">
+        <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
+        <div class="flex items-center justify-between pt-0.5">
           <button
             type="button"
             :aria-label="$t('timer.timeRangePopover.previousMonth')"
-            class="inline-flex h-6 w-6 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-accent/50 hover:text-text-primary transition-colors"
+            class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/50 hover:text-text-primary transition-colors"
             @click="goPrevMonth"
           >
-            <ChevronLeft class="h-3.5 w-3.5" />
+            <ChevronLeft class="h-4 w-4" />
           </button>
 
           <span class="tabular-telemetry text-xs font-mono font-semibold uppercase tracking-wider text-text-primary">
@@ -416,15 +417,15 @@ defineExpose({
           <button
             type="button"
             :aria-label="$t('timer.timeRangePopover.nextMonth')"
-            class="inline-flex h-6 w-6 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-accent/50 hover:text-text-primary transition-colors"
+            class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/50 hover:text-text-primary transition-colors"
             @click="goNextMonth"
           >
-            <ChevronRight class="h-3.5 w-3.5" />
+            <ChevronRight class="h-4 w-4" />
           </button>
         </div>
 
-        <div class="grid grid-cols-7 gap-0.5 text-center text-[10px] font-mono uppercase text-text-muted">
-          <span v-for="(wd, idx) in weekdayLabels" :key="idx" class="py-0.5">
+        <div class="grid grid-cols-7 gap-0.5 text-center text-xs font-mono uppercase text-text-muted">
+          <span v-for="(wd, idx) in weekdayLabels" :key="idx" class="py-1">
             {{ wd }}
           </span>
         </div>
@@ -435,15 +436,15 @@ defineExpose({
             :key="cell.dateKey"
             type="button"
             :data-testid="`calendar-day-${cell.dateKey}`"
-            class="tabular-telemetry h-7 border text-[11px] font-mono transition-colors focus:outline-none focus-visible:border-accent"
+            class="tabular-telemetry h-8 border text-xs font-mono transition-colors focus:outline-none focus-visible:border-signal"
             :class="[
               cell.dateKey === modelValue
                 ? 'border-accent bg-accent text-white font-semibold'
                 : cell.dateKey === todayDateKey
-                  ? 'border-accent/50 bg-accent/10 text-accent font-medium hover:bg-accent/20'
+                  ? 'border-signal/50 bg-signal-soft text-signal font-medium hover:bg-signal/20'
                   : cell.inCurrentMonth
                     ? 'border-transparent text-text-primary hover:border-border-hairline hover:bg-bg-hover'
-                    : 'border-transparent text-text-muted/40 hover:text-text-muted',
+                    : 'border-transparent text-text-faint hover:text-text-muted',
             ]"
             @click="selectCalendarDate(cell.dateKey)"
           >
@@ -451,12 +452,12 @@ defineExpose({
           </button>
         </div>
 
-        <div class="flex items-center justify-between border-t border-border-hairline pt-1.5 text-[10px] font-mono">
+        <div class="flex items-center justify-between border-t border-border-hairline pt-2 text-xs font-mono">
           <span class="tabular-telemetry text-text-muted">{{ placeholder }}</span>
           <button
             type="button"
             data-testid="calendar-today-shortcut"
-            class="text-accent hover:underline"
+            class="text-signal hover:underline"
             @click="selectToday"
           >
             {{ $t('timer.timeRangePopover.todayShortcut') }}
