@@ -2,6 +2,11 @@ import { elapsedSeconds, normalizeDescription, toDateKey } from '~/domain/durati
 import { publishDomainEvent, type TimeLogSource } from '~/domain/events';
 import { generateRandomId } from '~/domain/ids';
 import { UNASSIGNED_PROJECT_ID, tagsForProject } from '~/domain/invariants';
+import {
+  INITIAL_TRACKER_STREAM_LIMIT,
+  TRACKER_STREAM_CHUNK_SIZE,
+  mergeStreamedTimeLogsChunk,
+} from '~/domain/trackerFeed';
 import type { EntityId, TimeLog } from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
 import { useCatalogStore } from './catalog';
@@ -13,6 +18,13 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
   const logs = ref<TimeLog[]>([]);
   const loadedUid = ref<string | null>(null);
   const loading = ref(false);
+  const streaming = ref(false);
+  const streamedCount = ref(0);
+
+  let activeHydratePromise: Promise<void> | null = null;
+  let activeHydrateUid: string | null = null;
+  const upsertedDuringStream = new Map<EntityId, TimeLog>();
+  const deletedDuringStream = new Set<EntityId>();
 
   const sortedLogs = computed(() =>
     [...logs.value].sort((a, b) => {
@@ -43,30 +55,106 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
 
   async function hydrate(uid: string, isDemo: boolean): Promise<void> {
     if (import.meta.server) return;
-    if (loadedUid.value === uid && logs.value.length > 0) return;
-
-    loading.value = true;
-    try {
-      loadLocal();
-      loadedUid.value = uid;
-
-      if (isDemo) return;
-      const fb = await getFirebaseClient();
-      if (!fb) return;
-
-      const { collection, getDocs, orderBy, query } = await import('firebase/firestore');
-      const q = query(
-        collection(fb.db, 'users', uid, 'timeLogs'),
-        orderBy('startTime', 'desc')
-      );
-      const snap = await getDocs(q);
-      logs.value = snap.docs.map((d) => d.data() as TimeLog);
-      persistLocal();
-    } catch (err) {
-      console.warn('[Klox timeLogs hydrate fallback to local]', err);
-    } finally {
-      loading.value = false;
+    if (activeHydratePromise && activeHydrateUid === uid) {
+      return activeHydratePromise;
     }
+    if (loadedUid.value === uid && logs.value.length > 0 && !streaming.value) return;
+
+    loadLocal();
+    const hasCachedLogsForUser = logs.value.length > 0 && logs.value[0]?.userId === uid;
+    if (!hasCachedLogsForUser && !isDemo) {
+      logs.value = [];
+    }
+    loadedUid.value = uid;
+
+    if (isDemo) {
+      loading.value = false;
+      streaming.value = false;
+      return;
+    }
+
+    loading.value = !hasCachedLogsForUser;
+    streaming.value = true;
+    streamedCount.value = 0;
+    upsertedDuringStream.clear();
+    deletedDuringStream.clear();
+    activeHydrateUid = uid;
+
+    activeHydratePromise = (async () => {
+      try {
+        const fb = await getFirebaseClient();
+        if (!fb) return;
+
+        const { collection, getDocs, limit, orderBy, query, startAfter } = await import(
+          'firebase/firestore'
+        );
+        const colRef = collection(fb.db, 'users', uid, 'timeLogs');
+
+        // Stage 1: Fetch the newest 100 entries immediately so the first 7-day window renders fast
+        const firstSnap = await getDocs(
+          query(colRef, orderBy('startTime', 'desc'), limit(INITIAL_TRACKER_STREAM_LIMIT))
+        );
+        const firstChunk = firstSnap.docs.map((d) => d.data() as TimeLog);
+        let accumulatedRemote: TimeLog[] = [];
+
+        const firstMerged = mergeStreamedTimeLogsChunk({
+          accumulatedRemote,
+          incomingChunk: firstChunk,
+          upsertedById: upsertedDuringStream,
+          deletedIds: deletedDuringStream,
+        });
+        accumulatedRemote = firstMerged.nextAccumulatedRemote;
+        logs.value = firstMerged.mergedLogs;
+        streamedCount.value = accumulatedRemote.length;
+        loading.value = false;
+        persistLocal();
+
+        // Stage 2: Stream remaining historical chunks in the background without blocking UI
+        if (firstSnap.docs.length === INITIAL_TRACKER_STREAM_LIMIT) {
+          let cursorDoc = firstSnap.docs[firstSnap.docs.length - 1];
+          while (cursorDoc) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            const chunkSnap = await getDocs(
+              query(
+                colRef,
+                orderBy('startTime', 'desc'),
+                startAfter(cursorDoc),
+                limit(TRACKER_STREAM_CHUNK_SIZE)
+              )
+            );
+            if (chunkSnap.empty) break;
+
+            const chunkLogs = chunkSnap.docs.map((d) => d.data() as TimeLog);
+            const merged = mergeStreamedTimeLogsChunk({
+              accumulatedRemote,
+              incomingChunk: chunkLogs,
+              upsertedById: upsertedDuringStream,
+              deletedIds: deletedDuringStream,
+            });
+            accumulatedRemote = merged.nextAccumulatedRemote;
+            logs.value = merged.mergedLogs;
+            streamedCount.value = accumulatedRemote.length;
+
+            if (chunkSnap.docs.length < TRACKER_STREAM_CHUNK_SIZE) {
+              break;
+            }
+            cursorDoc = chunkSnap.docs[chunkSnap.docs.length - 1];
+          }
+          persistLocal();
+        }
+      } catch (err) {
+        console.warn('[Klox timeLogs hydrate fallback to local]', err);
+      } finally {
+        loading.value = false;
+        streaming.value = false;
+        upsertedDuringStream.clear();
+        deletedDuringStream.clear();
+        activeHydratePromise = null;
+        activeHydrateUid = null;
+      }
+    })();
+
+    return activeHydratePromise;
   }
 
   function buildTimeLogEntity(params: {
@@ -141,6 +229,10 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     source: TimeLogSource;
   }): Promise<TimeLog> {
     const entity = buildTimeLogEntity(params);
+    if (streaming.value) {
+      deletedDuringStream.delete(entity.id);
+      upsertedDuringStream.set(entity.id, entity);
+    }
     logs.value = [entity, ...logs.value.filter((l) => l.id !== entity.id)];
     persistLocal();
 
@@ -243,6 +335,12 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
 
     // Single reactive state update + single localStorage write
     const newIdSet = new Set(builtEntities.map((e) => e.id));
+    if (streaming.value) {
+      for (const entity of builtEntities) {
+        deletedDuringStream.delete(entity.id);
+        upsertedDuringStream.set(entity.id, entity);
+      }
+    }
     logs.value = [...builtEntities, ...logs.value.filter((l) => !newIdSet.has(l.id))];
     persistLocal();
 
@@ -327,6 +425,10 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
       durationSeconds: params.durationSeconds,
     });
 
+    if (streaming.value) {
+      deletedDuringStream.delete(updated.id);
+      upsertedDuringStream.set(updated.id, updated);
+    }
     logs.value = logs.value.map((l) => (l.id === updated.id ? updated : l));
     persistLocal();
 
@@ -407,6 +509,12 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     persistLocal();
 
     const updatedList = Array.from(updatedById.values());
+    if (streaming.value) {
+      for (const updated of updatedList) {
+        deletedDuringStream.delete(updated.id);
+        upsertedDuringStream.set(updated.id, updated);
+      }
+    }
 
     if (!params.isDemo) {
       const fb = await getFirebaseClient();
@@ -438,6 +546,10 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     isDemo: boolean;
     logId: EntityId;
   }): Promise<void> {
+    if (streaming.value) {
+      upsertedDuringStream.delete(params.logId);
+      deletedDuringStream.add(params.logId);
+    }
     logs.value = logs.value.filter((l) => l.id !== params.logId);
     persistLocal();
 
@@ -466,6 +578,12 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     }
 
     const idSet = new Set(params.logIds);
+    if (streaming.value) {
+      for (const id of idSet) {
+        upsertedDuringStream.delete(id);
+        deletedDuringStream.add(id);
+      }
+    }
     logs.value = logs.value.filter((l) => !idSet.has(l.id));
     persistLocal();
 
@@ -491,6 +609,8 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     logs,
     sortedLogs,
     loading,
+    streaming,
+    streamedCount,
     hydrate,
     buildTimeLogEntity,
     createTimeLog,

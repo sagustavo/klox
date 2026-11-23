@@ -2,6 +2,8 @@ import { normalizeDescription, toDateKey } from './duration';
 import type { EntityId, TimeLog } from './types';
 
 export const TRACKER_FEED_WINDOW_DAYS = 7;
+export const INITIAL_TRACKER_STREAM_LIMIT = 100;
+export const TRACKER_STREAM_CHUNK_SIZE = 500;
 
 /**
  * Collapsible summary group of same-day TimeLog records sharing identical
@@ -338,4 +340,88 @@ export function findPageIndexForDateKey(
   const size = Math.max(1, Math.floor(windowSizeDays));
   const idx = dayGroups.findIndex((g) => g.dateKey === dateKey);
   return idx >= 0 ? Math.floor(idx / size) : 0;
+}
+
+/**
+ * Computes the default expanded day keys for a 7-day window:
+ * only the most recent day (`days[0]`) is expanded by default, while all past days are collapsed.
+ */
+export function defaultExpandedTrackerDayKeys(
+  days: readonly Pick<TrackerDayGroup, 'dateKey'>[]
+): string[] {
+  const latest = days[0];
+  return latest ? [latest.dateKey] : [];
+}
+
+/**
+ * Returns true when every displayed day in `days` is currently expanded.
+ */
+export function areAllTrackerDaysExpanded(
+  days: readonly Pick<TrackerDayGroup, 'dateKey'>[],
+  expandedDayKeys: readonly string[]
+): boolean {
+  if (days.length === 0) return false;
+  const expandedSet = new Set(expandedDayKeys);
+  return days.every((day) => expandedSet.has(day.dateKey));
+}
+
+/**
+ * Toggles all currently displayed days between fully expanded and fully collapsed (`[]`).
+ */
+export function toggleAllTrackerDayKeys(
+  days: readonly Pick<TrackerDayGroup, 'dateKey'>[],
+  expandedDayKeys: readonly string[]
+): string[] {
+  if (days.length === 0) return [];
+  if (areAllTrackerDaysExpanded(days, expandedDayKeys)) {
+    return [];
+  }
+  return days.map((day) => day.dateKey);
+}
+
+/**
+ * Merges an incoming Firestore streamed chunk of TimeLogs with already-accumulated
+ * streamed logs while preserving any concurrent user creates/updates (`upsertedById`)
+ * and excluding any concurrent user deletions (`deletedIds`).
+ */
+export function mergeStreamedTimeLogsChunk(params: {
+  accumulatedRemote: readonly TimeLog[];
+  incomingChunk: readonly TimeLog[];
+  upsertedById: ReadonlyMap<EntityId, TimeLog>;
+  deletedIds: ReadonlySet<EntityId>;
+}): {
+  nextAccumulatedRemote: TimeLog[];
+  mergedLogs: TimeLog[];
+} {
+  const seenRemoteIds = new Set<EntityId>();
+  const nextAccumulatedRemote: TimeLog[] = [];
+
+  for (const log of params.accumulatedRemote) {
+    if (params.deletedIds.has(log.id) || seenRemoteIds.has(log.id)) continue;
+    seenRemoteIds.add(log.id);
+    nextAccumulatedRemote.push(params.upsertedById.get(log.id) ?? log);
+  }
+
+  for (const log of params.incomingChunk) {
+    if (params.deletedIds.has(log.id) || seenRemoteIds.has(log.id)) continue;
+    seenRemoteIds.add(log.id);
+    nextAccumulatedRemote.push(params.upsertedById.get(log.id) ?? log);
+  }
+
+  const localOnlyUpserts: TimeLog[] = [];
+  for (const [id, log] of params.upsertedById.entries()) {
+    if (!params.deletedIds.has(id) && !seenRemoteIds.has(id)) {
+      localOnlyUpserts.push(log);
+    }
+  }
+
+  const mergedLogs =
+    localOnlyUpserts.length > 0 || params.upsertedById.size > 0
+      ? [...localOnlyUpserts, ...nextAccumulatedRemote].sort(compareLogsDesc)
+      : [...nextAccumulatedRemote];
+
+  return {
+    nextAccumulatedRemote,
+    mergedLogs,
+  };
 }

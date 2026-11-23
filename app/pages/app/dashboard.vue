@@ -42,7 +42,7 @@ const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 const prefsStore = usePreferencesStore();
 const timeLogsStore = useTimeLogsStore();
-const { formatDuration, formatDecimalHours } = useFormat(() => prefsStore.preferences);
+const { formatDateKey, formatDuration, formatDecimalHours } = useFormat(() => prefsStore.preferences);
 
 const presets: DateRangePreset[] = [
   'today',
@@ -488,7 +488,7 @@ function toggleTagGroupCollapse(key: string) {
                   class="hover:bg-bg-hover/40"
                 >
                   <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 font-mono text-text-muted">
-                    {{ log.dateKey }}
+                    {{ formatDateKey(log.dateKey) }}
                   </td>
                   <td class="px-4 py-2.5 font-medium text-text-primary">
                     {{ log.description }}
@@ -544,7 +544,7 @@ function toggleTagGroupCollapse(key: string) {
               class="hover:bg-bg-hover/40"
             >
               <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 font-mono text-text-muted">
-                {{ log.dateKey }}
+                {{ formatDateKey(log.dateKey) }}
               </td>
               <td class="px-4 py-2.5 font-medium text-text-primary">
                 {{ log.description }}

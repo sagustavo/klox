@@ -250,11 +250,22 @@ const ptBR: LocaleMessages = {
     saveEditButton: 'Salvar',
     cancelEditButton: 'Cancelar',
     deleteButton: 'Excluir',
+    continueButton: 'Continuar atividade',
+    continueAria: 'Continuar atividade: {description}',
+    loadingLogs: 'Carregando registros recentes…',
+    streamingHistory: 'Sincronizando histórico ({count})…',
     group: {
       expandAria: 'Expandir {count} registros agrupados de {description}',
       collapseAria: 'Recolher {count} registros agrupados de {description}',
       entriesBadgeTitle: '{count} registros agrupados',
       deleteGroupAria: 'Excluir todos os {count} registros deste grupo',
+    },
+    dayGroup: {
+      expandAll: 'Expandir todos os dias',
+      collapseAll: 'Recolher todos os dias',
+      expandDayAria: 'Expandir registros de {date}',
+      collapseDayAria: 'Recolher registros de {date}',
+      entriesCount: '{count} registros',
     },
     pagination: {
       ariaLabel: 'Paginação em janelas de 7 dias do rastreador',

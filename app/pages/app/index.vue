@@ -3,9 +3,17 @@ import {
   ChevronDown,
   ChevronRight,
   CornerDownRight,
+  Play,
   Plus,
   Trash2,
 } from 'lucide-vue-next';
+import {
+  AccordionContent,
+  AccordionHeader,
+  AccordionItem,
+  AccordionRoot,
+  AccordionTrigger,
+} from 'reka-ui';
 import {
   formatHMS,
   parseHMS,
@@ -17,10 +25,13 @@ import {
 import { UNASSIGNED_PROJECT_ID, applyProjectSwitch } from '~/domain/invariants';
 import {
   TRACKER_FEED_WINDOW_DAYS,
+  areAllTrackerDaysExpanded,
   buildSameDayGroupSignature,
+  defaultExpandedTrackerDayKeys,
   findPageIndexForDateKey,
   groupLogsByCalendarDay,
   sliceTrackerFeedWindow,
+  toggleAllTrackerDayKeys,
   type TrackerLogGroup,
 } from '~/domain/trackerFeed';
 import type { EntityId, Project, TimeLog } from '~/domain/types';
@@ -43,11 +54,12 @@ const onboardingStore = useOnboardingStore();
 const prefsStore = usePreferencesStore();
 const timerStore = useTimerStore();
 const timeLogsStore = useTimeLogsStore();
-const { formatDuration, formatTime } = useFormat(() => prefsStore.preferences);
+const { formatDateKey, formatDuration, formatTime } = useFormat(() => prefsStore.preferences);
 
-// 7-day windowed pagination state (NFR-1.1)
+// 7-day windowed pagination & day accordion state (NFR-1.1)
 const currentPageIndex = ref(0);
 const feedTopRef = ref<HTMLElement | null>(null);
+const expandedDayKeys = ref<string[]>([]);
 
 // Manual Time Log form state (FR-5.2: searchable tag multiselect, overlapping intervals & Start/Stop sync)
 const showManualForm = ref(false);
@@ -66,6 +78,7 @@ const manualDurationHMS = ref('01:00:00');
 const expandedGroupKeys = ref<Set<string>>(new Set());
 
 onMounted(async () => {
+  manualDate.value = toDateKey(new Date(), prefsStore.preferences.timeZone);
   if (!authStore.user) return;
   await Promise.all([
     catalogStore.hydrate(authStore.user.uid, authStore.isDemoMode),
@@ -73,7 +86,6 @@ onMounted(async () => {
     timerStore.hydrate(authStore.user.uid, authStore.isDemoMode),
     onboardingStore.hydrate(authStore.user.uid, authStore.isDemoMode),
   ]);
-  manualDate.value = toDateKey(new Date(), prefsStore.preferences.timeZone);
 });
 
 const activeTimeZone = computed(() => prefsStore.preferences.timeZone || 'UTC');
@@ -220,11 +232,16 @@ async function handleSaveManualLog() {
     source: 'manual',
   });
 
+  const createdDateKey = toDateKey(created.startTime, tz);
   currentPageIndex.value = findPageIndexForDateKey(
     allDayGroups.value,
-    toDateKey(created.startTime, tz),
+    createdDateKey,
     TRACKER_FEED_WINDOW_DAYS
   );
+  await nextTick();
+  if (!expandedDayKeys.value.includes(createdDateKey)) {
+    expandedDayKeys.value = [...expandedDayKeys.value, createdDateKey];
+  }
 
   manualDescription.value = '';
   manualEndHM.value = '10:00';
@@ -425,6 +442,15 @@ async function handleDeleteGroup(entryGroup: TrackerLogGroup) {
   });
 }
 
+async function handleContinueActivity(log: TimeLog) {
+  if (!authStore.user) return;
+  await timerStore.continueFromLog({
+    uid: authStore.user.uid,
+    isDemo: authStore.isDemoMode,
+    log,
+  });
+}
+
 // Group historical logs by calendar day in UserPreferences.timeZone (O(N), cached until logs/tz change)
 const allDayGroups = computed(() =>
   groupLogsByCalendarDay(timeLogsStore.logs, prefsStore.preferences.timeZone)
@@ -448,6 +474,46 @@ watch(
     }
   }
 );
+
+watch(
+  () => [feedWindow.value.pageIndex, feedWindow.value.newestDateKey, feedWindow.value.days.length] as const,
+  ([nextPage, nextNewest, nextLen], oldVal) => {
+    const oldPage = oldVal?.[0];
+    const oldNewest = oldVal?.[1];
+    const oldLen = oldVal?.[2] ?? 0;
+    if (
+      oldVal === undefined ||
+      nextPage !== oldPage ||
+      (oldLen === 0 && nextLen > 0) ||
+      (nextPage === 0 && nextNewest !== oldNewest && oldNewest !== null)
+    ) {
+      expandedDayKeys.value = defaultExpandedTrackerDayKeys(feedWindow.value.days);
+    }
+  },
+  { immediate: true }
+);
+
+function isDayExpanded(dateKey: string): boolean {
+  return expandedDayKeys.value.includes(dateKey);
+}
+
+const areAllDaysExpanded = computed(() =>
+  areAllTrackerDaysExpanded(feedWindow.value.days, expandedDayKeys.value)
+);
+
+function toggleAllVisibleDays() {
+  expandedDayKeys.value = toggleAllTrackerDayKeys(feedWindow.value.days, expandedDayKeys.value);
+}
+
+function handleExpandedDaysUpdate(next: string | string[] | undefined) {
+  if (Array.isArray(next)) {
+    expandedDayKeys.value = next;
+  } else if (typeof next === 'string') {
+    expandedDayKeys.value = [next];
+  } else {
+    expandedDayKeys.value = [];
+  }
+}
 
 function goToPage(nextIndex: number, scrollToTop = false) {
   const maxIndex = Math.max(0, feedWindow.value.totalPages - 1);
@@ -613,7 +679,73 @@ function goToPage(nextIndex: number, scrollToTop = false) {
 
     <!-- Historical TimeLogs Paginated into 7-Day Calendar Windows (NFR-1.1) -->
     <div
-      v-if="feedWindow.days.length === 0"
+      v-if="timeLogsStore.loading && feedWindow.days.length === 0"
+      data-testid="tracker-loading-skeleton"
+      role="status"
+      :aria-label="$t('timer.loadingLogs')"
+      class="space-y-4"
+    >
+      <!-- Skeleton 7-Day Pagination Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-3 border border-border-hairline bg-bg-elevated px-4 py-2.5">
+        <div class="flex items-center gap-2.5">
+          <div class="h-5 w-24 animate-pulse bg-bg-hover" />
+          <div class="h-4 w-40 animate-pulse bg-bg-hover" />
+          <div class="h-4 w-28 animate-pulse bg-bg-hover" />
+        </div>
+        <div class="flex items-center gap-1.5">
+          <div class="h-8 w-28 animate-pulse border border-border-hairline bg-bg-primary" />
+          <div class="h-8 w-24 animate-pulse border border-border-hairline bg-bg-primary" />
+        </div>
+      </div>
+
+      <!-- Expanded First Day Card Skeleton -->
+      <div class="border border-border-hairline bg-bg-elevated">
+        <div class="flex items-center justify-between bg-bg-primary/60 px-4 py-2.5 border-b border-border-hairline">
+          <div class="flex items-center gap-2">
+            <div class="h-3.5 w-3.5 animate-pulse bg-bg-hover" />
+            <div class="h-4 w-24 animate-pulse bg-bg-hover" />
+            <div class="h-4 w-16 animate-pulse bg-bg-hover" />
+          </div>
+          <div class="h-4 w-24 animate-pulse bg-bg-hover" />
+        </div>
+        <ul class="divide-y divide-border-hairline">
+          <li
+            v-for="rowIdx in 3"
+            :key="rowIdx"
+            class="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+          >
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="h-4 w-48 sm:w-64 animate-pulse bg-bg-hover" />
+              <div class="h-5 w-24 animate-pulse bg-bg-hover" />
+              <div class="h-5 w-16 animate-pulse bg-bg-hover" />
+            </div>
+            <div class="flex items-center gap-2.5">
+              <div class="hidden sm:block h-4 w-24 animate-pulse bg-bg-hover" />
+              <div class="h-5 w-16 animate-pulse bg-bg-hover" />
+              <div class="h-7 w-7 animate-pulse border border-border-hairline bg-bg-primary" />
+              <div class="h-7 w-7 animate-pulse border border-border-hairline bg-bg-primary" />
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Collapsed Past Day Headers Skeleton -->
+      <div
+        v-for="dayIdx in 3"
+        :key="dayIdx"
+        class="flex items-center justify-between border border-border-hairline bg-bg-elevated px-4 py-2.5"
+      >
+        <div class="flex items-center gap-2">
+          <div class="h-3.5 w-3.5 animate-pulse bg-bg-hover" />
+          <div class="h-4 w-24 animate-pulse bg-bg-hover" />
+          <div class="h-4 w-14 animate-pulse bg-bg-hover" />
+        </div>
+        <div class="h-4 w-24 animate-pulse bg-bg-hover" />
+      </div>
+    </div>
+
+    <div
+      v-else-if="feedWindow.days.length === 0"
       class="border border-border-hairline bg-bg-elevated p-8 text-center text-xs font-mono text-text-muted"
     >
       {{ $t('timer.emptyLogs') }}
@@ -622,26 +754,66 @@ function goToPage(nextIndex: number, scrollToTop = false) {
     <div v-else class="space-y-4">
       <TimerTrackerPaginationBar
         :window="feedWindow"
+        :all-days-expanded="areAllDaysExpanded"
+        show-day-collapse-control
+        :streaming="timeLogsStore.streaming"
+        :streamed-count="timeLogsStore.streamedCount"
         @navigate="goToPage($event, false)"
+        @toggle-all-days="toggleAllVisibleDays"
       />
 
-      <div
-        v-for="group in feedWindow.days"
-        :key="group.dateKey"
-        data-testid="tracker-day-group"
-        class="border border-border-hairline bg-bg-elevated"
+      <AccordionRoot
+        type="multiple"
+        :model-value="expandedDayKeys"
+        class="space-y-4"
+        @update:model-value="handleExpandedDaysUpdate"
       >
-        <div class="flex items-center justify-between border-b border-border-hairline bg-bg-primary/60 px-4 py-2 text-xs font-mono">
-          <span class="tabular-telemetry font-semibold text-text-primary">
-            {{ group.dateKey }}
-          </span>
-          <span class="tabular-telemetry text-text-muted">
-            {{ $t('timer.daySubtotal') }}:
-            <strong class="text-text-primary">{{ formatDuration(group.totalSeconds) }}</strong>
-          </span>
-        </div>
+        <AccordionItem
+          v-for="group in feedWindow.days"
+          :key="group.dateKey"
+          :value="group.dateKey"
+          data-testid="tracker-day-group"
+          class="border border-border-hairline bg-bg-elevated"
+        >
+          <AccordionHeader as="div">
+            <AccordionTrigger
+              data-testid="tracker-day-toggle"
+              :aria-label="
+                isDayExpanded(group.dateKey)
+                  ? $t('timer.dayGroup.collapseDayAria', { date: formatDateKey(group.dateKey) })
+                  : $t('timer.dayGroup.expandDayAria', { date: formatDateKey(group.dateKey) })
+              "
+              class="flex w-full items-center justify-between gap-3 bg-bg-primary/60 px-4 py-2.5 text-xs font-mono hover:bg-bg-hover/60 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              <span class="flex items-center gap-2 min-w-0">
+                <ChevronDown
+                  v-if="isDayExpanded(group.dateKey)"
+                  class="h-3.5 w-3.5 shrink-0 text-accent"
+                />
+                <ChevronRight
+                  v-else
+                  class="h-3.5 w-3.5 shrink-0 text-accent"
+                />
+                <span
+                  data-testid="tracker-day-date"
+                  class="tabular-telemetry font-semibold text-text-primary"
+                >
+                  {{ formatDateKey(group.dateKey) }}
+                </span>
+                <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
+                  {{ $t('timer.dayGroup.entriesCount', { count: group.items.length }) }}
+                </span>
+              </span>
 
-        <ul class="divide-y divide-border-hairline">
+              <span class="tabular-telemetry shrink-0 text-text-muted">
+                {{ $t('timer.daySubtotal') }}:
+                <strong class="text-text-primary">{{ formatDuration(group.totalSeconds) }}</strong>
+              </span>
+            </AccordionTrigger>
+          </AccordionHeader>
+
+          <AccordionContent class="border-t border-border-hairline">
+            <ul class="divide-y divide-border-hairline">
           <template v-for="entryGroup in group.entryGroups" :key="entryGroup.groupKey">
             <!-- Collapsible Same-Day Summary Row (FR-5.1: count > 1, with Toggl-style bulk header editing) -->
             <li
@@ -743,6 +915,17 @@ function goToPage(nextIndex: number, scrollToTop = false) {
 
                   <button
                     type="button"
+                    data-testid="tracker-log-group-continue"
+                    class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-accent/60 hover:text-accent transition-colors"
+                    :aria-label="$t('timer.continueAria', { description: entryGroup.description })"
+                    :title="$t('timer.continueButton')"
+                    @click.stop="handleContinueActivity(entryGroup.items[0]!)"
+                  >
+                    <Play class="h-3 w-3" />
+                  </button>
+
+                  <button
+                    type="button"
                     data-testid="tracker-log-group-delete"
                     class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
                     :aria-label="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
@@ -816,6 +999,17 @@ function goToPage(nextIndex: number, scrollToTop = false) {
 
                       <button
                         type="button"
+                        data-testid="tracker-log-continue"
+                        class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-accent/60 hover:text-accent transition-colors"
+                        :aria-label="$t('timer.continueAria', { description: log.description })"
+                        :title="$t('timer.continueButton')"
+                        @click="handleContinueActivity(log)"
+                      >
+                        <Play class="h-3 w-3" />
+                      </button>
+
+                      <button
+                        type="button"
                         class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
                         :aria-label="$t('timer.deleteButton')"
                         @click="handleDeleteLog(log.id)"
@@ -876,6 +1070,17 @@ function goToPage(nextIndex: number, scrollToTop = false) {
 
                   <button
                     type="button"
+                    data-testid="tracker-log-continue"
+                    class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-accent/60 hover:text-accent transition-colors"
+                    :aria-label="$t('timer.continueAria', { description: entryGroup.items[0]!.description })"
+                    :title="$t('timer.continueButton')"
+                    @click="handleContinueActivity(entryGroup.items[0]!)"
+                  >
+                    <Play class="h-3 w-3" />
+                  </button>
+
+                  <button
+                    type="button"
                     class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-red-400 transition-colors"
                     :aria-label="$t('timer.deleteButton')"
                     @click="handleDeleteLog(entryGroup.items[0]!.id)"
@@ -886,8 +1091,10 @@ function goToPage(nextIndex: number, scrollToTop = false) {
               </div>
             </li>
           </template>
-        </ul>
-      </div>
+            </ul>
+          </AccordionContent>
+        </AccordionItem>
+      </AccordionRoot>
 
       <TimerTrackerPaginationBar
         v-if="feedWindow.totalPages > 1"

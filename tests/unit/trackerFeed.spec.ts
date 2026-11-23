@@ -8,14 +8,20 @@ import {
 } from '../../app/domain/duration';
 import { applyProjectSwitch } from '../../app/domain/invariants';
 import {
+  INITIAL_TRACKER_STREAM_LIMIT,
   TRACKER_FEED_WINDOW_DAYS,
+  TRACKER_STREAM_CHUNK_SIZE,
+  areAllTrackerDaysExpanded,
   buildSameDayGroupSignature,
+  defaultExpandedTrackerDayKeys,
   findPageIndexForDateKey,
   groupLogsByCalendarDay,
   groupSameDayEntries,
+  mergeStreamedTimeLogsChunk,
   paginateTrackerFeed,
   resolveLogDateKey,
   sliceTrackerFeedWindow,
+  toggleAllTrackerDayKeys,
 } from '../../app/domain/trackerFeed';
 import type { Project, ProjectTag, TimeLog } from '../../app/domain/types';
 
@@ -644,6 +650,99 @@ describe('domain/trackerFeed (FR-5.1 Same-Day Log Grouping & Accordion)', () => 
     expect(regrouped[0]!.groupKey).toBe(
       `2026-11-22|${buildSameDayGroupSignature(bulkUpdatedLogs[0]!)}`
     );
+  });
+});
+
+describe('domain/trackerFeed (Day-Level Accordion & Expand/Collapse All)', () => {
+  it('handles empty windows cleanly', () => {
+    expect(defaultExpandedTrackerDayKeys([])).toEqual([]);
+    expect(areAllTrackerDaysExpanded([], [])).toBe(false);
+    expect(areAllTrackerDaysExpanded([], ['2026-11-22'])).toBe(false);
+    expect(toggleAllTrackerDayKeys([], [])).toEqual([]);
+  });
+
+  it('expands only the most recent day by default and toggles expand/collapse all across displayed days', () => {
+    const days = [
+      { dateKey: '2026-11-22' },
+      { dateKey: '2026-11-21' },
+      { dateKey: '2026-11-20' },
+    ];
+
+    const initial = defaultExpandedTrackerDayKeys(days);
+    expect(initial).toEqual(['2026-11-22']);
+    expect(areAllTrackerDaysExpanded(days, initial)).toBe(false);
+
+    // Single-day window has all visible days expanded by default
+    expect(areAllTrackerDaysExpanded([days[0]!], initial)).toBe(true);
+
+    // Partial expansion is still not all-expanded
+    expect(areAllTrackerDaysExpanded(days, ['2026-11-22', '2026-11-20'])).toBe(false);
+
+    // Toggling from partial/default state expands all days in the current window
+    const allExpanded = toggleAllTrackerDayKeys(days, initial);
+    expect(allExpanded).toEqual(['2026-11-22', '2026-11-21', '2026-11-20']);
+    expect(areAllTrackerDaysExpanded(days, allExpanded)).toBe(true);
+
+    // Toggling when all days are expanded collapses every day
+    const allCollapsed = toggleAllTrackerDayKeys(days, allExpanded);
+    expect(allCollapsed).toEqual([]);
+    expect(areAllTrackerDaysExpanded(days, allCollapsed)).toBe(false);
+
+    // Toggling from fully collapsed expands all days again
+    expect(toggleAllTrackerDayKeys(days, allCollapsed)).toEqual([
+      '2026-11-22',
+      '2026-11-21',
+      '2026-11-20',
+    ]);
+  });
+});
+
+describe('domain/trackerFeed (Progressive Stream Chunk Merging)', () => {
+  it('merges chunks progressively, deduplicates IDs, and preserves concurrent local mutations', () => {
+    expect(INITIAL_TRACKER_STREAM_LIMIT).toBe(100);
+    expect(TRACKER_STREAM_CHUNK_SIZE).toBe(500);
+
+    const logNewest = makeLog({ id: 'log-3', startTime: '2026-11-22T15:00:00.000Z' });
+    const logMiddle = makeLog({ id: 'log-2', startTime: '2026-11-21T12:00:00.000Z' });
+    const logOldest = makeLog({ id: 'log-1', startTime: '2026-11-20T09:00:00.000Z' });
+
+    // 1. Initial chunk arrives
+    const first = mergeStreamedTimeLogsChunk({
+      accumulatedRemote: [],
+      incomingChunk: [logNewest, logMiddle],
+      upsertedById: new Map(),
+      deletedIds: new Set(),
+    });
+    expect(first.mergedLogs.map((l) => l.id)).toEqual(['log-3', 'log-2']);
+
+    // 2. While background chunks stream, user creates 'log-new', edits 'log-2', and deletes 'log-3'
+    const localNew = makeLog({
+      id: 'log-new',
+      description: 'New live entry',
+      startTime: '2026-11-22T18:00:00.000Z',
+    });
+    const editedMiddle = makeLog({
+      id: 'log-2',
+      description: 'Updated title',
+      startTime: '2026-11-21T12:00:00.000Z',
+    });
+    const upsertedById = new Map<string, TimeLog>([
+      ['log-new', localNew],
+      ['log-2', editedMiddle],
+    ]);
+    const deletedIds = new Set<string>(['log-3']);
+
+    // 3. Second chunk arrives containing an overlapping duplicate of 'log-2' and older 'log-1'
+    const second = mergeStreamedTimeLogsChunk({
+      accumulatedRemote: first.nextAccumulatedRemote,
+      incomingChunk: [logMiddle, logOldest],
+      upsertedById,
+      deletedIds,
+    });
+
+    expect(second.mergedLogs.map((l) => l.id)).toEqual(['log-new', 'log-2', 'log-1']);
+    expect(second.mergedLogs.find((l) => l.id === 'log-2')?.description).toBe('Updated title');
+    expect(second.mergedLogs.find((l) => l.id === 'log-3')).toBeUndefined();
   });
 });
 

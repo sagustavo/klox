@@ -4,6 +4,7 @@
 
 :root,
 html.light {
+  color-scheme: light;
   --bg-primary: #FAFAFA;
   --bg-elevated: #FFFFFF;
   --bg-hover: #F4F4F5;
@@ -11,9 +12,14 @@ html.light {
   --text-primary: #09090B;
   --text-muted: #71717A;
   --accent-telemetry: #3B82F6;
+  --scrollbar-track: #F4F4F5;
+  --scrollbar-thumb: #D4D4D8;
+  --scrollbar-thumb-hover: #A1A1AA;
+  --scrollbar-thumb-active: #3B82F6;
 }
 
 html.dark {
+  color-scheme: dark;
   --bg-primary: #050505;
   --bg-elevated: #0C0C0E;
   --bg-hover: #141417;
@@ -21,6 +27,10 @@ html.dark {
   --text-primary: #FAFAFA;
   --text-muted: #8E8E93;
   --accent-telemetry: #3B82F6;
+  --scrollbar-track: #050505;
+  --scrollbar-thumb: #222226;
+  --scrollbar-thumb-hover: #3F3F46;
+  --scrollbar-thumb-active: #3B82F6;
 }
 
 @layer base {
@@ -44,4 +54,38 @@ html.dark {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* Musk-Tech hairline scrollbars across document and scrollable popovers/tables */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 0px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
 }

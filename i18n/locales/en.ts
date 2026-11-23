@@ -246,11 +246,22 @@ const en = {
     saveEditButton: 'Save',
     cancelEditButton: 'Cancel',
     deleteButton: 'Delete',
+    continueButton: 'Continue activity',
+    continueAria: 'Continue activity: {description}',
+    loadingLogs: 'Loading recent time logs…',
+    streamingHistory: 'Syncing history ({count})…',
     group: {
       expandAria: 'Expand {count} grouped entries for {description}',
       collapseAria: 'Collapse {count} grouped entries for {description}',
       entriesBadgeTitle: '{count} entries grouped',
       deleteGroupAria: 'Delete all {count} entries in this group',
+    },
+    dayGroup: {
+      expandAll: 'Expand all days',
+      collapseAll: 'Collapse all days',
+      expandDayAria: 'Expand logs for {date}',
+      collapseDayAria: 'Collapse logs for {date}',
+      entriesCount: '{count} entries',
     },
     pagination: {
       ariaLabel: 'Tracker 7-day window pagination',

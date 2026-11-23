@@ -3,8 +3,10 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ChevronsDownUp,
   ChevronsLeft,
   ChevronsRight,
+  ChevronsUpDown,
 } from 'lucide-vue-next';
 import type { TrackerFeedWindow } from '~/domain/trackerFeed';
 import { usePreferencesStore } from '~/stores/preferences';
@@ -13,14 +15,23 @@ const props = withDefaults(
   defineProps<{
     window: TrackerFeedWindow;
     compact?: boolean;
+    allDaysExpanded?: boolean;
+    showDayCollapseControl?: boolean;
+    streaming?: boolean;
+    streamedCount?: number;
   }>(),
   {
     compact: false,
+    allDaysExpanded: false,
+    showDayCollapseControl: false,
+    streaming: false,
+    streamedCount: 0,
   }
 );
 
 const emit = defineEmits<{
   navigate: [pageIndex: number];
+  toggleAllDays: [];
 }>();
 
 const prefsStore = usePreferencesStore();
@@ -82,10 +93,33 @@ function goLast() {
         ·
         <strong class="text-text-primary">{{ formatDuration(window.windowTotalSeconds) }}</strong>
       </span>
+
+      <span
+        v-if="streaming"
+        data-testid="tracker-streaming-badge"
+        class="inline-flex items-center gap-1.5 border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] font-mono text-accent"
+      >
+        <span class="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+        <span class="tabular-telemetry">{{ $t('timer.streamingHistory', { count: streamedCount }) }}</span>
+      </span>
     </div>
 
-    <!-- Previous / Next Window Controls -->
-    <div class="flex items-center gap-1.5">
+    <!-- Previous / Next Window Controls & General Expand/Collapse All -->
+    <div class="flex flex-wrap items-center gap-1.5">
+      <button
+        v-if="showDayCollapseControl && window.days.length > 0"
+        type="button"
+        data-testid="tracker-toggle-all-days"
+        :aria-label="allDaysExpanded ? $t('timer.dayGroup.collapseAll') : $t('timer.dayGroup.expandAll')"
+        :title="allDaysExpanded ? $t('timer.dayGroup.collapseAll') : $t('timer.dayGroup.expandAll')"
+        class="inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs font-mono text-text-primary hover:bg-bg-hover transition-colors"
+        @click="emit('toggleAllDays')"
+      >
+        <ChevronsDownUp v-if="allDaysExpanded" class="h-3.5 w-3.5 text-accent" />
+        <ChevronsUpDown v-else class="h-3.5 w-3.5 text-accent" />
+        <span>{{ allDaysExpanded ? $t('timer.dayGroup.collapseAll') : $t('timer.dayGroup.expandAll') }}</span>
+      </button>
+
       <button
         v-if="window.totalPages > 2"
         type="button"

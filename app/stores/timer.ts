@@ -201,6 +201,56 @@ export const useTimerStore = defineStore('timer', () => {
   }
 
   /**
+   * 1-Click Continue Activity from a historical TimeLog (or grouped summary row):
+   * Stops and commits any running ActiveTimer first, applies the log's description,
+   * project, task, valid project-scoped tags, and billable flag, and starts a new timer.
+   */
+  async function continueFromLog(params: {
+    uid: string;
+    isDemo: boolean;
+    log: Pick<TimeLog, 'description' | 'projectId' | 'taskId' | 'tagIds' | 'isBillable'>;
+  }): Promise<void> {
+    const catalogStore = useCatalogStore();
+
+    if (activeTimer.value) {
+      await stopTimer({ uid: params.uid, isDemo: params.isDemo });
+    }
+
+    const targetProject =
+      catalogStore.getProjectById(params.log.projectId) ??
+      catalogStore.getProjectById(UNASSIGNED_PROJECT_ID);
+    const resolvedProjectId = targetProject?.id ?? UNASSIGNED_PROJECT_ID;
+
+    const validTagSet = new Set(
+      catalogStore.getTagsForProject(resolvedProjectId).map((tag) => tag.id)
+    );
+    const validTagIds = params.log.tagIds.filter((id) => validTagSet.has(id));
+
+    const linkedTask = params.log.taskId
+      ? catalogStore.getTaskById(params.log.taskId)
+      : undefined;
+    const validTask =
+      linkedTask && linkedTask.projectId === resolvedProjectId ? linkedTask : undefined;
+
+    description.value = params.log.description.trim() || 'Untitled task';
+    projectId.value = resolvedProjectId;
+    taskId.value = validTask?.id;
+    tagIds.value = validTagIds;
+    isBillable.value = params.log.isBillable;
+
+    await startTimer({ uid: params.uid, isDemo: params.isDemo });
+
+    if (validTask && validTask.status === 'todo') {
+      await catalogStore.updateTaskStatus({
+        uid: params.uid,
+        isDemo: params.isDemo,
+        taskId: validTask.id,
+        status: 'in_progress',
+      });
+    }
+  }
+
+  /**
    * Single Active Timer Constraint (GEMINI.md §2.4):
    * Starting a new Timer while one is running automatically stops and commits the running Timer first.
    */
@@ -311,6 +361,7 @@ export const useTimerStore = defineStore('timer', () => {
     toggleTag,
     startTimer,
     startTimerFromTask,
+    continueFromLog,
     stopTimer,
     updateActiveTimerStart,
   };
