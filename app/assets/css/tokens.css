@@ -335,9 +335,13 @@ html.dark {
   }
 }
 
-/* Trigger-anchored Popover & Dialog primitives (reka-ui) */
+/* Trigger-anchored Popover, Tooltip & Dialog primitives (reka-ui) */
 .orbital-popover {
   transform-origin: var(--reka-popover-content-transform-origin, top left);
+}
+
+.orbital-tooltip {
+  transform-origin: var(--reka-tooltip-content-transform-origin, left center);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -456,6 +460,24 @@ html.dark {
     }
   }
 
+  @keyframes orbital-drawer-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes orbital-drawer-out {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-100%);
+    }
+  }
+
   @keyframes orbital-accordion-down {
     from {
       height: 0;
@@ -567,6 +589,30 @@ html.dark {
     animation: orbital-dialog-out 120ms ease-in both;
   }
 
+  /* Desktop 3-state collapsible sidebar width transition */
+  .orbital-sidebar-transition {
+    transition: width 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  /* Slide-over mobile navigation drawer (reka-ui Dialog) */
+  .orbital-drawer-content[data-state='open'] {
+    animation: orbital-drawer-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .orbital-drawer-content[data-state='closed'] {
+    animation: orbital-drawer-out 160ms ease-in both;
+  }
+
+  /* reka-ui Tooltip animations */
+  .orbital-tooltip[data-state='delayed-open'],
+  .orbital-tooltip[data-state='instant-open'] {
+    animation: orbital-popover-in-down 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .orbital-tooltip[data-state='closed'] {
+    animation: orbital-popover-out 100ms ease-in both;
+  }
+
   /* reka-ui Accordion */
   .orbital-accordion-content {
     overflow: hidden;
@@ -670,14 +716,19 @@ html.dark {
   }
 
   .orbital-popover[data-state='open'],
+  .orbital-tooltip[data-state='delayed-open'],
+  .orbital-tooltip[data-state='instant-open'],
   .orbital-dialog-overlay[data-state='open'],
-  .orbital-dialog-content[data-state='open'] {
+  .orbital-dialog-content[data-state='open'],
+  .orbital-drawer-content[data-state='open'] {
     animation: orbital-fade-in 90ms ease-out both;
   }
 
   .orbital-popover[data-state='closed'],
+  .orbital-tooltip[data-state='closed'],
   .orbital-dialog-overlay[data-state='closed'],
-  .orbital-dialog-content[data-state='closed'] {
+  .orbital-dialog-content[data-state='closed'],
+  .orbital-drawer-content[data-state='closed'] {
     animation: orbital-fade-out 80ms ease-in both;
   }
 }

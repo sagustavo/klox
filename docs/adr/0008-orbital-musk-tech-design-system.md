@@ -66,6 +66,11 @@ We establish the **Orbital "Musk-Tech" Design System** across the entire applica
   - Below-the-fold landing sections (`[data-scroll-reveal]`) animate entry and exit using native CSS Scroll-Driven Animations (`animation-timeline: view()` declared after `animation` inside `@supports ((animation-timeline: view()) and (animation-range: entry))`) with a feature-detected `IntersectionObserver` fallback (`useScrollReveal.ts`) and `.motion-paused` / `prefers-reduced-motion` static rest guarantees.
   - Compositor-only `orbital-page` transitions, trigger-anchored `reka-ui` popover/dialog transitions (animating `scale` without overriding `-translate-x-1/2 -translate-y-1/2`), smooth `reka-ui` and native `::details-content` accordions, and tactile `:active` press micro-interactions run across the entire app.
 
+### 2.6 Collapsible Orbital Sidebar & Content-First Chrome Reduction (Sprint 4 / UX-2.3)
+- **3-State Desktop Sidebar (`AppSidebar.vue`):** Replaces the top horizontal workspace navbar at `>= 768px` with an Orbital left sidebar supporting `expanded` (`240px`), `collapsed` icon rail (`64px` with compact `K▪` mark and `reka-ui` right-side tooltips), and `hidden` (`0px` with floating reopen control), persisted in `localStorage` (`klox_sidebar_state`) and toggled via global `Cmd/Ctrl + \`.
+- **Compact Mobile Navigation (`< 768px`):** Uses a `48px` (`< 12%` viewport height) single-row mobile header opening an accessible modal slide-over `reka-ui` `Dialog` drawer (`100svh`, inert backdrop, focus restoration, `Esc`/outside dismiss) layered cleanly at `z-50` above the mobile bottom timer dock (`z-40`).
+- **Settings-Only Theme & In-App Language:** Theme selection (`Dark` / `Light` / `System`) lives exclusively in `/app/settings` (removed from app, landing, and auth headers), and in-app language selection lives exclusively in `/app/settings` while unauthenticated Landing (`/`, `/pt-br`) and Auth (`/login`) headers retain only a minimal `Globe` locale switcher. Sign Out renders as an icon-only control with `aria-label` and tooltip.
+
 ---
 
 ## 3. Consequences

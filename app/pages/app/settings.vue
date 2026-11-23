@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check } from 'lucide-vue-next';
+import { Check, Monitor, Moon, Sun } from 'lucide-vue-next';
 import { toDateKey } from '~/domain/duration';
 import type {
   DateFormatPreset,
@@ -15,6 +15,7 @@ definePageMeta({
   middleware: 'auth',
 });
 
+const colorMode = useColorMode();
 const { setLocale } = useI18n();
 const authStore = useAuthStore();
 const prefsStore = usePreferencesStore();
@@ -22,7 +23,34 @@ const { formatDuration, formatDate, formatTime, formatDecimalHours } = useFormat
   () => prefsStore.preferences
 );
 
+type ThemeOption = 'dark' | 'light' | 'system';
+
+const themeOptions = computed<Array<{ value: ThemeOption; labelKey: string; icon: Component }>>(
+  () => [
+    { value: 'dark', labelKey: 'settings.themeDark', icon: Moon },
+    { value: 'light', labelKey: 'settings.themeLight', icon: Sun },
+    { value: 'system', labelKey: 'settings.themeSystem', icon: Monitor },
+  ]
+);
+
 const savedFlash = ref(false);
+let savedFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flashSaved() {
+  savedFlash.value = true;
+  if (savedFlashTimer) {
+    clearTimeout(savedFlashTimer);
+  }
+  savedFlashTimer = setTimeout(() => {
+    savedFlash.value = false;
+  }, 1500);
+}
+
+onBeforeUnmount(() => {
+  if (savedFlashTimer) {
+    clearTimeout(savedFlashTimer);
+  }
+});
 
 const commonTimeZones = computed(() => {
   const base = [
@@ -57,10 +85,12 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
     authStore.user?.uid,
     authStore.isDemoMode
   );
-  savedFlash.value = true;
-  setTimeout(() => {
-    savedFlash.value = false;
-  }, 1500);
+  flashSaved();
+}
+
+function updateThemePreference(theme: ThemeOption) {
+  colorMode.preference = theme;
+  flashSaved();
 }
 </script>
 
@@ -88,6 +118,53 @@ async function updateField<K extends keyof typeof prefsStore.preferences>(
       </div>
 
       <div class="mt-6 space-y-5">
+        <!-- Appearance / Theme -->
+        <div>
+          <span id="settings-theme-label" class="label-eyebrow block text-text-muted">
+            {{ $t('settings.themeLabel') }}
+          </span>
+          <ClientOnly>
+            <div
+              role="radiogroup"
+              aria-labelledby="settings-theme-label"
+              class="mt-2 grid grid-cols-3 gap-2"
+            >
+              <button
+                v-for="option in themeOptions"
+                :key="option.value"
+                type="button"
+                role="radio"
+                :aria-checked="colorMode.preference === option.value"
+                class="btn-press inline-flex h-10 items-center justify-center gap-2 border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+                :class="
+                  colorMode.preference === option.value
+                    ? 'border-signal bg-signal-soft text-text-primary'
+                    : 'border-border-input bg-bg-primary text-text-muted hover:bg-bg-hover hover:text-text-primary'
+                "
+                @click="updateThemePreference(option.value)"
+              >
+                <component
+                  :is="option.icon"
+                  class="h-4 w-4 shrink-0"
+                  :class="colorMode.preference === option.value ? 'text-signal' : ''"
+                  aria-hidden="true"
+                />
+                <span>{{ $t(option.labelKey) }}</span>
+              </button>
+            </div>
+            <template #fallback>
+              <div class="mt-2 grid grid-cols-3 gap-2" aria-hidden="true">
+                <span class="h-10 border border-border-input bg-bg-primary" />
+                <span class="h-10 border border-border-input bg-bg-primary" />
+                <span class="h-10 border border-border-input bg-bg-primary" />
+              </div>
+            </template>
+          </ClientOnly>
+          <p class="mt-1.5 text-ui text-text-muted">
+            {{ $t('settings.themeHelp') }}
+          </p>
+        </div>
+
         <!-- Interface Language -->
         <div>
           <label class="label-eyebrow block text-text-muted">

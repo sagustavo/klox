@@ -115,6 +115,10 @@ async function handleRerunWizard() {
             <BrandKeycapBadge keys="Esc" size="sm" />
           </div>
           <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
+            <span class="text-text-primary">{{ $t('onboarding.help.shortcutSidebar') }}</span>
+            <BrandKeycapBadge :keys="['⌘', '\\']" size="sm" />
+          </div>
+          <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
             <span class="text-text-primary">{{ $t('onboarding.help.shortcutHelp') }}</span>
             <BrandKeycapBadge keys="?" size="sm" />
           </div>

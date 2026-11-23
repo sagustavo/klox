@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { Sun, Moon, Globe, ArrowRight } from 'lucide-vue-next';
+import { Globe, ArrowRight } from 'lucide-vue-next';
 
-const colorMode = useColorMode();
 const { locale, setLocale } = useI18n();
 const localePath = useLocalePath();
 
@@ -10,10 +9,6 @@ const hasDemoSession = ref(false);
 onMounted(() => {
   hasDemoSession.value = localStorage.getItem('klox_demo_session') === '1';
 });
-
-function toggleTheme() {
-  colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark';
-}
 
 function toggleLocale() {
   setLocale(locale.value === 'en' ? 'pt-br' : 'en');
@@ -62,24 +57,9 @@ function toggleLocale() {
             :aria-label="$t('nav.switchLanguage')"
             @click="toggleLocale"
           >
-            <Globe class="h-3.5 w-3.5" />
+            <Globe class="h-3.5 w-3.5" aria-hidden="true" />
             <span>{{ locale === 'pt-br' ? 'PT-BR' : 'EN' }}</span>
           </button>
-
-          <ClientOnly>
-            <button
-              type="button"
-              class="btn-press inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-elevated text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
-              :aria-label="$t('nav.toggleTheme')"
-              @click="toggleTheme"
-            >
-              <Sun v-if="colorMode.value === 'dark'" class="h-4 w-4" />
-              <Moon v-else class="h-4 w-4" />
-            </button>
-            <template #fallback>
-              <span class="inline-flex h-9 w-9 border border-border-hairline bg-bg-elevated" />
-            </template>
-          </ClientOnly>
 
           <ClientOnly>
             <template v-if="hasDemoSession">

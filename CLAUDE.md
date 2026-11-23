@@ -106,7 +106,7 @@ Must strictly follow official Toggl Track CSV specifications:
 
 - **Purpose:** Product showcase with open sign-up. Routes `/` (en) and `/pt-br` — **prerendered** static HTML (SEO + link previews), no Firebase SDK in the landing bundle.
 - **CTAs:** Primary `Get started free` → `/login?mode=signup`; secondary `Sign in` and `Try the live demo` (demo mode, no sign-up). Signed-in visitors see `Open app →`.
-- **Sections:** Header (logo, anchors, locale + theme switch) → **Hero with a self-playing Command Bar demo** (types a description, recall dropdown, `✨` AI fill, `[Enter]` start, ticking JetBrains Mono digits; built from the real presentational components; honors `prefers-reduced-motion`) → **Feature grid** (Keyboard-first, Two-tier AI recall/auto-fill, Analytics, Toggl import/export) → **Azure DevOps sync teaser** ("Coming soon") → **Pricing** (Free / Pro "coming soon" placeholder, no billing) → **FAQ** (native `<details>`) → Footer.
+- **Sections:** Header (logo, anchors, locale switch; theme configured in Settings) → **Hero with a self-playing Command Bar demo** (types a description, recall dropdown, `✨` AI fill, `[Enter]` start, ticking JetBrains Mono digits; built from the real presentational components; honors `prefers-reduced-motion`) → **Feature grid** (Keyboard-first, Two-tier AI recall/auto-fill, Analytics, Toggl import/export) → **Azure DevOps sync teaser** ("Coming soon") → **Pricing** (Free / Pro "coming soon" placeholder, no billing) → **FAQ** (native `<details>`) → Footer.
 - **Targets:** Lighthouse mobile Performance ≥ 95, SEO = 100, Accessibility ≥ 95, LCP < 2.0 s; per-locale meta, canonical, `hreflang` + `x-default`, OG images, `sitemap.xml`, `robots.txt` disallowing `/app/**`.
 
 ### 3.7 Onboarding (FR-2)

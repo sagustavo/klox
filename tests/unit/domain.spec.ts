@@ -47,6 +47,13 @@ import {
 } from '../../app/domain/onboarding';
 import { buildRecallTemplates, validateAiPrediction } from '../../app/domain/recall';
 import {
+  DEFAULT_SIDEBAR_STATE,
+  SIDEBAR_STORAGE_KEY,
+  cycleSidebarState,
+  parseSidebarState,
+  resolveReopenSidebarState,
+} from '../../app/domain/sidebar';
+import {
   TOGGL_CSV_HEADERS,
   parseAndPreviewTogglCsv,
   serializeTogglCsv,
@@ -944,6 +951,28 @@ describe('domain/invariants & markdown (FR-4 Hierarchical Tasks & Markdown Descr
     expect(html).not.toContain('<script>');
     expect(html).toContain('☑');
     expect(html).toContain('☐');
+  });
+});
+
+describe('domain/sidebar', () => {
+  it('parses persisted sidebar state with safe expanded fallback and cycles across 3 modes (UX-2.3)', () => {
+    expect(SIDEBAR_STORAGE_KEY).toBe('klox_sidebar_state');
+    expect(DEFAULT_SIDEBAR_STATE).toBe('expanded');
+
+    expect(parseSidebarState('expanded')).toBe('expanded');
+    expect(parseSidebarState('collapsed')).toBe('collapsed');
+    expect(parseSidebarState('hidden')).toBe('hidden');
+    expect(parseSidebarState(null)).toBe('expanded');
+    expect(parseSidebarState(undefined)).toBe('expanded');
+    expect(parseSidebarState('invalid')).toBe('expanded');
+
+    expect(cycleSidebarState('expanded')).toBe('collapsed');
+    expect(cycleSidebarState('collapsed')).toBe('hidden');
+    expect(cycleSidebarState('hidden')).toBe('expanded');
+
+    expect(resolveReopenSidebarState('expanded')).toBe('expanded');
+    expect(resolveReopenSidebarState('collapsed')).toBe('collapsed');
+    expect(resolveReopenSidebarState(undefined)).toBe('expanded');
   });
 });
 

@@ -80,6 +80,7 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | **UX-1.2** | Product Backlog Item | Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency | UI Polish & Brand | 3 - Medium | Free | Done |
 | **UX-2.1** | Product Backlog Item | Brand Logo Tracking, Typography Unification, Favicon & Dynamic Tab Title (`AB#72`) | UI Polish & Brand | 2 - High | Free | Done |
 | **UX-2.2** | Product Backlog Item | Landing Page Kinetic Experience & Site-Wide Orbital Motion (`AB#73`) | UI Polish & Motion | 2 - High | Free | Done |
+| **UX-2.3** | Product Backlog Item | Collapsible Orbital Sidebar Navigation & Settings-Only Theme/Language (`AB#74`) | Navigation & Minimalism | 2 - High | Free | In Progress |
 
 ### 3.2 Phase 10 — Keyboard Velocity, Auth, Profile & Feedback (`Next`)
 
@@ -322,6 +323,20 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
   - [x] Implement bi-directional scroll entry & exit reveals (`useScrollReveal.ts` + `tokens.css`) using native CSS Scroll-Driven Animations (`animation-timeline: view()`) and a feature-detected `IntersectionObserver` fallback.
   - [x] Upgrade `TelemetryVisual.vue` with interactive project chips, total hours readout, and infinite choreographed filter loop, plus sequential pipeline animation on `CsvVisual.vue` (`:paused`-aware).
   - [x] Add compositor-only `orbital-page` transitions, trigger-anchored `reka-ui` popover/dialog animations, smooth `reka-ui` + native `::details-content` accordions, and tactile button press states.
+
+#### [UX-2.3] Collapsible Orbital Sidebar Navigation & Settings-Only Theme/Language (`AB#74`)
+- **Work Item Type:** `Product Backlog Item`
+- **Area / Category:** `Navigation & Minimalism`
+- **Phase:** `Sprint 4 / Phase 10`
+- **Status (ADO State):** `In Progress` (`Committed`)
+- **Priority:** `2 - High`
+- **Plan Tier:** `Free`
+- **Tags:** `minimalism; mobile; navigation; phase-10; settings; sidebar; ux`
+- **Acceptance Criteria:**
+  - [ ] Desktop (`>= 768px`) displays a 3-state collapsible sidebar (`Expanded 240px`, `Collapsed Rail 64px` with `reka-ui` tooltips, `Hidden 0px` with floating reopen button), persisted in `localStorage` (`klox_sidebar_state`) and toggled via `Cmd/Ctrl + \`.
+  - [ ] Mobile (`< 768px`) renders a single-row `48px` top header with drawer trigger, centered `KloxLogo`, and Help (`?`) trigger opening an accessible modal slide-over `reka-ui` `Dialog` drawer cleanly above the mobile timer dock.
+  - [ ] Theme switching (`Dark` / `Light` / `System`) lives exclusively in `/app/settings` and is removed from all app, landing, and auth headers.
+  - [ ] In-app language selection lives exclusively in `/app/settings`; Landing (`/`, `/pt-br`) and Auth (`/login`) retain a minimal `Globe` locale switcher; Sign Out renders as an icon-only control with `aria-label` and tooltip.
 
 ---
 
