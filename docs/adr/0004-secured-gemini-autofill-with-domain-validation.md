@@ -1,4 +1,4 @@
-# ADR-0004: Secured Gemini AI Auto-Fill with Server-Side Domain Validation
+# ADR-0004: Secured AI Auto-Fill with Server-Side Domain Validation
 
 - **Status:** Accepted
 - **Date:** 2026-11-09

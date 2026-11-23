@@ -9,23 +9,40 @@ import {
   Tooltip,
 } from 'chart.js';
 import { Bar, Doughnut } from 'vue-chartjs';
-import { ChevronDown, ChevronRight, Filter, Layers } from 'lucide-vue-next';
 import {
-  aggregateDailyStacked,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Filter,
+  Layers,
+  X,
+} from 'lucide-vue-next';
+import {
+  DASHBOARD_TABLE_PAGE_SIZE,
   aggregatePizzaSlices,
+  aggregateTimeSeriesStacked,
+  extractDistinctDescriptionOptions,
   filterTimeLogs,
-  groupLogsByTag,
+  formatTimeBucketLabel,
+  groupLogsTwoLevel,
+  paginateItems,
   resolveDateKeyBounds,
 } from '~/domain/aggregation';
+import { toDateKey } from '~/domain/duration';
 import { publishDomainEvent } from '~/domain/events';
 import { buildTagNameMap, resolveTagNames } from '~/domain/invariants';
 import type {
   DashboardFilters,
   DateRangePreset,
-  EntityId,
+  GroupByDimension,
   Project,
   SliceDimension,
+  TimeGranularity,
+  TimeLog,
 } from '~/domain/types';
+import type { FilterMultiSelectOption } from '~/components/ui/FilterMultiSelect.vue';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
 import { usePreferencesStore } from '~/stores/preferences';
@@ -43,7 +60,9 @@ const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 const prefsStore = usePreferencesStore();
 const timeLogsStore = useTimeLogsStore();
-const { formatDateKey, formatDuration, formatDecimalHours } = useFormat(() => prefsStore.preferences);
+const { formatDateKey, formatDuration, formatDecimalHours } = useFormat(
+  () => prefsStore.preferences
+);
 
 const presets: DateRangePreset[] = [
   'today',
@@ -54,7 +73,9 @@ const presets: DateRangePreset[] = [
   'custom',
 ];
 
-const dimensions: SliceDimension[] = ['tag', 'project', 'description'];
+const dimensions: SliceDimension[] = ['project', 'task', 'tag', 'description'];
+const granularities: TimeGranularity[] = ['day', 'week', 'month', 'quarter', 'year'];
+const pageSizeOptions = [25, 50, 100] as const;
 
 const filters = reactive<DashboardFilters>({
   preset: 'this_week',
@@ -63,13 +84,24 @@ const filters = reactive<DashboardFilters>({
   projectIds: [],
   taskIds: [],
   tagIds: [],
+  descriptions: [],
   searchQuery: '',
 });
 
+const isCustomStartValid = ref(true);
+const isCustomEndValid = ref(true);
+
 const pizzaDimension = ref<SliceDimension>('project');
 const barDimension = ref<SliceDimension>('project');
-const groupByTag = ref(true);
-const collapsedTagGroups = ref<Set<string>>(new Set());
+const barGranularity = ref<TimeGranularity>('day');
+
+const primaryGroup = ref<GroupByDimension>('project');
+const secondaryGroup = ref<GroupByDimension>('tag');
+const tablePageSize = ref<number>(DASHBOARD_TABLE_PAGE_SIZE);
+const tablePageIndex = ref(0);
+const expandedPrimaryGroups = ref<Set<string>>(new Set());
+const expandedSubgroups = ref<Set<string>>(new Set());
+const innerPageByNodeKey = ref<Record<string, number>>({});
 
 onMounted(async () => {
   if (authStore.user) {
@@ -90,16 +122,29 @@ function displayProjectName(project: Project | undefined, fallback?: string): st
   return fallback || t('catalog.unassigned');
 }
 
-function toggleProjectFilter(id: EntityId) {
-  const idx = filters.projectIds.indexOf(id);
-  if (idx >= 0) filters.projectIds.splice(idx, 1);
-  else filters.projectIds.push(id);
+function displayProjectColor(log: TimeLog): string {
+  return catalogStore.getProjectById(log.projectId)?.color ?? log.projectColorSnapshot;
 }
 
-function toggleTagFilter(id: EntityId) {
-  const idx = filters.tagIds.indexOf(id);
-  if (idx >= 0) filters.tagIds.splice(idx, 1);
-  else filters.tagIds.push(id);
+function displayTaskLabel(log: TimeLog): string {
+  if (!log.taskId) return '—';
+  const live = catalogStore.getTaskById(log.taskId);
+  return live
+    ? catalogStore.getTaskHierarchicalLabel(live.id)
+    : log.taskNameSnapshot || log.taskId;
+}
+
+function selectPreset(preset: DateRangePreset) {
+  if (preset === 'custom') {
+    const todayKey = toDateKey(new Date(), prefsStore.preferences.timeZone || 'UTC');
+    if (!filters.customStartDate) {
+      filters.customStartDate = currentBounds.value.startDateKey || todayKey;
+    }
+    if (!filters.customEndDate) {
+      filters.customEndDate = currentBounds.value.endDateKey || todayKey;
+    }
+  }
+  filters.preset = preset;
 }
 
 function clearAllFilters() {
@@ -109,14 +154,94 @@ function clearAllFilters() {
   filters.projectIds = [];
   filters.taskIds = [];
   filters.tagIds = [];
+  filters.descriptions = [];
   filters.searchQuery = '';
 }
+
+// FR-5.5: Dedicated Multi-Select Filter Options
+const projectFilterOptions = computed<FilterMultiSelectOption[]>(() =>
+  catalogStore.sortedProjects.map((proj) => ({
+    value: proj.id,
+    label: displayProjectName(proj),
+    color: proj.color,
+  }))
+);
+
+const taskFilterOptions = computed<FilterMultiSelectOption[]>(() => {
+  const selectedProjects = new Set(filters.projectIds);
+  const out: FilterMultiSelectOption[] = [];
+  for (const proj of catalogStore.sortedProjects) {
+    if (selectedProjects.size > 0 && !selectedProjects.has(proj.id)) continue;
+    const projName = displayProjectName(proj);
+    for (const node of catalogStore.getFlattenedTasksForProject(proj.id)) {
+      out.push({
+        value: node.task.id,
+        label: node.hierarchicalLabel,
+        secondaryLabel: projName,
+        color: proj.color,
+      });
+    }
+  }
+  return out;
+});
+
+const tagFilterOptions = computed<FilterMultiSelectOption[]>(() => {
+  const selectedProjects = new Set(filters.projectIds);
+  const out: FilterMultiSelectOption[] = [];
+  for (const proj of catalogStore.sortedProjects) {
+    if (selectedProjects.size > 0 && !selectedProjects.has(proj.id)) continue;
+    const projName = displayProjectName(proj);
+    for (const tag of catalogStore.getTagsForProject(proj.id)) {
+      out.push({
+        value: tag.id,
+        label: `#${tag.name}`,
+        secondaryLabel: projName,
+        color: proj.color,
+      });
+    }
+  }
+  return out;
+});
+
+const descriptionFilterOptions = computed<FilterMultiSelectOption[]>(() =>
+  extractDistinctDescriptionOptions(timeLogsStore.logs).map((opt) => ({
+    value: opt.value,
+    label: opt.label,
+    secondaryLabel: `${opt.count}×`,
+  }))
+);
+
+// Keep scoped Task and Tag selections consistent when Project filter narrows
+watch(
+  () => filters.projectIds,
+  (nextProjectIds) => {
+    if (nextProjectIds.length === 0) return;
+    const allowedTasks = new Set(taskFilterOptions.value.map((o) => o.value));
+    if (filters.taskIds.some((id) => !allowedTasks.has(id))) {
+      filters.taskIds = filters.taskIds.filter((id) => allowedTasks.has(id));
+    }
+    const allowedTags = new Set(tagFilterOptions.value.map((o) => o.value));
+    if (filters.tagIds.some((id) => !allowedTags.has(id))) {
+      filters.tagIds = filters.tagIds.filter((id) => allowedTags.has(id));
+    }
+  }
+);
+
+const activeFiltersCount = computed(() => {
+  let count = 0;
+  if (filters.projectIds.length > 0) count += 1;
+  if (filters.taskIds.length > 0) count += 1;
+  if (filters.tagIds.length > 0) count += 1;
+  if ((filters.descriptions?.length ?? 0) > 0) count += 1;
+  if (filters.searchQuery.trim()) count += 1;
+  return count;
+});
 
 const currentBounds = computed(() =>
   resolveDateKeyBounds({
     preset: filters.preset,
-    customStartDate: filters.customStartDate,
-    customEndDate: filters.customEndDate,
+    customStartDate: isCustomStartValid.value ? filters.customStartDate : undefined,
+    customEndDate: isCustomEndValid.value ? filters.customEndDate : undefined,
     timeZone: prefsStore.preferences.timeZone,
     weekStartsOn: prefsStore.preferences.weekStartsOn,
   })
@@ -125,18 +250,33 @@ const currentBounds = computed(() =>
 const filteredLogs = computed(() =>
   filterTimeLogs({
     logs: timeLogsStore.sortedLogs,
-    filters,
+    filters: {
+      ...filters,
+      customStartDate: isCustomStartValid.value ? filters.customStartDate : undefined,
+      customEndDate: isCustomEndValid.value ? filters.customEndDate : undefined,
+    },
     timeZone: prefsStore.preferences.timeZone,
     weekStartsOn: prefsStore.preferences.weekStartsOn,
   })
 );
 
+const catalogContext = computed(() => ({
+  untaggedLabel: t('dashboard.untaggedBucket'),
+  noTaskLabel: t('dashboard.noTaskBucket'),
+  unassignedProjectLabel: t('catalog.unassigned'),
+  projects: catalogStore.projects,
+  tasks: catalogStore.tasks,
+  tags: catalogStore.tags,
+}));
+
+const tagNameMap = computed(() => buildTagNameMap(catalogStore.tags));
+
+// Visualization 1: 4-Dimension Pizza (Donut) Chart
 const pizzaData = computed(() =>
   aggregatePizzaSlices({
     logs: filteredLogs.value,
     dimension: pizzaDimension.value,
-    untaggedLabel: t('dashboard.untaggedBucket'),
-    tags: catalogStore.tags,
+    ...catalogContext.value,
   })
 );
 
@@ -161,23 +301,28 @@ const doughnutChartOptions = {
   },
 };
 
-const dailyStacked = computed(() =>
-  aggregateDailyStacked({
+// Visualization 2: 4-Dimension Stacked Histogram with Day/Week/Month/Quarter/Year Granularity
+const timeSeriesStacked = computed(() =>
+  aggregateTimeSeriesStacked({
     logs: filteredLogs.value,
     dimension: barDimension.value,
+    granularity: barGranularity.value,
     bounds: currentBounds.value,
-    untaggedLabel: t('dashboard.untaggedBucket'),
-    tags: catalogStore.tags,
+    weekStartsOn: prefsStore.preferences.weekStartsOn,
+    timeZone: prefsStore.preferences.timeZone,
+    ...catalogContext.value,
   })
 );
 
 const stackedBarChartData = computed(() => ({
-  labels: dailyStacked.value.dateKeys.map((dk) => dk.slice(5)), // MM-DD
-  datasets: dailyStacked.value.series.map((s) => ({
+  labels: timeSeriesStacked.value.bucketKeys.map((bk) =>
+    formatTimeBucketLabel(bk, barGranularity.value, prefsStore.preferences.locale)
+  ),
+  datasets: timeSeriesStacked.value.series.map((s) => ({
     label: s.label,
     data: s.dataSeconds.map((sec) => Math.round((sec / 3600) * 100) / 100),
     backgroundColor: s.color,
-    stack: 'daily',
+    stack: 'telemetry',
   })),
 }));
 
@@ -204,33 +349,137 @@ const stackedBarChartOptions = {
   },
 };
 
-const tagNameMap = computed(() => buildTagNameMap(catalogStore.tags));
+// Visualization 3: 2-Level Hierarchical Breakdown & Paginated Table
+const secondaryDimensionOptions = computed(() => {
+  if (primaryGroup.value === 'none') return [];
+  return dimensions.filter((d) => d !== primaryGroup.value);
+});
 
-const tagGroups = computed(() =>
-  groupLogsByTag(filteredLogs.value, t('dashboard.untaggedBucket'), catalogStore.tags)
+watch(primaryGroup, (nextPrimary) => {
+  if (nextPrimary === 'none' || nextPrimary === secondaryGroup.value) {
+    secondaryGroup.value = 'none';
+  }
+});
+
+watch([primaryGroup, secondaryGroup], () => {
+  expandedPrimaryGroups.value = new Set();
+  expandedSubgroups.value = new Set();
+});
+
+const groupedBreakdown = computed(() => {
+  if (primaryGroup.value === 'none') return [];
+  return groupLogsTwoLevel({
+    logs: filteredLogs.value,
+    primaryDimension: primaryGroup.value,
+    secondaryDimension: secondaryGroup.value,
+    ...catalogContext.value,
+  });
+});
+
+watch(
+  [() => filteredLogs.value.length, primaryGroup, secondaryGroup, tablePageSize],
+  () => {
+    tablePageIndex.value = 0;
+    innerPageByNodeKey.value = {};
+  }
 );
 
-function toggleTagGroupCollapse(key: string) {
-  const next = new Set(collapsedTagGroups.value);
+const paginatedFlatLogs = computed(() =>
+  paginateItems({
+    items: filteredLogs.value,
+    pageIndex: tablePageIndex.value,
+    pageSize: tablePageSize.value,
+  })
+);
+
+const paginatedPrimaryGroups = computed(() =>
+  paginateItems({
+    items: groupedBreakdown.value,
+    pageIndex: tablePageIndex.value,
+    pageSize: tablePageSize.value,
+  })
+);
+
+const activeTablePagination = computed(() =>
+  primaryGroup.value === 'none'
+    ? paginatedFlatLogs.value
+    : paginatedPrimaryGroups.value
+);
+
+watch(
+  () => activeTablePagination.value.pageIndex,
+  (clamped) => {
+    if (tablePageIndex.value !== clamped) {
+      tablePageIndex.value = clamped;
+    }
+  }
+);
+
+function togglePrimaryGroup(key: string) {
+  const next = new Set(expandedPrimaryGroups.value);
   if (next.has(key)) next.delete(key);
   else next.add(key);
-  collapsedTagGroups.value = next;
+  expandedPrimaryGroups.value = next;
+}
+
+function toggleSubgroup(compositeKey: string) {
+  const next = new Set(expandedSubgroups.value);
+  if (next.has(compositeKey)) next.delete(compositeKey);
+  else next.add(compositeKey);
+  expandedSubgroups.value = next;
+}
+
+function expandAllGroups() {
+  const nextPrimary = new Set<string>();
+  const nextSub = new Set<string>();
+  for (const grp of groupedBreakdown.value) {
+    nextPrimary.add(grp.key);
+    for (const sub of grp.subgroups) {
+      nextSub.add(`${grp.key}::${sub.key}`);
+    }
+  }
+  expandedPrimaryGroups.value = nextPrimary;
+  expandedSubgroups.value = nextSub;
+}
+
+function collapseAllGroups() {
+  expandedPrimaryGroups.value = new Set();
+  expandedSubgroups.value = new Set();
+}
+
+function getInnerPageSlice(nodeKey: string, logs: readonly TimeLog[]) {
+  return paginateItems({
+    items: logs,
+    pageIndex: innerPageByNodeKey.value[nodeKey] ?? 0,
+    pageSize: DASHBOARD_TABLE_PAGE_SIZE,
+  });
+}
+
+function setInnerPage(nodeKey: string, nextIndex: number) {
+  innerPageByNodeKey.value = {
+    ...innerPageByNodeKey.value,
+    [nodeKey]: Math.max(0, nextIndex),
+  };
 }
 </script>
 
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div class="border border-border-hairline bg-bg-elevated p-5">
-      <h1 class="text-lg font-semibold text-text-primary">
-        {{ $t('dashboard.title') }}
-      </h1>
-      <p class="mt-1 text-xs text-text-muted">
-        {{ $t('dashboard.subtitle') }}
-      </p>
+    <div>
+      <span
+        v-if="timeLogsStore.streaming"
+        data-testid="dashboard-streaming-badge"
+        class="inline-flex items-center gap-1.5 border border-accent/40 bg-accent/10 px-2.5 py-1 text-[11px] font-mono text-accent"
+      >
+        <span class="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+        <span class="tabular-telemetry">
+          {{ $t('timer.streamingHistory', { count: timeLogsStore.streamedCount }) }}
+        </span>
+      </span>
     </div>
 
-    <!-- Global Reactive Filter Bar -->
+    <!-- Global Reactive Filter Bar (FR-5.5) -->
     <div class="border border-border-hairline bg-bg-elevated p-4 space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <!-- Time Range Segmented Presets -->
@@ -239,108 +488,127 @@ function toggleTagGroupCollapse(key: string) {
             v-for="p in presets"
             :key="p"
             type="button"
+            :data-testid="`dashboard-preset-${p}`"
             class="border px-2.5 py-1 text-xs font-mono transition-colors"
             :class="
               filters.preset === p
                 ? 'border-accent bg-accent text-white'
                 : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
             "
-            @click="filters.preset = p"
+            @click="selectPreset(p)"
           >
             {{ $t(`dashboard.presets.${p}`) }}
           </button>
         </div>
 
         <!-- Custom Start/End Date inputs when 'custom' is active -->
-        <div v-if="filters.preset === 'custom'" class="flex items-center gap-2">
-          <input
-            v-model="filters.customStartDate"
-            type="date"
-            class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary"
-          />
+        <div
+          v-if="filters.preset === 'custom'"
+          class="flex flex-wrap items-center gap-2"
+        >
+          <div class="w-36">
+            <UiDateInput
+              v-model="filters.customStartDate!"
+              v-model:valid="isCustomStartValid"
+              calendar-placement="popover"
+              size="sm"
+              test-id="dashboard-custom-start"
+            />
+          </div>
           <span class="text-xs text-text-muted">→</span>
-          <input
-            v-model="filters.customEndDate"
-            type="date"
-            class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary px-2 text-xs font-mono text-text-primary"
-          />
+          <div class="w-36">
+            <UiDateInput
+              v-model="filters.customEndDate!"
+              v-model:valid="isCustomEndValid"
+              calendar-placement="popover"
+              size="sm"
+              test-id="dashboard-custom-end"
+            />
+          </div>
         </div>
 
-        <!-- Description Search + Clear -->
-        <div class="flex items-center gap-2 flex-1 sm:max-w-xs">
-          <input
-            v-model="filters.searchQuery"
-            type="text"
-            :placeholder="$t('dashboard.searchPlaceholder')"
-            class="h-8 w-full border border-border-hairline bg-bg-primary px-3 text-xs text-text-primary placeholder:text-text-muted/60 focus:border-accent focus:outline-none"
-          />
+        <!-- Clear All Filters Button -->
+        <div class="flex items-center gap-2">
+          <span
+            v-if="activeFiltersCount > 0"
+            class="tabular-telemetry border border-accent/40 bg-accent/10 px-2 py-1 text-[11px] font-mono text-accent"
+          >
+            {{ $t('dashboard.filters.activeCount', { count: activeFiltersCount }) }}
+          </span>
           <button
             type="button"
-            class="h-8 border border-border-hairline bg-bg-primary px-2.5 text-[11px] font-mono uppercase text-text-muted hover:text-text-primary"
+            data-testid="dashboard-clear-filters"
+            class="inline-flex h-8 items-center gap-1 border border-border-hairline bg-bg-primary px-2.5 text-[11px] font-mono uppercase text-text-muted hover:text-text-primary transition-colors"
             @click="clearAllFilters"
           >
-            {{ $t('dashboard.clearFilters') }}
+            <X class="h-3 w-3" />
+            <span>{{ $t('dashboard.clearFilters') }}</span>
           </button>
         </div>
       </div>
 
-      <!-- Multi-Select Project & Tag Chips -->
-      <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-border-hairline text-xs">
-        <span class="inline-flex items-center gap-1 font-mono text-[11px] uppercase text-text-muted">
+      <!-- 4 Dedicated Multi-Select Filter Dropdowns (Project, Task, Tag, Log Description) -->
+      <div class="border-t border-border-hairline pt-3 space-y-2">
+        <div class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-text-muted">
           <Filter class="h-3 w-3 text-accent" />
-          <span>{{ $t('dashboard.projectsFilter') }}:</span>
-        </span>
-        <button
-          v-for="proj in catalogStore.sortedProjects"
-          :key="proj.id"
-          type="button"
-          class="inline-flex items-center gap-1.5 border px-2 py-0.5 text-xs transition-colors"
-          :class="
-            filters.projectIds.includes(proj.id)
-              ? 'border-accent bg-accent/15 text-text-primary'
-              : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
-          "
-          @click="toggleProjectFilter(proj.id)"
-        >
-          <span class="h-2 w-2" :style="{ backgroundColor: proj.color }" />
-          <span>{{ displayProjectName(proj) }}</span>
-        </button>
+          <span>{{ $t('dashboard.filters.projectLabel') }} · {{ $t('dashboard.filters.taskLabel') }} · {{ $t('dashboard.filters.tagLabel') }} · {{ $t('dashboard.filters.descriptionLabel') }}</span>
+        </div>
 
-        <template v-if="catalogStore.tags.length > 0">
-          <span class="ml-3 font-mono text-[11px] uppercase text-text-muted">
-            {{ $t('dashboard.tagsFilter') }}:
-          </span>
-          <button
-            v-for="tag in catalogStore.tags"
-            :key="tag.id"
-            type="button"
-            class="border px-2 py-0.5 text-[11px] font-mono transition-colors"
-            :class="
-              filters.tagIds.includes(tag.id)
-                ? 'border-accent bg-accent/15 text-accent'
-                : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
-            "
-            @click="toggleTagFilter(tag.id)"
-          >
-            #{{ tag.name }}
-          </button>
-        </template>
+        <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+          <UiFilterMultiSelect
+            v-model="filters.projectIds"
+            :options="projectFilterOptions"
+            :label="$t('dashboard.filters.projectLabel')"
+            :search-placeholder="$t('dashboard.filters.projectSearch')"
+            :empty-text="$t('dashboard.filters.noProjects')"
+            test-id="dashboard-filter-projects"
+          />
+
+          <UiFilterMultiSelect
+            v-model="filters.taskIds"
+            :options="taskFilterOptions"
+            :label="$t('dashboard.filters.taskLabel')"
+            :search-placeholder="$t('dashboard.filters.taskSearch')"
+            :empty-text="$t('dashboard.filters.noTasks')"
+            test-id="dashboard-filter-tasks"
+          />
+
+          <UiFilterMultiSelect
+            v-model="filters.tagIds"
+            :options="tagFilterOptions"
+            :label="$t('dashboard.filters.tagLabel')"
+            :search-placeholder="$t('dashboard.filters.tagSearch')"
+            :empty-text="$t('dashboard.filters.noTags')"
+            test-id="dashboard-filter-tags"
+          />
+
+          <UiFilterMultiSelect
+            :model-value="filters.descriptions ?? []"
+            :options="descriptionFilterOptions"
+            :label="$t('dashboard.filters.descriptionLabel')"
+            :search-placeholder="$t('dashboard.filters.descriptionSearch')"
+            :empty-text="$t('dashboard.filters.noDescriptions')"
+            test-id="dashboard-filter-descriptions"
+            @update:model-value="filters.descriptions = $event"
+          />
+        </div>
       </div>
     </div>
 
     <!-- Visualizations 1 & 2 Grid -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <!-- Visualization 1: Pizza (Donut) Chart -->
+      <!-- Visualization 1: Pizza (Donut) Chart (4 Dimensions) -->
       <div class="lg:col-span-5 border border-border-hairline bg-bg-elevated p-5 flex flex-col">
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border-hairline pb-3">
           <span class="text-xs font-mono uppercase tracking-wider text-accent">
             {{ $t('dashboard.pizzaTitle') }}
           </span>
-          <div class="inline-flex border border-border-hairline bg-bg-primary text-[11px] font-mono">
+          <div class="inline-flex flex-wrap border border-border-hairline bg-bg-primary text-[11px] font-mono">
             <button
               v-for="dim in dimensions"
               :key="dim"
               type="button"
+              :data-testid="`dashboard-pizza-dim-${dim}`"
               class="px-2 py-0.5 transition-colors"
               :class="
                 pizzaDimension === dim
@@ -394,27 +662,55 @@ function toggleTagGroupCollapse(key: string) {
         </ul>
       </div>
 
-      <!-- Visualization 2: Duration by Day Graph (Stacked Bar Chart) -->
+      <!-- Visualization 2: Stacked Histogram (4 Dimensions + 5 Time Granularities) -->
       <div class="lg:col-span-7 border border-border-hairline bg-bg-elevated p-5 flex flex-col">
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border-hairline pb-3">
           <span class="text-xs font-mono uppercase tracking-wider text-accent">
             {{ $t('dashboard.dailyBarTitle') }}
           </span>
-          <div class="inline-flex border border-border-hairline bg-bg-primary text-[11px] font-mono">
-            <button
-              v-for="dim in dimensions"
-              :key="dim"
-              type="button"
-              class="px-2 py-0.5 transition-colors"
-              :class="
-                barDimension === dim
-                  ? 'bg-accent text-white'
-                  : 'text-text-muted hover:text-text-primary'
-              "
-              @click="barDimension = dim"
+
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Temporal Granularity Selector -->
+            <div
+              role="group"
+              :aria-label="$t('dashboard.granularityLabel')"
+              class="inline-flex border border-border-hairline bg-bg-primary text-[11px] font-mono"
             >
-              {{ $t(`dashboard.dimensions.${dim}`) }}
-            </button>
+              <button
+                v-for="gran in granularities"
+                :key="gran"
+                type="button"
+                :data-testid="`dashboard-bar-granularity-${gran}`"
+                class="px-2 py-0.5 transition-colors"
+                :class="
+                  barGranularity === gran
+                    ? 'bg-accent/20 text-accent font-semibold'
+                    : 'text-text-muted hover:text-text-primary'
+                "
+                @click="barGranularity = gran"
+              >
+                {{ $t(`dashboard.granularities.${gran}`) }}
+              </button>
+            </div>
+
+            <!-- 4-Dimension Slicing Selector -->
+            <div class="inline-flex flex-wrap border border-border-hairline bg-bg-primary text-[11px] font-mono">
+              <button
+                v-for="dim in dimensions"
+                :key="dim"
+                type="button"
+                :data-testid="`dashboard-bar-dim-${dim}`"
+                class="px-2 py-0.5 transition-colors"
+                :class="
+                  barDimension === dim
+                    ? 'bg-accent text-white'
+                    : 'text-text-muted hover:text-text-primary'
+                "
+                @click="barDimension = dim"
+              >
+                {{ $t(`dashboard.dimensions.${dim}`) }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -426,31 +722,92 @@ function toggleTagGroupCollapse(key: string) {
       </div>
     </div>
 
-    <!-- Visualization 3: Filtered Tasks / TimeLogs Data Table (Groupable by Tag) -->
+    <!-- Visualization 3: 2-Level Hierarchical Breakdown & Paginated TimeLogs Table (FR-5.4) -->
     <div class="border border-border-hairline bg-bg-elevated">
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border-hairline p-4">
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3">
           <span class="text-xs font-mono uppercase tracking-wider text-accent">
             {{ $t('dashboard.tableTitle') }} ({{ filteredLogs.length }})
           </span>
-          <span v-if="groupByTag" class="hidden sm:inline text-[11px] text-text-muted">
+          <span
+            v-if="primaryGroup === 'tag' || secondaryGroup === 'tag'"
+            class="hidden md:inline text-[11px] text-text-muted"
+          >
             {{ $t('dashboard.multiTagNote') }}
           </span>
         </div>
 
-        <button
-          type="button"
-          class="inline-flex h-8 items-center gap-1.5 border px-3 text-xs font-mono transition-colors"
-          :class="
-            groupByTag
-              ? 'border-accent bg-accent/15 text-accent'
-              : 'border-border-hairline bg-bg-primary text-text-muted hover:text-text-primary'
-          "
-          @click="groupByTag = !groupByTag"
-        >
-          <Layers class="h-3.5 w-3.5" />
-          <span>{{ $t('dashboard.groupByTagToggle') }}</span>
-        </button>
+        <!-- Primary & Secondary Group Controls + Page Size -->
+        <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+          <label class="inline-flex items-center gap-1.5 text-text-muted">
+            <Layers class="h-3.5 w-3.5 text-accent" />
+            <span>{{ $t('dashboard.grouping.primaryLabel') }}:</span>
+            <select
+              v-model="primaryGroup"
+              data-testid="dashboard-primary-group"
+              class="h-8 border border-border-hairline bg-bg-primary px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            >
+              <option value="none">{{ $t('dashboard.grouping.noneOption') }}</option>
+              <option v-for="dim in dimensions" :key="dim" :value="dim">
+                {{ $t(`dashboard.dimensions.${dim}`) }}
+              </option>
+            </select>
+          </label>
+
+          <label
+            v-if="primaryGroup !== 'none'"
+            class="inline-flex items-center gap-1.5 text-text-muted"
+          >
+            <span>{{ $t('dashboard.grouping.secondaryLabel') }}:</span>
+            <select
+              v-model="secondaryGroup"
+              data-testid="dashboard-secondary-group"
+              class="h-8 border border-border-hairline bg-bg-primary px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            >
+              <option value="none">{{ $t('dashboard.grouping.noneOption') }}</option>
+              <option
+                v-for="dim in secondaryDimensionOptions"
+                :key="dim"
+                :value="dim"
+              >
+                {{ $t(`dashboard.dimensions.${dim}`) }}
+              </option>
+            </select>
+          </label>
+
+          <div
+            v-if="primaryGroup !== 'none' && groupedBreakdown.length > 0"
+            class="inline-flex border border-border-hairline bg-bg-primary"
+          >
+            <button
+              type="button"
+              class="h-8 px-2 text-[11px] text-text-muted hover:text-text-primary border-r border-border-hairline transition-colors"
+              @click="expandAllGroups"
+            >
+              {{ $t('dashboard.grouping.expandAll') }}
+            </button>
+            <button
+              type="button"
+              class="h-8 px-2 text-[11px] text-text-muted hover:text-text-primary transition-colors"
+              @click="collapseAllGroups"
+            >
+              {{ $t('dashboard.grouping.collapseAll') }}
+            </button>
+          </div>
+
+          <label class="inline-flex items-center gap-1.5 text-text-muted">
+            <span>{{ $t('dashboard.pagination.rowsPerPage') }}:</span>
+            <select
+              v-model.number="tablePageSize"
+              data-testid="dashboard-table-page-size"
+              class="tabular-telemetry h-8 border border-border-hairline bg-bg-primary px-2 text-xs text-text-primary focus:border-accent focus:outline-none"
+            >
+              <option v-for="sz in pageSizeOptions" :key="sz" :value="sz">
+                {{ sz }}
+              </option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div
@@ -460,92 +817,290 @@ function toggleTagGroupCollapse(key: string) {
         {{ $t('dashboard.emptyFiltered') }}
       </div>
 
-      <!-- Grouped by Tag Breakdown Mode -->
-      <div v-else-if="groupByTag" class="divide-y divide-border-hairline">
-        <div v-for="grp in tagGroups" :key="grp.tagKey">
+      <!-- 1-Level / 2-Level Hierarchical Grouped Breakdown -->
+      <div
+        v-else-if="primaryGroup !== 'none'"
+        data-testid="dashboard-grouped-table"
+        class="divide-y divide-border-hairline"
+      >
+        <div
+          v-for="grp in paginatedPrimaryGroups.items"
+          :key="grp.key"
+          data-testid="dashboard-primary-group-row"
+        >
           <button
             type="button"
             class="flex w-full items-center justify-between bg-bg-primary/60 px-4 py-2.5 text-left text-xs font-mono hover:bg-bg-hover transition-colors"
-            @click="toggleTagGroupCollapse(grp.tagKey)"
+            @click="togglePrimaryGroup(grp.key)"
           >
-            <div class="flex items-center gap-2">
-              <ChevronRight
-                v-if="collapsedTagGroups.has(grp.tagKey)"
-                class="h-3.5 w-3.5 text-accent"
+            <div class="flex items-center gap-2 min-w-0">
+              <ChevronDown
+                v-if="expandedPrimaryGroups.has(grp.key)"
+                class="h-3.5 w-3.5 shrink-0 text-accent"
               />
-              <ChevronDown v-else class="h-3.5 w-3.5 text-accent" />
-              <span class="font-semibold text-text-primary">{{ grp.tagLabel }}</span>
+              <ChevronRight v-else class="h-3.5 w-3.5 shrink-0 text-accent" />
+              <span
+                v-if="grp.color"
+                class="h-2.5 w-2.5 shrink-0"
+                :style="{ backgroundColor: grp.color }"
+              />
+              <span class="truncate font-semibold text-text-primary">{{ grp.label }}</span>
               <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
                 {{ grp.count }}
               </span>
             </div>
-            <span class="tabular-telemetry font-semibold text-text-primary">
+            <span class="tabular-telemetry shrink-0 font-semibold text-text-primary">
               {{ formatDuration(grp.subtotalSeconds) }}
             </span>
           </button>
 
-          <div v-if="!collapsedTagGroups.has(grp.tagKey)" class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <tbody class="divide-y divide-border-hairline">
-                <tr
-                  v-for="log in grp.logs"
-                  :key="`${grp.tagKey}-${log.id}`"
-                  class="hover:bg-bg-hover/40"
+          <div v-if="expandedPrimaryGroups.has(grp.key)">
+            <!-- 2-Level Secondary Subgroups -->
+            <div
+              v-if="secondaryGroup !== 'none'"
+              class="divide-y divide-border-hairline border-t border-border-hairline"
+            >
+              <div
+                v-for="sub in grp.subgroups"
+                :key="`${grp.key}::${sub.key}`"
+                data-testid="dashboard-secondary-group-row"
+              >
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between bg-bg-elevated pl-8 pr-4 py-2 text-left text-xs font-mono hover:bg-bg-hover/60 transition-colors"
+                  @click="toggleSubgroup(`${grp.key}::${sub.key}`)"
                 >
-                  <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 font-mono text-text-muted">
-                    {{ formatDateKey(log.dateKey) }}
-                  </td>
-                  <td class="px-4 py-2.5 font-medium text-text-primary">
-                    {{ log.description }}
-                  </td>
-                  <td class="whitespace-nowrap px-4 py-2.5">
-                    <span class="inline-flex items-center gap-1.5">
-                      <span class="h-2 w-2" :style="{ backgroundColor: log.projectColorSnapshot }" />
-                      <span>
+                  <div class="flex items-center gap-2 min-w-0">
+                    <ChevronDown
+                      v-if="expandedSubgroups.has(`${grp.key}::${sub.key}`)"
+                      class="h-3 w-3 shrink-0 text-text-muted"
+                    />
+                    <ChevronRight v-else class="h-3 w-3 shrink-0 text-text-muted" />
+                    <span
+                      v-if="sub.color"
+                      class="h-2 w-2 shrink-0"
+                      :style="{ backgroundColor: sub.color }"
+                    />
+                    <span class="truncate font-medium text-text-primary">{{ sub.label }}</span>
+                    <span class="tabular-telemetry border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-[10px] text-text-muted">
+                      {{ sub.count }}
+                    </span>
+                  </div>
+                  <span class="tabular-telemetry shrink-0 text-text-primary font-medium">
+                    {{ formatDuration(sub.subtotalSeconds) }}
+                  </span>
+                </button>
+
+                <div
+                  v-if="expandedSubgroups.has(`${grp.key}::${sub.key}`)"
+                  class="overflow-x-auto border-t border-border-hairline/70 bg-bg-primary/25"
+                >
+                  <table class="w-full text-left text-xs">
+                    <tbody class="divide-y divide-border-hairline">
+                      <tr
+                        v-for="log in getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).items"
+                        :key="`${grp.key}-${sub.key}-${log.id}`"
+                        class="hover:bg-bg-hover/40"
+                      >
+                        <td class="tabular-telemetry whitespace-nowrap pl-12 pr-4 py-2 font-mono text-text-muted">
+                          {{ formatDateKey(log.dateKey) }}
+                        </td>
+                        <td class="px-4 py-2 font-medium text-text-primary">
+                          {{ log.description }}
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-2">
+                          <span class="inline-flex items-center gap-1.5">
+                            <span
+                              class="h-2 w-2"
+                              :style="{ backgroundColor: displayProjectColor(log) }"
+                            />
+                            <span>
+                              {{
+                                displayProjectName(
+                                  catalogStore.getProjectById(log.projectId),
+                                  log.projectNameSnapshot
+                                )
+                              }}
+                            </span>
+                          </span>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-2 text-text-muted">
+                          {{ displayTaskLabel(log) }}
+                        </td>
+                        <td class="px-4 py-2 font-mono text-[11px] text-text-muted">
+                          <span
+                            v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
+                            :key="idx"
+                            class="mr-1.5"
+                          >
+                            #{{ tn }}
+                          </span>
+                        </td>
+                        <td class="tabular-telemetry whitespace-nowrap px-4 py-2 text-right font-mono font-semibold text-text-primary">
+                          {{ formatDuration(log.durationSeconds) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <!-- Compact Inner Pagination for large Subgroup -->
+                  <div
+                    v-if="getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).totalPages > 1"
+                    class="flex items-center justify-between border-t border-border-hairline bg-bg-primary/50 pl-12 pr-4 py-1.5 text-[11px] font-mono text-text-muted"
+                  >
+                    <span class="tabular-telemetry">
+                      {{
+                        $t('dashboard.pagination.showingRange', {
+                          start: getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).startItem,
+                          end: getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).endItem,
+                          total: getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).totalItems,
+                        })
+                      }}
+                    </span>
+                    <div class="flex items-center gap-1">
+                      <button
+                        type="button"
+                        :disabled="!getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).hasPreviousPage"
+                        class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-text-primary disabled:opacity-35"
+                        @click="setInnerPage(`${grp.key}::${sub.key}`, getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).pageIndex - 1)"
+                      >
+                        {{ $t('dashboard.pagination.previous') }}
+                      </button>
+                      <span class="tabular-telemetry px-1.5">
                         {{
-                          displayProjectName(
-                            catalogStore.getProjectById(log.projectId),
-                            log.projectNameSnapshot
-                          )
+                          $t('dashboard.pagination.pageOf', {
+                            page: getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).pageNumber,
+                            total: getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).totalPages,
+                          })
                         }}
                       </span>
-                    </span>
-                  </td>
-                  <td class="px-4 py-2.5 font-mono text-[11px] text-text-muted">
-                    <span
-                      v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
-                      :key="idx"
-                      class="mr-1.5"
-                    >
-                      #{{ tn }}
-                    </span>
-                  </td>
-                  <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 text-right font-mono font-semibold text-text-primary">
-                    {{ formatDuration(log.durationSeconds) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                      <button
+                        type="button"
+                        :disabled="!getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).hasNextPage"
+                        class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-text-primary disabled:opacity-35"
+                        @click="setInnerPage(`${grp.key}::${sub.key}`, getInnerPageSlice(`${grp.key}::${sub.key}`, sub.logs).pageIndex + 1)"
+                      >
+                        {{ $t('dashboard.pagination.next') }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 1-Level Group Inner Rows (Secondary = None) -->
+            <div v-else class="overflow-x-auto border-t border-border-hairline">
+              <table class="w-full text-left text-xs">
+                <tbody class="divide-y divide-border-hairline">
+                  <tr
+                    v-for="log in getInnerPageSlice(grp.key, grp.logs).items"
+                    :key="`${grp.key}-${log.id}`"
+                    class="hover:bg-bg-hover/40"
+                  >
+                    <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 font-mono text-text-muted">
+                      {{ formatDateKey(log.dateKey) }}
+                    </td>
+                    <td class="px-4 py-2.5 font-medium text-text-primary">
+                      {{ log.description }}
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-2.5">
+                      <span class="inline-flex items-center gap-1.5">
+                        <span
+                          class="h-2 w-2"
+                          :style="{ backgroundColor: displayProjectColor(log) }"
+                        />
+                        <span>
+                          {{
+                            displayProjectName(
+                              catalogStore.getProjectById(log.projectId),
+                              log.projectNameSnapshot
+                            )
+                          }}
+                        </span>
+                      </span>
+                    </td>
+                    <td class="whitespace-nowrap px-4 py-2.5 text-text-muted">
+                      {{ displayTaskLabel(log) }}
+                    </td>
+                    <td class="px-4 py-2.5 font-mono text-[11px] text-text-muted">
+                      <span
+                        v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
+                        :key="idx"
+                        class="mr-1.5"
+                      >
+                        #{{ tn }}
+                      </span>
+                    </td>
+                    <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 text-right font-mono font-semibold text-text-primary">
+                      {{ formatDuration(log.durationSeconds) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div
+                v-if="getInnerPageSlice(grp.key, grp.logs).totalPages > 1"
+                class="flex items-center justify-between border-t border-border-hairline bg-bg-primary/50 px-4 py-1.5 text-[11px] font-mono text-text-muted"
+              >
+                <span class="tabular-telemetry">
+                  {{
+                    $t('dashboard.pagination.showingRange', {
+                      start: getInnerPageSlice(grp.key, grp.logs).startItem,
+                      end: getInnerPageSlice(grp.key, grp.logs).endItem,
+                      total: getInnerPageSlice(grp.key, grp.logs).totalItems,
+                    })
+                  }}
+                </span>
+                <div class="flex items-center gap-1">
+                  <button
+                    type="button"
+                    :disabled="!getInnerPageSlice(grp.key, grp.logs).hasPreviousPage"
+                    class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-text-primary disabled:opacity-35"
+                    @click="setInnerPage(grp.key, getInnerPageSlice(grp.key, grp.logs).pageIndex - 1)"
+                  >
+                    {{ $t('dashboard.pagination.previous') }}
+                  </button>
+                  <span class="tabular-telemetry px-1.5">
+                    {{
+                      $t('dashboard.pagination.pageOf', {
+                        page: getInnerPageSlice(grp.key, grp.logs).pageNumber,
+                        total: getInnerPageSlice(grp.key, grp.logs).totalPages,
+                      })
+                    }}
+                  </span>
+                  <button
+                    type="button"
+                    :disabled="!getInnerPageSlice(grp.key, grp.logs).hasNextPage"
+                    class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-text-primary disabled:opacity-35"
+                    @click="setInnerPage(grp.key, getInnerPageSlice(grp.key, grp.logs).pageIndex + 1)"
+                  >
+                    {{ $t('dashboard.pagination.next') }}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Flat Table Mode -->
-      <div v-else class="overflow-x-auto">
+      <!-- Flat Table Mode (Paginated) -->
+      <div v-else class="overflow-x-auto" data-testid="dashboard-flat-table">
         <table class="w-full text-left text-xs">
           <thead class="border-b border-border-hairline bg-bg-primary/60 font-mono text-[11px] uppercase text-text-muted">
             <tr>
               <th class="px-4 py-2">{{ $t('dashboard.colDate') }}</th>
               <th class="px-4 py-2">{{ $t('dashboard.colDescription') }}</th>
               <th class="px-4 py-2">{{ $t('dashboard.colProject') }}</th>
+              <th class="px-4 py-2">{{ $t('dashboard.colTask') }}</th>
               <th class="px-4 py-2">{{ $t('dashboard.colTags') }}</th>
               <th class="px-4 py-2 text-right">{{ $t('dashboard.colDuration') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border-hairline">
             <tr
-              v-for="log in filteredLogs"
+              v-for="log in paginatedFlatLogs.items"
               :key="log.id"
+              data-testid="dashboard-flat-row"
               class="hover:bg-bg-hover/40"
             >
               <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 font-mono text-text-muted">
@@ -556,7 +1111,7 @@ function toggleTagGroupCollapse(key: string) {
               </td>
               <td class="whitespace-nowrap px-4 py-2.5">
                 <span class="inline-flex items-center gap-1.5">
-                  <span class="h-2 w-2" :style="{ backgroundColor: log.projectColorSnapshot }" />
+                  <span class="h-2 w-2" :style="{ backgroundColor: displayProjectColor(log) }" />
                   <span>
                     {{
                       displayProjectName(
@@ -567,8 +1122,15 @@ function toggleTagGroupCollapse(key: string) {
                   </span>
                 </span>
               </td>
+              <td class="whitespace-nowrap px-4 py-2.5 text-text-muted">
+                {{ displayTaskLabel(log) }}
+              </td>
               <td class="px-4 py-2.5 font-mono text-[11px] text-text-muted">
-                <span v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)" :key="idx" class="mr-1.5">
+                <span
+                  v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
+                  :key="idx"
+                  class="mr-1.5"
+                >
                   #{{ tn }}
                 </span>
               </td>
@@ -578,6 +1140,77 @@ function toggleTagGroupCollapse(key: string) {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Table Pagination Footer -->
+      <div
+        v-if="filteredLogs.length > 0 && activeTablePagination.totalItems > 0"
+        data-testid="dashboard-table-pagination"
+        class="flex flex-wrap items-center justify-between gap-3 border-t border-border-hairline bg-bg-primary/50 px-4 py-2.5 text-xs font-mono"
+      >
+        <span class="tabular-telemetry text-text-muted">
+          {{
+            $t('dashboard.pagination.showingRange', {
+              start: activeTablePagination.startItem,
+              end: activeTablePagination.endItem,
+              total: activeTablePagination.totalItems,
+            })
+          }}
+        </span>
+
+        <div v-if="activeTablePagination.totalPages > 1" class="flex items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="dashboard-pagination-first"
+            :disabled="!activeTablePagination.hasPreviousPage"
+            :aria-label="$t('dashboard.pagination.first')"
+            class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-primary hover:bg-bg-hover disabled:opacity-35"
+            @click="tablePageIndex = 0"
+          >
+            <ChevronsLeft class="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            data-testid="dashboard-pagination-prev"
+            :disabled="!activeTablePagination.hasPreviousPage"
+            class="inline-flex h-7 items-center gap-1 border border-border-hairline bg-bg-elevated px-2 text-text-primary hover:bg-bg-hover disabled:opacity-35"
+            @click="tablePageIndex = Math.max(0, activeTablePagination.pageIndex - 1)"
+          >
+            <ChevronLeft class="h-3.5 w-3.5" />
+            <span>{{ $t('dashboard.pagination.previous') }}</span>
+          </button>
+          <span
+            data-testid="dashboard-pagination-page"
+            class="tabular-telemetry border border-border-hairline bg-bg-elevated px-2.5 py-1 text-text-muted"
+          >
+            {{
+              $t('dashboard.pagination.pageOf', {
+                page: activeTablePagination.pageNumber,
+                total: activeTablePagination.totalPages,
+              })
+            }}
+          </span>
+          <button
+            type="button"
+            data-testid="dashboard-pagination-next"
+            :disabled="!activeTablePagination.hasNextPage"
+            class="inline-flex h-7 items-center gap-1 border border-border-hairline bg-bg-elevated px-2 text-text-primary hover:bg-bg-hover disabled:opacity-35"
+            @click="tablePageIndex = activeTablePagination.pageIndex + 1"
+          >
+            <span>{{ $t('dashboard.pagination.next') }}</span>
+            <ChevronRight class="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            data-testid="dashboard-pagination-last"
+            :disabled="!activeTablePagination.hasNextPage"
+            :aria-label="$t('dashboard.pagination.last')"
+            class="inline-flex h-7 w-7 items-center justify-center border border-border-hairline bg-bg-elevated text-text-primary hover:bg-bg-hover disabled:opacity-35"
+            @click="tablePageIndex = activeTablePagination.totalPages - 1"
+          >
+            <ChevronsRight class="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   </div>

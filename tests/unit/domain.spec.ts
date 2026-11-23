@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   aggregateDailyStacked,
   aggregatePizzaSlices,
+  aggregateTimeSeriesStacked,
+  extractDistinctDescriptionOptions,
   filterTimeLogs,
+  formatTimeBucketLabel,
   groupLogsByTag,
+  groupLogsTwoLevel,
+  paginateItems,
 } from '../../app/domain/aggregation';
 import {
   doTimeRangesOverlap,
@@ -44,7 +49,7 @@ import {
   parseAndPreviewTogglCsv,
   serializeTogglCsv,
 } from '../../app/domain/toggl';
-import type { Project, ProjectTag, TimeLog } from '../../app/domain/types';
+import type { Project, ProjectTag, Task, TimeLog } from '../../app/domain/types';
 
 describe('domain/duration', () => {
   it('calculates elapsedSeconds resiliently from UTC delta', () => {
@@ -440,6 +445,228 @@ describe('domain/aggregation (Analytics Dashboard)', () => {
     const deletedTagsBuckets = groupLogsByTag(sampleLogs, 'Untagged', []);
     expect(deletedTagsBuckets.map((g) => g.tagLabel)).toEqual(['Untagged']);
     expect(deletedTagsBuckets[0]?.subtotalSeconds).toBe(5400);
+  });
+
+  it('supports 4-dimension slicing, 5 temporal granularities, 2-level grouping, 4 multi-select filters & pagination (FR-5.4 & FR-5.5)', () => {
+    const projects: Project[] = [
+      {
+        id: 'proj-a',
+        userId: 'u1',
+        name: 'XP Core API',
+        color: '#3B82F6',
+        isBillableDefault: true,
+        createdAt: '',
+      },
+      {
+        id: 'proj-b',
+        userId: 'u1',
+        name: 'Marathon Prep',
+        color: '#10B981',
+        isBillableDefault: false,
+        createdAt: '',
+      },
+    ];
+    const tasks: Task[] = [
+      {
+        id: 'task-root',
+        userId: 'u1',
+        projectId: 'proj-a',
+        depth: 0,
+        name: 'Auth Service',
+        completedWorkHours: 0,
+        status: 'in_progress',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'task-sub',
+        userId: 'u1',
+        projectId: 'proj-a',
+        parentTaskId: 'task-root',
+        depth: 1,
+        name: 'JWT Guard',
+        completedWorkHours: 0,
+        status: 'in_progress',
+        createdAt: '2026-01-02T00:00:00.000Z',
+      },
+    ];
+    const tags: ProjectTag[] = [
+      { id: 't1', userId: 'u1', projectId: 'proj-a', name: 'backend', createdAt: '' },
+      { id: 't2', userId: 'u1', projectId: 'proj-a', name: 'security', createdAt: '' },
+    ];
+
+    const multiPeriodLogs: TimeLog[] = [
+      {
+        id: 'm1',
+        userId: 'u1',
+        description: 'Implement JWT',
+        normalizedDescription: 'implement jwt',
+        projectId: 'proj-a',
+        projectNameSnapshot: 'XP Core API',
+        projectColorSnapshot: '#3B82F6',
+        taskId: 'task-sub',
+        taskNameSnapshot: 'JWT Guard',
+        tagIds: ['t1', 't2'],
+        isBillable: true,
+        startTime: '2026-01-12T10:00:00.000Z', // Monday Q1
+        endTime: '2026-01-12T12:00:00.000Z',
+        durationSeconds: 7200,
+        timeZone: 'UTC',
+        dateKey: '2026-01-12',
+      },
+      {
+        id: 'm2',
+        userId: 'u1',
+        description: 'Implement JWT',
+        normalizedDescription: 'implement jwt',
+        projectId: 'proj-a',
+        projectNameSnapshot: 'XP Core API',
+        projectColorSnapshot: '#3B82F6',
+        taskId: 'task-root',
+        taskNameSnapshot: 'Auth Service',
+        tagIds: ['t1'],
+        isBillable: true,
+        startTime: '2026-05-03T10:00:00.000Z', // Sunday Q2
+        endTime: '2026-05-03T11:00:00.000Z',
+        durationSeconds: 3600,
+        timeZone: 'UTC',
+        dateKey: '2026-05-03',
+      },
+      {
+        id: 'm3',
+        userId: 'u1',
+        description: 'Tempo Run',
+        normalizedDescription: 'tempo run',
+        projectId: 'proj-b',
+        projectNameSnapshot: 'Marathon Prep',
+        projectColorSnapshot: '#10B981',
+        tagIds: [],
+        isBillable: false,
+        startTime: '2026-05-04T07:00:00.000Z', // Monday Q2
+        endTime: '2026-05-04T07:30:00.000Z',
+        durationSeconds: 1800,
+        timeZone: 'UTC',
+        dateKey: '2026-05-04',
+      },
+    ];
+
+    // 1. 4-multi-select filters combined (FR-5.5)
+    const filtered = filterTimeLogs({
+      logs: multiPeriodLogs,
+      filters: {
+        preset: 'all_time',
+        projectIds: ['proj-a'],
+        taskIds: ['task-sub'],
+        tagIds: ['t2'],
+        descriptions: ['implement jwt'],
+        searchQuery: '',
+      },
+      timeZone: 'UTC',
+      weekStartsOn: 1,
+    });
+    expect(filtered.map((l) => l.id)).toEqual(['m1']);
+
+    // Distinct description options ordered by frequency desc
+    const descOptions = extractDistinctDescriptionOptions(multiPeriodLogs);
+    expect(descOptions.map((o) => [o.value, o.count])).toEqual([
+      ['implement jwt', 2],
+      ['tempo run', 1],
+    ]);
+
+    // 2. 4-Dimension Pizza Chart including hierarchical Task labels & 'No Task'
+    const taskPizza = aggregatePizzaSlices({
+      logs: multiPeriodLogs,
+      dimension: 'task',
+      noTaskLabel: 'No Task',
+      projects,
+      tasks,
+      tags,
+    });
+    expect(taskPizza.slices.map((s) => [s.label, s.seconds])).toEqual([
+      ['Auth Service / JWT Guard', 7200],
+      ['Auth Service', 3600],
+      ['No Task', 1800],
+    ]);
+
+    // 3. Temporal granularities: Week (respecting weekStartsOn: 0 vs 1), Month, Quarter, Year
+    const weekSun = aggregateTimeSeriesStacked({
+      logs: multiPeriodLogs.slice(1), // 2026-05-03 (Sun) & 2026-05-04 (Mon)
+      dimension: 'project',
+      granularity: 'week',
+      bounds: { startDateKey: '2026-05-03', endDateKey: '2026-05-04' },
+      weekStartsOn: 0, // Sunday starts the same week containing Sun May 03 & Mon May 04
+      timeZone: 'UTC',
+      projects,
+    });
+    expect(weekSun.bucketKeys).toEqual(['2026-05-03']);
+
+    const weekMon = aggregateTimeSeriesStacked({
+      logs: multiPeriodLogs.slice(1),
+      dimension: 'project',
+      granularity: 'week',
+      bounds: { startDateKey: '2026-05-03', endDateKey: '2026-05-04' },
+      weekStartsOn: 1, // Sunday May 03 falls in week 2026-04-27; Monday May 04 starts week 2026-05-04
+      timeZone: 'UTC',
+      projects,
+    });
+    expect(weekMon.bucketKeys).toEqual(['2026-04-27', '2026-05-04']);
+
+    const quarterly = aggregateTimeSeriesStacked({
+      logs: multiPeriodLogs,
+      dimension: 'task',
+      granularity: 'quarter',
+      bounds: { startDateKey: '2026-01-01', endDateKey: '2026-06-30' },
+      weekStartsOn: 1,
+      timeZone: 'UTC',
+      tasks,
+    });
+    expect(quarterly.bucketKeys).toEqual(['2026-Q1', '2026-Q2']);
+    expect(formatTimeBucketLabel('2026-Q1', 'quarter', 'en')).toBe('2026 Q1');
+
+    const yearly = aggregateTimeSeriesStacked({
+      logs: multiPeriodLogs,
+      dimension: 'description',
+      granularity: 'year',
+      bounds: { startDateKey: '2026-01-01', endDateKey: '2026-12-31' },
+      weekStartsOn: 1,
+      timeZone: 'UTC',
+    });
+    expect(yearly.bucketKeys).toEqual(['2026']);
+
+    // 4. 2-Level Hierarchical Table Grouping (Project -> Tag)
+    const twoLevel = groupLogsTwoLevel({
+      logs: multiPeriodLogs,
+      primaryDimension: 'project',
+      secondaryDimension: 'tag',
+      untaggedLabel: 'Untagged',
+      projects,
+      tasks,
+      tags,
+    });
+    expect(twoLevel.map((g) => [g.label, g.subtotalSeconds])).toEqual([
+      ['XP Core API', 10800],
+      ['Marathon Prep', 1800],
+    ]);
+    expect(twoLevel[0]!.subgroups.map((s) => [s.label, s.subtotalSeconds])).toEqual([
+      ['#backend', 10800],
+      ['#security', 7200],
+    ]);
+    expect(twoLevel[1]!.subgroups.map((s) => [s.label, s.subtotalSeconds])).toEqual([
+      ['Untagged', 1800],
+    ]);
+
+    // 5. Table Pagination across 1,000+ records
+    const many = Array.from({ length: 1005 }, (_, i) => i + 1);
+    const page0 = paginateItems({ items: many, pageIndex: 0, pageSize: 25 });
+    expect(page0.totalPages).toBe(41);
+    expect(page0.startItem).toBe(1);
+    expect(page0.endItem).toBe(25);
+    expect(page0.items).toHaveLength(25);
+
+    const clampedLast = paginateItems({ items: many, pageIndex: 999, pageSize: 25 });
+    expect(clampedLast.pageIndex).toBe(40);
+    expect(clampedLast.startItem).toBe(1001);
+    expect(clampedLast.endItem).toBe(1005);
+    expect(clampedLast.items).toEqual([1001, 1002, 1003, 1004, 1005]);
   });
 });
 

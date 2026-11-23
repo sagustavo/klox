@@ -87,7 +87,7 @@ All architectural decisions are documented in [`docs/adr/`](./docs/adr/README.md
 - **[ADR-0001](./docs/adr/0001-nuxt4-hybrid-rendering-and-bff.md):** Nuxt 4 Hybrid Rendering & Nitro BFF on Firebase App Hosting
 - **[ADR-0002](./docs/adr/0002-firebase-tenant-isolation-and-demo-mode.md):** Firebase Tenant Isolation (`users/{uid}`) & Local Demo Mode Fallback
 - **[ADR-0003](./docs/adr/0003-entity-id-strategy-firestore-vs-uuidv7.md):** Entity ID Strategy — Firestore Random IDs & Deterministic SHA-256 Import Hashes vs. UUIDv7
-- **[ADR-0004](./docs/adr/0004-secured-gemini-autofill-with-domain-validation.md):** Secured Gemini AI Auto-Fill with Server-Side Domain Validation
+- **[ADR-0004](./docs/adr/0004-secured-gemini-autofill-with-domain-validation.md):** Secured AI Auto-Fill with Server-Side Domain Validation
 - **[ADR-0005](./docs/adr/0005-i18n-and-user-timezone-semantics.md):** Internationalization (`en`, `pt-BR`) & User-Preferred IANA Timezone Semantics
 - **[ADR-0006](./docs/adr/0006-lean-poc-verification-and-pragmatism.md):** Lean POC Verification & Pragmatism (`nuxt typecheck` + Focused Domain Unit Tests)
 

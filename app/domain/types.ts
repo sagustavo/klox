@@ -122,7 +122,9 @@ export type DateRangePreset =
   | 'all_time'
   | 'custom';
 
-export type SliceDimension = 'tag' | 'project' | 'description';
+export type SliceDimension = 'project' | 'task' | 'tag' | 'description';
+export type GroupByDimension = 'none' | SliceDimension;
+export type TimeGranularity = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
 export interface DashboardFilters {
   preset: DateRangePreset;
@@ -131,5 +133,6 @@ export interface DashboardFilters {
   projectIds: EntityId[];
   taskIds: EntityId[];
   tagIds: EntityId[];
+  descriptions?: string[]; // Normalized descriptions selected via dedicated Log Description multi-select
   searchQuery: string;
 }

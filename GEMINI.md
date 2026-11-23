@@ -64,7 +64,7 @@ We follow strict Domain-Driven Design nomenclature. Do NOT confuse `Timer` with 
   1. `Description Input` -> 2. `Project Selector` -> 3. `Project-Scoped Tag Selector` -> 4. `Billable Toggle` -> 5. `Start/Save Button` (`Enter` to execute).
 - **Manual Time Logging & CRUD:** Users can also add historical `TimeLog` entries manually (specifying date, start/end time or duration) and inline edit/delete existing logs.
 
-### 3.3 Two-Tier Hybrid Search Engine & Gemini AI Auto-Fill
+### 3.3 Two-Tier Hybrid Search Engine & AI Auto-Fill
 
 - **Tier 1 — Instant Lexical Recall (`Fuse.js`, `<2ms`):**
   - As the user types a task description, `Fuse.js` searches deduplicated historical task templates (`normalizedDescription + projectId`) ranked by fuzzy match, frequency, and recency, displaying the **Top 10 best matches** in a floating dropdown. Selecting a match auto-fills `description`, `projectId`, `tagIds`, and `isBillable`.

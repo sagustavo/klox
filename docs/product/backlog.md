@@ -74,8 +74,8 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | **FR-5.1** | Product Backlog Item | Same-Day Log Grouping & Expandable Accordion | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-5.2** | Product Backlog Item | Direct Click-to-Edit Time Range, Overlapping Logs & Live Start Adjustment | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-5.3** | Product Backlog Item | Destructive Action Confirmation & Project Tag Renaming | Catalog & Safety | 2 - High | Free | Done |
-| **FR-5.4** | Product Backlog Item | Dashboard Multi-Dimension Slicing, 2-Level Grouping & Time Granularity | Analytics Dashboard | 2 - High | Free | Next |
-| **FR-5.5** | Product Backlog Item | Dedicated Multi-Select Filter Inputs with "Select All" | Analytics Dashboard | 3 - Medium | Free | Next |
+| **FR-5.4** | Product Backlog Item | Dashboard Multi-Dimension Slicing, 2-Level Grouping & Time Granularity | Analytics Dashboard | 2 - High | Free | Done |
+| **FR-5.5** | Product Backlog Item | Dedicated Multi-Select Filter Inputs with "Select All" | Analytics Dashboard | 3 - Medium | Free | Done |
 | **UX-1.1** | Product Backlog Item | User-Friendly Copy & Base Typography Scaling | Copy & Accessibility | 3 - Medium | Free | Next |
 | **UX-1.2** | Product Backlog Item | Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency | UI Polish & Brand | 3 - Medium | Free | Next |
 
@@ -232,30 +232,30 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Analytics Dashboard`
 - **Phase:** `9`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `analytics; dashboard; charts; pagination; phase-9`
 - **Description:** Unlock full 4-dimension parity across both dashboard visualizations, add temporal bucketing to the histogram, and support 2-level hierarchical grouping with pagination in the breakdown table.
 - **Acceptance Criteria:**
-  - [ ] Both the Pizza (Donut) Chart and the Histogram (Stacked Bar) Chart support slicing/stacking by all 4 dimensions: `Project`, `Task`, `Tag`, and `Description`.
-  - [ ] The Histogram chart provides a temporal granularity selector supporting `Day`, `Week`, `Month`, `Quarter`, and `Year` buckets respecting `UserPreferences.timeZone` and `weekStartsOn`.
-  - [ ] The Dashboard breakdown table supports selecting a **Primary Group** and **Secondary Subgroup** across `Project`, `Task`, `Tag`, and `Description` (e.g., `Project → Tag` or `Tag → Description`).
-  - [ ] The underlying filtered `TimeLog` table is paginated to render thousands of matching records smoothly.
+  - [x] Both the Pizza (Donut) Chart and the Histogram (Stacked Bar) Chart support slicing/stacking by all 4 dimensions: `Project`, `Task`, `Tag`, and `Description`.
+  - [x] The Histogram chart provides a temporal granularity selector supporting `Day`, `Week`, `Month`, `Quarter`, and `Year` buckets respecting `UserPreferences.timeZone` and `weekStartsOn`.
+  - [x] The Dashboard breakdown table supports selecting a **Primary Group** and **Secondary Subgroup** across `Project`, `Task`, `Tag`, and `Description` (e.g., `Project → Tag` or `Tag → Description`).
+  - [x] The underlying filtered `TimeLog` table is paginated to render thousands of matching records smoothly.
 
 #### [FR-5.5] Dedicated Multi-Select Filter Inputs with "Select All"
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Analytics Dashboard`
 - **Phase:** `9`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `3 - Medium`
 - **Plan Tier:** `Free`
 - **Tags:** `analytics; filters; multi-select; phase-9`
 - **Description:** Replace combined filter inputs on the Analytics Dashboard with four independent, searchable multi-select filter controls for precise slice-and-dice exploration.
 - **Acceptance Criteria:**
-  - [ ] Dashboard filter bar exposes 4 distinct multi-select dropdown inputs: `Project`, `Task`, `Tag`, and `Log Description`.
-  - [ ] Each multi-select dropdown supports live search filtering within options plus a `"Select all"` action that toggles all options currently matching the search query.
-  - [ ] Changing any filter immediately updates the Pizza chart, Histogram chart, and Breakdown table in unison.
+  - [x] Dashboard filter bar exposes 4 distinct multi-select dropdown inputs: `Project`, `Task`, `Tag`, and `Log Description`.
+  - [x] Each multi-select dropdown supports live search filtering within options plus a `"Select all"` action that toggles all options currently matching the search query.
+  - [x] Changing any filter immediately updates the Pizza chart, Histogram chart, and Breakdown table in unison.
 
 #### [UX-1.1] User-Friendly Copy & Base Typography Scaling
 - **Work Item Type:** `Product Backlog Item`
