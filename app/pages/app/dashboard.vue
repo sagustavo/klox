@@ -196,7 +196,7 @@ const tagFilterOptions = computed<FilterMultiSelectOption[]>(() => {
     for (const tag of catalogStore.getTagsForProject(proj.id)) {
       out.push({
         value: tag.id,
-        label: `#${tag.name}`,
+        label: tag.name,
         secondaryLabel: projName,
         color: proj.color,
       });
@@ -944,9 +944,9 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                           <span
                             v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
                             :key="idx"
-                            class="mr-1.5"
+                            class="mr-1.5 inline-flex border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-xs text-text-muted"
                           >
-                            #{{ tn }}
+                            {{ tn }}
                           </span>
                         </td>
                         <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 text-right font-semibold text-text-primary">
@@ -1039,9 +1039,9 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                       <span
                         v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
                         :key="idx"
-                        class="mr-1.5"
+                        class="mr-1.5 inline-flex border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-xs text-text-muted"
                       >
-                        #{{ tn }}
+                        {{ tn }}
                       </span>
                     </td>
                     <td class="tabular-telemetry whitespace-nowrap px-4 py-2.5 text-right font-semibold text-text-primary">
@@ -1142,9 +1142,9 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                 <span
                   v-for="(tn, idx) in resolveTagNames(log.tagIds, tagNameMap)"
                   :key="idx"
-                  class="mr-1.5"
+                  class="mr-1.5 inline-flex border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-xs text-text-muted"
                 >
-                  #{{ tn }}
+                  {{ tn }}
                 </span>
               </td>
               <td class="tabular-telemetry whitespace-nowrap px-4 py-3 text-right font-semibold text-text-primary">

@@ -280,7 +280,7 @@ const confirmDialogDetail = computed(() => {
   const target = pendingDelete.value;
   if (!target) return undefined;
   if (target.kind === 'project') return target.project.name;
-  if (target.kind === 'tag') return `#${target.tag.name}`;
+  if (target.kind === 'tag') return target.tag.name;
   return target.name;
 });
 
@@ -427,8 +427,9 @@ async function confirmCatalogDelete() {
                   >
                     $
                   </span>
-                  <span class="tabular-telemetry text-xs text-text-muted">
-                    {{ catalogStore.getTagsForProject(proj.id).length }} #
+                  <span class="tabular-telemetry inline-flex items-center gap-1 text-xs text-text-muted">
+                    <Tag class="h-3 w-3" aria-hidden="true" />
+                    <span>{{ catalogStore.getTagsForProject(proj.id).length }}</span>
                   </span>
                 </div>
               </button>
@@ -556,7 +557,6 @@ async function confirmCatalogDelete() {
                     : 'border-border-hairline'
                 "
               >
-                <span class="text-signal">#</span>
                 <form
                   v-if="editingTagId === tag.id"
                   class="inline-flex items-center gap-1"

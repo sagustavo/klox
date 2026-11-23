@@ -17,6 +17,8 @@ const props = withDefaults(
     projectColorSnapshot?: string;
     taskId?: EntityId;
     taskNameSnapshot?: string;
+    variant?: 'row' | 'command';
+    dataTour?: string;
     stopPropagation?: boolean;
     testId?: string;
   }>(),
@@ -25,6 +27,8 @@ const props = withDefaults(
     projectColorSnapshot: undefined,
     taskId: undefined,
     taskNameSnapshot: undefined,
+    variant: 'row',
+    dataTour: undefined,
     stopPropagation: false,
     testId: undefined,
   }
@@ -47,6 +51,10 @@ const resolvedColor = computed(
   () => activeProject.value?.color || props.projectColorSnapshot || '#8E8E93'
 );
 
+const isUnassignedProject = computed(
+  () => !activeProject.value || activeProject.value.systemKey === 'unassigned'
+);
+
 const resolvedProjectLabel = computed(() => {
   if (activeProject.value?.systemKey === 'unassigned') return t('catalog.unassigned');
   if (activeProject.value) return activeProject.value.name;
@@ -58,6 +66,12 @@ const resolvedTaskLabel = computed(() => {
   const liveLabel = props.taskId ? catalogStore.getTaskHierarchicalLabel(props.taskId) : '';
   return liveLabel || props.taskNameSnapshot || null;
 });
+
+const commandAriaLabel = computed(() =>
+  resolvedTaskLabel.value
+    ? `${t('timer.projectLabel')}: ${resolvedProjectLabel.value} · ${resolvedTaskLabel.value}`
+    : `${t('timer.projectLabel')}: ${resolvedProjectLabel.value}`
+);
 
 function displayProjectName(project: Project): string {
   return project.systemKey === 'unassigned' ? t('catalog.unassigned') : project.name;
@@ -116,7 +130,38 @@ function handleSelectTask(nextTaskId: EntityId | null) {
   <PopoverRoot v-model:open="open">
     <PopoverTrigger as-child>
       <button
+        v-if="variant === 'command'"
         type="button"
+        :data-tour="dataTour"
+        :data-testid="testId ?? 'command-project-trigger'"
+        :aria-label="commandAriaLabel"
+        :title="commandAriaLabel"
+        class="btn-press inline-flex h-9 max-w-[190px] sm:max-w-[240px] items-center gap-2 border border-transparent bg-transparent px-2.5 text-left text-ui transition-colors hover:bg-bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-signal data-[state=open]:bg-bg-hover"
+        @click="handleTriggerClick"
+      >
+        <span
+          class="h-2.5 w-2.5 shrink-0"
+          :style="{ backgroundColor: resolvedColor }"
+          aria-hidden="true"
+        />
+        <span
+          class="truncate font-medium"
+          :class="isUnassignedProject ? 'text-text-muted' : 'text-text-primary'"
+        >
+          {{ resolvedProjectLabel }}
+        </span>
+        <span
+          v-if="resolvedTaskLabel"
+          class="hidden sm:inline truncate text-xs font-normal text-text-muted"
+        >
+          · {{ resolvedTaskLabel }}
+        </span>
+      </button>
+
+      <button
+        v-else
+        type="button"
+        :data-tour="dataTour"
         :data-testid="testId ?? 'tracker-project-trigger'"
         :title="$t('timer.projectSelect.changeProjectTooltip')"
         class="inline-flex flex-wrap items-center gap-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-signal"
@@ -126,6 +171,7 @@ function handleSelectTask(nextTaskId: EntityId | null) {
           <span
             class="h-2 w-2 shrink-0"
             :style="{ backgroundColor: resolvedColor }"
+            aria-hidden="true"
           />
           <span>{{ resolvedProjectLabel }}</span>
         </span>
@@ -134,7 +180,7 @@ function handleSelectTask(nextTaskId: EntityId | null) {
           v-if="resolvedTaskLabel"
           class="inline-flex items-center gap-1 border border-border-hairline bg-bg-primary px-2 py-1 text-xs font-medium text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
         >
-          <CheckSquare class="h-3.5 w-3.5 text-signal shrink-0" />
+          <CheckSquare class="h-3.5 w-3.5 text-signal shrink-0" aria-hidden="true" />
           <span>{{ resolvedTaskLabel }}</span>
         </span>
       </button>

@@ -80,7 +80,8 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | **UX-1.2** | Product Backlog Item | Orbital Design System Evolution: Musk-Tech Aesthetics, Landing/Auth Redesign & Platform-Wide Consistency | UI Polish & Brand | 3 - Medium | Free | Done |
 | **UX-2.1** | Product Backlog Item | Brand Logo Tracking, Typography Unification, Favicon & Dynamic Tab Title (`AB#72`) | UI Polish & Brand | 2 - High | Free | Done |
 | **UX-2.2** | Product Backlog Item | Landing Page Kinetic Experience & Site-Wide Orbital Motion (`AB#73`) | UI Polish & Motion | 2 - High | Free | Done |
-| **UX-2.3** | Product Backlog Item | Collapsible Orbital Sidebar Navigation & Settings-Only Theme/Language (`AB#74`) | Navigation & Minimalism | 2 - High | Free | In Progress |
+| **UX-2.3** | Product Backlog Item | Collapsible Orbital Sidebar Navigation & Settings-Only Theme/Language (`AB#74`) | Navigation & Minimalism | 2 - High | Free | Done |
+| **UX-2.4** | Product Backlog Item | Minimalist Borderless Command Timer Bar & Tracker Feed Noise Reduction (`AB#75`) | Timer & Feed Minimalism | 2 - High | Free | In Progress |
 
 ### 3.2 Phase 10 — Keyboard Velocity, Auth, Profile & Feedback (`Next`)
 
@@ -328,15 +329,30 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Navigation & Minimalism`
 - **Phase:** `Sprint 4 / Phase 10`
-- **Status (ADO State):** `In Progress` (`Committed`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `minimalism; mobile; navigation; phase-10; settings; sidebar; ux`
 - **Acceptance Criteria:**
-  - [ ] Desktop (`>= 768px`) displays a 3-state collapsible sidebar (`Expanded 240px`, `Collapsed Rail 64px` with `reka-ui` tooltips, `Hidden 0px` with floating reopen button), persisted in `localStorage` (`klox_sidebar_state`) and toggled via `Cmd/Ctrl + \`.
-  - [ ] Mobile (`< 768px`) renders a single-row `48px` top header with drawer trigger, centered `KloxLogo`, and Help (`?`) trigger opening an accessible modal slide-over `reka-ui` `Dialog` drawer cleanly above the mobile timer dock.
-  - [ ] Theme switching (`Dark` / `Light` / `System`) lives exclusively in `/app/settings` and is removed from all app, landing, and auth headers.
-  - [ ] In-app language selection lives exclusively in `/app/settings`; Landing (`/`, `/pt-br`) and Auth (`/login`) retain a minimal `Globe` locale switcher; Sign Out renders as an icon-only control with `aria-label` and tooltip.
+  - [x] Desktop (`>= 768px`) displays a 3-state collapsible sidebar (`Expanded 240px`, `Collapsed Rail 64px` with `reka-ui` tooltips, `Hidden 0px` with floating reopen button), persisted in `localStorage` (`klox_sidebar_state`) and toggled via `Cmd/Ctrl + \`.
+  - [x] Mobile (`< 768px`) renders a single-row `48px` top header with drawer trigger, centered `KloxLogo`, and Help (`?`) trigger opening an accessible modal slide-over `reka-ui` `Dialog` drawer cleanly above the mobile timer dock.
+  - [x] Theme switching (`Dark` / `Light` / `System`) lives exclusively in `/app/settings` and is removed from all app, landing, and auth headers.
+  - [x] In-app language selection lives exclusively in `/app/settings`; Landing (`/`, `/pt-br`) and Auth (`/login`) retain a minimal `Globe` locale switcher; Sign Out renders as an icon-only control with `aria-label` and tooltip.
+
+#### [UX-2.4] Minimalist Borderless Command Timer Bar & Tracker Feed Noise Reduction (`AB#75`)
+- **Work Item Type:** `Product Backlog Item`
+- **Area / Category:** `Timer & Feed Minimalism`
+- **Phase:** `Sprint 4 / Phase 10`
+- **Status (ADO State):** `In Progress` (`Committed`)
+- **Priority:** `2 - High`
+- **Plan Tier:** `Free`
+- **Tags:** `command-bar; icons; minimalism; phase-10; toggl-ergonomics; tracker-feed; ux`
+- **Acceptance Criteria:**
+  - [ ] `CommandTimerBar` renders as a borderless single-row desktop strip (and compact 2-row mobile dock) with no `TRACKING LIVE` header, no redundant shortcut badges, and no `[✨ AI Auto-Fill]` button (`⌘I`/`Ctrl+I` runs with sweeping top `.signal-line` scan feedback and `SpotlightTour` Step 4 targets `timer-description`).
+  - [ ] Description input, `ProjectTaskPopover` (`variant="command"`), icon-triggered `TagMultiSelect` (`variant="command-icon"`), icon-only `BillableToggle`, modernized `BrandTimerDigits`, and icon-only `Play`/`Square` trigger render cleanly without heavy form borders.
+  - [ ] Manual Entry toggle is icon-only (`Plus`); day headers omit `"Subtotal: "` and reveal entry count subtly only on desktop hover/focus (omitted on mobile).
+  - [ ] Continue (`Play`) and Delete (`Trash2`) row actions use the unified `.row-action-ghost` hover/focus/touch reveal pattern matching `BillableToggle` and `TagMultiSelect`.
+  - [ ] Tags never auto-prepend `#` across feed rows, pickers, analytics charts/tables, catalog confirmations, CSV import previews, landing visuals, or unit tests.
 
 ---
 

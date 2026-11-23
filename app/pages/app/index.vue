@@ -12,6 +12,11 @@ import {
   AccordionItem,
   AccordionRoot,
   AccordionTrigger,
+  TooltipContent,
+  TooltipPortal,
+  TooltipProvider,
+  TooltipRoot,
+  TooltipTrigger,
 } from 'reka-ui';
 import {
   formatHMS,
@@ -591,15 +596,35 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           {{ timeLogsStore.logs.length }}
         </span>
       </div>
-      <button
-        type="button"
-        data-tour="manual-log-toggle"
-        class="btn-press inline-flex h-9 items-center gap-1.5 border border-border-hairline bg-bg-elevated px-3.5 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors"
-        @click="showManualForm = !showManualForm"
-      >
-        <Plus class="h-4 w-4 text-signal" />
-        <span>{{ $t('timer.manualEntryToggle') }}</span>
-      </button>
+      <TooltipProvider :delay-duration="180">
+        <TooltipRoot>
+          <TooltipTrigger as-child>
+            <button
+              type="button"
+              data-tour="manual-log-toggle"
+              :aria-label="$t('timer.manualEntryToggle')"
+              :aria-expanded="showManualForm"
+              class="btn-press inline-flex h-9 w-9 items-center justify-center border border-border-hairline bg-bg-elevated text-signal hover:border-signal/60 hover:bg-bg-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+              @click="showManualForm = !showManualForm"
+            >
+              <Plus
+                class="h-4 w-4 transition-transform"
+                :class="showManualForm ? 'rotate-45' : ''"
+                aria-hidden="true"
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent
+              side="left"
+              :side-offset="8"
+              class="orbital-tooltip z-50 border border-border-hairline bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-primary shadow-xl"
+            >
+              {{ $t('timer.manualEntryToggle') }}
+            </TooltipContent>
+          </TooltipPortal>
+        </TooltipRoot>
+      </TooltipProvider>
     </div>
 
     <form
@@ -844,14 +869,13 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                 >
                   {{ formatDateKey(group.dateKey) }}
                 </span>
-                <span class="tabular-telemetry border border-border-hairline bg-bg-elevated px-2 py-0.5 text-xs text-text-muted">
+                <span class="hidden md:inline tabular-telemetry text-xs font-normal text-text-faint opacity-0 transition-opacity group-hover/day:opacity-100 group-focus-visible/day:opacity-100">
                   {{ $t('timer.dayGroup.entriesCount', { count: group.items.length }) }}
                 </span>
               </span>
 
-              <span class="tabular-telemetry shrink-0 text-text-muted">
-                {{ $t('timer.daySubtotal') }}:
-                <strong class="text-text-primary">{{ formatDuration(group.totalSeconds) }}</strong>
+              <span class="tabular-telemetry shrink-0 font-semibold text-text-primary">
+                {{ formatDuration(group.totalSeconds) }}
               </span>
             </AccordionTrigger>
           </AccordionHeader>
@@ -955,23 +979,23 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   <button
                     type="button"
                     data-testid="tracker-log-group-continue"
-                    class="btn-press inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
+                    class="row-action-ghost hover:border-signal/60 hover:text-signal"
                     :aria-label="$t('timer.continueAria', { description: entryGroup.description })"
                     :title="$t('timer.continueButton')"
                     @click.stop="handleContinueActivity(entryGroup.items[0]!)"
                   >
-                    <Play class="h-3.5 w-3.5" />
+                    <Play class="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
 
                   <button
                     type="button"
                     data-testid="tracker-log-group-delete"
-                    class="btn-press inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-destructive transition-colors"
+                    class="row-action-ghost hover:border-destructive/40 hover:text-destructive"
                     :aria-label="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
                     :title="$t('timer.group.deleteGroupAria', { count: entryGroup.count })"
                     @click.stop="requestDeleteGroup(entryGroup)"
                   >
-                    <Trash2 class="h-3.5 w-3.5" />
+                    <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -1038,22 +1062,23 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                       <button
                         type="button"
                         data-testid="tracker-log-continue"
-                        class="btn-press inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
+                        class="row-action-ghost hover:border-signal/60 hover:text-signal"
                         :aria-label="$t('timer.continueAria', { description: log.description })"
                         :title="$t('timer.continueButton')"
                         @click="handleContinueActivity(log)"
                       >
-                        <Play class="h-3.5 w-3.5" />
+                        <Play class="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
 
                       <button
                         type="button"
                         data-testid="tracker-log-delete"
-                        class="btn-press inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-destructive transition-colors"
+                        class="row-action-ghost hover:border-destructive/40 hover:text-destructive"
                         :aria-label="$t('timer.deleteButton')"
+                        :title="$t('timer.deleteButton')"
                         @click="requestDeleteLog(log)"
                       >
-                        <Trash2 class="h-3.5 w-3.5" />
+                        <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -1109,22 +1134,23 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   <button
                     type="button"
                     data-testid="tracker-log-continue"
-                    class="btn-press inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
+                    class="row-action-ghost hover:border-signal/60 hover:text-signal"
                     :aria-label="$t('timer.continueAria', { description: entryGroup.items[0]!.description })"
                     :title="$t('timer.continueButton')"
                     @click="handleContinueActivity(entryGroup.items[0]!)"
                   >
-                    <Play class="h-3.5 w-3.5" />
+                    <Play class="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
 
                   <button
                     type="button"
                     data-testid="tracker-log-delete"
-                    class="btn-press inline-flex h-8 w-8 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:text-destructive transition-colors"
+                    class="row-action-ghost hover:border-destructive/40 hover:text-destructive"
                     :aria-label="$t('timer.deleteButton')"
+                    :title="$t('timer.deleteButton')"
                     @click="requestDeleteLog(entryGroup.items[0]!)"
                   >
-                    <Trash2 class="h-3.5 w-3.5" />
+                    <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </div>

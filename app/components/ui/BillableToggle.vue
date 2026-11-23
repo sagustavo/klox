@@ -51,7 +51,7 @@ function handleSwitchUpdate(next: boolean) {
 </script>
 
 <template>
-  <!-- Variant 1: Toggl-Style Row Icon (always visible when billable; revealed on row hover when non-billable) -->
+  <!-- Variant 1: Row Icon (always visible when billable/partial; borderless hover/focus/touch reveal when non-billable) -->
   <button
     v-if="variant === 'row-icon'"
     type="button"
@@ -61,20 +61,20 @@ function handleSwitchUpdate(next: boolean) {
     :aria-pressed="modelValue"
     :aria-label="resolvedTooltip"
     :title="resolvedTooltip"
-    class="btn-press inline-flex h-8 w-8 shrink-0 items-center justify-center border font-medium transition-all focus:outline-none focus-visible:border-signal focus-visible:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
-    :class="
+    :class="[
       modelValue
-        ? 'opacity-100 border-signal/50 bg-signal-soft text-signal hover:bg-signal/25'
+        ? 'btn-press inline-flex h-8 w-8 shrink-0 items-center justify-center border border-signal/50 bg-signal-soft font-medium text-signal hover:bg-signal/25 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-signal'
         : partial
-          ? 'opacity-100 border-dashed border-signal/50 bg-signal-soft text-signal/85 hover:border-solid hover:bg-signal/20'
-          : 'md:opacity-0 md:group-hover/row:opacity-100 max-md:opacity-60 border-transparent bg-transparent text-text-muted hover:border-border-hairline hover:bg-bg-primary hover:text-signal'
-    "
+          ? 'btn-press inline-flex h-8 w-8 shrink-0 items-center justify-center border border-dashed border-signal/50 bg-signal-soft font-medium text-signal/85 hover:border-solid hover:bg-signal/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-signal'
+          : 'row-action-ghost hover:text-signal',
+      'disabled:opacity-40 disabled:cursor-not-allowed',
+    ]"
     @click="handleRowIconClick"
   >
-    <DollarSign class="h-4 w-4" />
+    <DollarSign class="h-4 w-4" aria-hidden="true" />
   </button>
 
-  <!-- Variant 2: Command Timer Bar Full-Height Hardware Toggle -->
+  <!-- Variant 2: Borderless Icon-Only Command Timer Bar Toggle -->
   <SwitchRoot
     v-else-if="variant === 'command'"
     :model-value="modelValue"
@@ -83,23 +83,19 @@ function handleSwitchUpdate(next: boolean) {
     :data-testid="testId"
     :aria-label="label || $t('timer.billableToggle')"
     :title="resolvedTooltip"
-    class="group/billable btn-press inline-flex h-10 max-md:min-h-[44px] w-full items-center justify-center gap-1.5 border px-3 text-ui font-medium transition-all select-none cursor-pointer focus:outline-none focus-visible:border-signal disabled:opacity-40 disabled:cursor-not-allowed"
+    class="group/billable btn-press inline-flex h-9 w-9 shrink-0 items-center justify-center border border-transparent transition-colors select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-signal disabled:opacity-40 disabled:cursor-not-allowed"
     :class="
       modelValue
-        ? 'border-signal/60 bg-signal-soft text-signal font-semibold'
-        : 'border-border-input bg-bg-primary text-text-muted hover:border-text-muted/60 hover:text-text-primary'
+        ? 'bg-signal-soft text-signal hover:bg-signal/20'
+        : 'bg-transparent text-text-muted hover:bg-bg-hover hover:text-text-primary'
     "
     @update:model-value="handleSwitchUpdate"
   >
-    <DollarSign class="h-4 w-4 shrink-0 transition-transform group-active/billable:scale-95" />
-    <SwitchThumb
-      class="h-1.5 w-1.5 shrink-0 transition-all"
-      :class="
-        modelValue
-          ? 'bg-signal'
-          : 'bg-border-input group-hover/billable:bg-text-muted'
-      "
+    <DollarSign
+      class="h-4 w-4 shrink-0 transition-transform group-active/billable:scale-95"
+      aria-hidden="true"
     />
+    <SwitchThumb class="sr-only" />
   </SwitchRoot>
 
   <!-- Variant 3: Tactile Orbital Switch Pill (Forms & Catalog Settings) -->
@@ -120,6 +116,7 @@ function handleSwitchUpdate(next: boolean) {
     <DollarSign
       class="h-4 w-4 shrink-0 transition-colors"
       :class="modelValue ? 'text-signal' : 'text-text-muted group-hover/billable:text-text-primary'"
+      aria-hidden="true"
     />
     <span class="truncate">{{ label || $t('timer.billableToggle') }}</span>
     <span

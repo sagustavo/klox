@@ -52,10 +52,10 @@ const steps = [
       </div>
       <div class="mt-3 flex flex-wrap gap-2 text-xs">
         <span class="bg-signal-soft px-2.5 py-1 text-signal">
-          #{{ $t('landing.visuals.keyboard.tag1') }}
+          {{ $t('landing.visuals.keyboard.tag1') }}
         </span>
         <span class="bg-bg-secondary px-2.5 py-1 text-text-muted">
-          #{{ $t('landing.visuals.keyboard.tag2') }}
+          {{ $t('landing.visuals.keyboard.tag2') }}
         </span>
       </div>
     </div>

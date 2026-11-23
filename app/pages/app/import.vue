@@ -265,7 +265,7 @@ function handleExport() {
               :key="`${st.projectName}::${st.tagName}`"
               class="border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-ui font-medium text-amber-500"
             >
-              {{ st.projectName }} → #{{ st.tagName }}
+              {{ st.projectName }} → {{ st.tagName }}
             </span>
           </div>
         </div>
@@ -329,7 +329,7 @@ function handleExport() {
                     :key="tag"
                     class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs text-text-muted"
                   >
-                    #{{ tag }}
+                    {{ tag }}
                   </span>
                 </div>
               </td>

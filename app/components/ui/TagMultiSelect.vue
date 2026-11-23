@@ -12,7 +12,7 @@ const props = withDefaults(
   defineProps<{
     modelValue: readonly EntityId[];
     tags: readonly ProjectTag[];
-    variant?: 'field' | 'row';
+    variant?: 'field' | 'row' | 'command-icon';
     size?: 'sm' | 'md';
     stopPropagation?: boolean;
     dataTour?: string;
@@ -31,10 +31,14 @@ const emit = defineEmits<{
   'update:modelValue': [tagIds: EntityId[]];
 }>();
 
+const { t } = useI18n();
 const open = ref(false);
+const openedByHover = ref(false);
 const searchQuery = ref('');
 const highlightedIdx = ref(0);
 const searchInputRef = ref<HTMLInputElement | null>(null);
+let hoverOpenTimer: ReturnType<typeof setTimeout> | null = null;
+let hoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 const selectedSet = computed(() => new Set(props.modelValue));
 
@@ -59,18 +63,100 @@ const selectedTagNames = computed(() => {
 const fieldSummaryLabel = computed(() => {
   const names = selectedTagNames.value;
   if (names.length === 0) return null;
-  if (names.length <= 2) return names.map((n) => `#${n}`).join(', ');
-  return `#${names[0]} +${names.length - 1}`;
+  if (names.length <= 2) return names.join(', ');
+  return `${names[0]} +${names.length - 1}`;
 });
+
+const commandIconAriaLabel = computed(() => {
+  const names = selectedTagNames.value;
+  if (names.length === 0) return t('timer.scopedTagsButton');
+  return `${t('timer.scopedTagsButton')}: ${names.join(', ')}`;
+});
+
+function clearHoverTimers() {
+  if (hoverOpenTimer) {
+    clearTimeout(hoverOpenTimer);
+    hoverOpenTimer = null;
+  }
+  if (hoverCloseTimer) {
+    clearTimeout(hoverCloseTimer);
+    hoverCloseTimer = null;
+  }
+}
+
+function supportsFineHover(): boolean {
+  if (import.meta.server) return false;
+  return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+}
+
+function handleCommandHoverEnter() {
+  if (props.variant !== 'command-icon' || !supportsFineHover()) return;
+  if (hoverCloseTimer) {
+    clearTimeout(hoverCloseTimer);
+    hoverCloseTimer = null;
+  }
+  if (open.value) return;
+  hoverOpenTimer = setTimeout(() => {
+    open.value = true;
+    openedByHover.value = true;
+    hoverOpenTimer = null;
+  }, 140);
+}
+
+function scheduleHoverClose() {
+  if (props.variant !== 'command-icon' || !openedByHover.value) return;
+  if (hoverOpenTimer) {
+    clearTimeout(hoverOpenTimer);
+    hoverOpenTimer = null;
+  }
+  if (hoverCloseTimer) {
+    clearTimeout(hoverCloseTimer);
+  }
+  hoverCloseTimer = setTimeout(() => {
+    if (
+      openedByHover.value &&
+      !searchQuery.value.trim() &&
+      document.activeElement !== searchInputRef.value
+    ) {
+      open.value = false;
+      openedByHover.value = false;
+    }
+    hoverCloseTimer = null;
+  }, 180);
+}
+
+function handleCommandHoverLeave() {
+  if (hoverOpenTimer) {
+    clearTimeout(hoverOpenTimer);
+    hoverOpenTimer = null;
+  }
+  scheduleHoverClose();
+}
+
+function cancelHoverClose() {
+  if (hoverCloseTimer) {
+    clearTimeout(hoverCloseTimer);
+    hoverCloseTimer = null;
+  }
+}
 
 watch(open, (isOpen) => {
   if (isOpen) {
     searchQuery.value = '';
     highlightedIdx.value = 0;
-    nextTick(() => {
-      searchInputRef.value?.focus();
-    });
+    if (!openedByHover.value) {
+      nextTick(() => {
+        searchInputRef.value?.focus();
+      });
+    }
+  } else {
+    openedByHover.value = false;
+    clearHoverTimers();
   }
+});
+
+onBeforeUnmount(() => {
+  clearHoverTimers();
 });
 
 watch(filteredTags, (next) => {
@@ -134,6 +220,18 @@ function handleTriggerClick(event: MouseEvent) {
   if (props.stopPropagation) {
     event.stopPropagation();
   }
+  if (props.variant === 'command-icon') {
+    clearHoverTimers();
+    if (open.value && openedByHover.value) {
+      event.preventDefault();
+      openedByHover.value = false;
+      nextTick(() => {
+        searchInputRef.value?.focus();
+      });
+    } else {
+      openedByHover.value = false;
+    }
+  }
 }
 </script>
 
@@ -170,7 +268,27 @@ function handleTriggerClick(event: MouseEvent) {
         </span>
       </button>
 
-      <!-- Row Trigger: Clickable #tag Pills when tagged, or Toggl-style Hover-Reveal Tag Icon when untagged -->
+      <!-- Borderless Command Icon Trigger (CommandTimerBar) -->
+      <button
+        v-else-if="variant === 'command-icon'"
+        type="button"
+        :data-tour="dataTour"
+        :data-testid="testId ?? 'command-timer-tags-trigger'"
+        :aria-label="commandIconAriaLabel"
+        :title="commandIconAriaLabel"
+        class="btn-press inline-flex h-9 min-w-9 shrink-0 items-center justify-center gap-1 border border-transparent bg-transparent px-2 text-xs font-medium transition-colors hover:bg-bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-signal data-[state=open]:bg-signal-soft data-[state=open]:text-signal"
+        :class="modelValue.length > 0 ? 'text-signal' : 'text-text-muted hover:text-text-primary'"
+        @mouseenter="handleCommandHoverEnter"
+        @mouseleave="handleCommandHoverLeave"
+        @click="handleTriggerClick"
+      >
+        <Tag class="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span v-if="modelValue.length > 0" class="tabular-telemetry">
+          {{ modelValue.length }}
+        </span>
+      </button>
+
+      <!-- Row Trigger: Clickable tag pills when tagged, or unified borderless hover-reveal icon when untagged -->
       <button
         v-else-if="selectedTagNames.length > 0"
         type="button"
@@ -185,7 +303,7 @@ function handleTriggerClick(event: MouseEvent) {
           :key="idx"
           class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs font-medium text-text-muted hover:border-signal/60 hover:text-signal transition-colors"
         >
-          #{{ tagName }}
+          {{ tagName }}
         </span>
       </button>
 
@@ -196,10 +314,10 @@ function handleTriggerClick(event: MouseEvent) {
         :data-testid="testId ?? 'tracker-row-tags-empty-trigger'"
         :aria-label="$t('timer.tagSelect.addTagsTooltip')"
         :title="$t('timer.tagSelect.addTagsTooltip')"
-        class="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-transparent bg-transparent text-text-muted transition-all hover:border-border-hairline hover:bg-bg-primary hover:text-signal focus:outline-none focus-visible:border-signal focus-visible:opacity-100 md:opacity-0 md:group-hover/row:opacity-100 data-[state=open]:opacity-100 data-[state=open]:border-signal/50 data-[state=open]:bg-signal-soft data-[state=open]:text-signal max-md:opacity-60"
+        class="row-action-ghost hover:text-signal"
         @click="handleTriggerClick"
       >
-        <Tag class="h-4 w-4" />
+        <Tag class="h-4 w-4" aria-hidden="true" />
       </button>
     </PopoverTrigger>
 
@@ -210,6 +328,8 @@ function handleTriggerClick(event: MouseEvent) {
         :collision-padding="12"
         data-testid="tag-multiselect-popover"
         class="orbital-popover relative z-50 w-72 overflow-hidden border border-border-hairline bg-bg-elevated shadow-2xl focus:outline-none"
+        @mouseenter="cancelHoverClose"
+        @mouseleave="scheduleHoverClose"
         @keydown="handleKeydown"
         @click.stop
       >
@@ -312,9 +432,9 @@ function handleTriggerClick(event: MouseEvent) {
                       : 'border-border-input bg-bg-primary'
                   "
                 >
-                  <Check v-if="selectedSet.has(tag.id)" class="h-3 w-3" />
+                  <Check v-if="selectedSet.has(tag.id)" class="h-3 w-3" aria-hidden="true" />
                 </span>
-                <span class="truncate">#{{ tag.name }}</span>
+                <span class="truncate">{{ tag.name }}</span>
               </span>
             </button>
           </li>

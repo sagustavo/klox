@@ -501,10 +501,10 @@ describe('domain/aggregation (Analytics Dashboard)', () => {
     expect(pizza.slices).toHaveLength(2);
 
     const tagBuckets = groupLogsByTag(sampleLogs, 'Untagged', sampleTags);
-    expect(tagBuckets.map((g) => g.tagLabel)).toEqual(['#backend', 'Untagged']);
+    expect(tagBuckets.map((g) => g.tagLabel)).toEqual(['backend', 'Untagged']);
   });
 
-  it('reflects renamed ProjectTag live across charts and grouped table without mutating TimeLogs', () => {
+  it('reflects renamed ProjectTag live across charts and grouped table without mutating TimeLogs or forcing # prefixes', () => {
     const renamedTags: ProjectTag[] = [
       { id: 't1', userId: 'u1', projectId: 'proj-a', name: 'api-core', createdAt: '' },
     ];
@@ -515,7 +515,7 @@ describe('domain/aggregation (Analytics Dashboard)', () => {
       untaggedLabel: 'Untagged',
       tags: renamedTags,
     });
-    expect(tagPizza.slices.map((s) => s.label)).toEqual(['#api-core', 'Untagged']);
+    expect(tagPizza.slices.map((s) => s.label)).toEqual(['api-core', 'Untagged']);
 
     const tagStacked = aggregateDailyStacked({
       logs: sampleLogs,
@@ -524,10 +524,25 @@ describe('domain/aggregation (Analytics Dashboard)', () => {
       untaggedLabel: 'Untagged',
       tags: renamedTags,
     });
-    expect(tagStacked.series.map((s) => s.label)).toEqual(['#api-core', 'Untagged']);
+    expect(tagStacked.series.map((s) => s.label)).toEqual(['api-core', 'Untagged']);
 
     const tagBuckets = groupLogsByTag(sampleLogs, 'Untagged', renamedTags);
-    expect(tagBuckets.map((g) => g.tagLabel)).toEqual(['#api-core', 'Untagged']);
+    expect(tagBuckets.map((g) => g.tagLabel)).toEqual(['api-core', 'Untagged']);
+
+    // Preserves literal '#' when the user explicitly enters it, while keeping plain tag names unprefixed
+    const mixedPrefixTags: ProjectTag[] = [
+      { id: 't1', userId: 'u1', projectId: 'proj-a', name: '#urgent', createdAt: '' },
+    ];
+    const literalHashSlices = aggregatePizzaSlices({
+      logs: sampleLogs,
+      dimension: 'tag',
+      untaggedLabel: 'Untagged',
+      tags: mixedPrefixTags,
+    });
+    expect(literalHashSlices.slices.map((s) => s.label)).toEqual(['#urgent', 'Untagged']);
+
+    const literalPlainBuckets = groupLogsByTag(sampleLogs, 'Untagged', sampleTags);
+    expect(literalPlainBuckets.map((g) => g.tagLabel)).toEqual(['backend', 'Untagged']);
 
     // Deleted tags are omitted cleanly and a log whose tags were all deleted falls back to Untagged
     const deletedTagsBuckets = groupLogsByTag(sampleLogs, 'Untagged', []);
@@ -735,8 +750,8 @@ describe('domain/aggregation (Analytics Dashboard)', () => {
       ['Marathon Prep', 1800],
     ]);
     expect(twoLevel[0]!.subgroups.map((s) => [s.label, s.subtotalSeconds])).toEqual([
-      ['#backend', 10800],
-      ['#security', 7200],
+      ['backend', 10800],
+      ['security', 7200],
     ]);
     expect(twoLevel[1]!.subgroups.map((s) => [s.label, s.subtotalSeconds])).toEqual([
       ['Untagged', 1800],

@@ -303,7 +303,7 @@ function extractDimensionEntries(
     for (const tagId of log.tagIds) {
       const name = lookup.tagNameById.get(tagId);
       if (name !== undefined) {
-        resolved.push({ key: tagId, label: `#${name}` });
+        resolved.push({ key: tagId, label: name });
       }
     }
     if (resolved.length === 0) {
@@ -317,7 +317,7 @@ function extractDimensionEntries(
   }
   return log.tagIds.map((tagId) => ({
     key: tagId,
-    label: `#${tagId}`,
+    label: tagId,
   }));
 }
 

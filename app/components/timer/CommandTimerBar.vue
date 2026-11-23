@@ -2,9 +2,7 @@
 import {
   AlertCircle,
   Check,
-  Clock,
   Play,
-  Sparkles,
   Square,
   X,
 } from 'lucide-vue-next';
@@ -17,7 +15,7 @@ import {
 } from '~/domain/duration';
 import { publishDomainEvent } from '~/domain/events';
 import type { AiAutofillPrediction, RecallTemplate } from '~/domain/recall';
-import type { Project } from '~/domain/types';
+import type { EntityId } from '~/domain/types';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
 import { usePreferencesStore } from '~/stores/preferences';
@@ -55,12 +53,11 @@ const scopedTags = computed(() =>
   catalogStore.getTagsForProject(timerStore.projectId)
 );
 
-const scopedTaskNodes = computed(() =>
-  catalogStore.getFlattenedTasksForProject(timerStore.projectId)
-);
-
-function displayProjectName(project: Project): string {
-  return project.systemKey === 'unassigned' ? t('catalog.unassigned') : project.name;
+function handleProjectTaskSelect(payload: { projectId: EntityId; taskId: EntityId | null }) {
+  if (payload.projectId !== timerStore.projectId) {
+    timerStore.selectProject(payload.projectId);
+  }
+  timerStore.selectTask(payload.taskId ?? undefined);
 }
 
 function focusDescription() {
@@ -162,7 +159,6 @@ watch(
 function selectRecallTemplate(tpl: RecallTemplate) {
   timerStore.description = tpl.description;
   timerStore.selectProject(tpl.projectId);
-  // Keep only tags that still exist under that project
   const validSet = new Set(catalogStore.getTagsForProject(tpl.projectId).map((tag) => tag.id));
   timerStore.tagIds = tpl.tagIds.filter((id) => validSet.has(id));
   timerStore.isBillable = tpl.isBillable;
@@ -270,6 +266,14 @@ async function handlePrimaryAction() {
   }
 }
 
+const activeClockTitle = computed(() => {
+  if (!timerStore.activeTimer) return t('timer.liveStart.adjustTooltip');
+  const started = t('timer.liveStart.startedAt', {
+    time: formatTime(timerStore.activeTimer.startTimeUTC),
+  });
+  return `${started} · ${t('timer.liveStart.adjustTooltip')}`;
+});
+
 /**
  * Global keyboard shortcuts (GEMINI.md §3.2):
  * Guarded so single-key shortcuts (`N`, `S`) do NOT fire while focused inside INPUT, TEXTAREA, or SELECT.
@@ -327,87 +331,57 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="relative border bg-bg-elevated p-4 sm:p-5 max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-40 max-md:border-x-0 max-md:border-b-0 max-md:border-t-2 max-md:border-signal/60 max-md:bg-bg-elevated/95 max-md:backdrop-blur-md max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:shadow-2xl"
-    :class="timerStore.isRunning ? 'border-signal/40 glow-signal' : 'border-border-hairline'"
+    class="relative border bg-bg-elevated px-3 py-2 sm:px-4 sm:py-2.5 max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-40 max-md:border-x-0 max-md:border-b-0 max-md:border-t max-md:bg-bg-elevated/95 max-md:backdrop-blur-md max-md:pt-2 max-md:pb-[max(0.625rem,env(safe-area-inset-bottom))] max-md:shadow-2xl"
+    :class="
+      timerStore.isRunning || aiLoading
+        ? 'border-signal/50 glow-signal'
+        : 'border-border-hairline'
+    "
   >
+    <!-- Top 2px Orbital Signal Track: sweeping scan on AI Auto-Fill (⌘I), steady glow while running -->
     <div
-      v-if="timerStore.isRunning"
-      class="signal-line absolute inset-x-0 top-0"
+      class="pointer-events-none absolute inset-x-0 top-0 h-[2px] overflow-hidden"
       aria-hidden="true"
-    />
-
-    <!-- Top Telemetry Status Bar -->
-    <div class="mb-3.5 flex flex-wrap items-center justify-between gap-2 text-xs font-medium uppercase tracking-wider text-text-muted">
-      <div class="flex flex-wrap items-center gap-2.5">
-        <span
-          class="h-2 w-2"
-          :class="timerStore.isRunning ? 'bg-signal motion-safe:animate-pulse' : 'bg-border-input'"
-        />
-        <span :class="timerStore.isRunning ? 'text-signal font-semibold' : 'text-text-muted'">
-          {{ timerStore.isRunning ? $t('timer.statusRunning') : $t('timer.statusIdle') }}
-        </span>
-
-        <!-- Clickable Live Start Timestamp Trigger (FR-5.2) -->
-        <button
-          v-if="timerStore.isRunning && timerStore.activeTimer"
-          type="button"
-          data-testid="active-timer-start-trigger"
-          :title="$t('timer.liveStart.adjustTooltip')"
-          class="tabular-telemetry btn-press inline-flex h-7 items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs font-normal normal-case tracking-normal text-text-muted hover:border-signal/60 hover:text-signal transition-colors focus:outline-none focus-visible:border-signal"
-          @click="toggleStartAdjustPopover"
-        >
-          <Clock class="h-3.5 w-3.5 text-signal" />
-          <span>
-            {{ $t('timer.liveStart.startedAt', { time: formatTime(timerStore.activeTimer.startTimeUTC) }) }}
-          </span>
-        </button>
-      </div>
-
-      <div class="hidden md:flex items-center gap-3">
-        <span class="inline-flex items-center gap-1.5">
-          <BrandKeycapBadge keys="N" size="sm" />
-          <span>{{ $t('landing.shortcutFocus') }}</span>
-        </span>
-        <span class="inline-flex items-center gap-1.5">
-          <BrandKeycapBadge keys="Tab" size="sm" />
-          <span>{{ $t('landing.shortcutCycle') }}</span>
-        </span>
-        <span class="inline-flex items-center gap-1.5">
-          <BrandKeycapBadge :keys="['⌘', 'I']" size="sm" />
-          <span>{{ $t('landing.shortcutAi') }}</span>
-        </span>
-        <span class="inline-flex items-center gap-1.5">
-          <BrandKeycapBadge keys="S" size="sm" />
-          <span>{{ $t('landing.shortcutStop') }}</span>
-        </span>
-        <span class="inline-flex items-center gap-1.5">
-          <BrandKeycapBadge keys="Esc" size="sm" />
-        </span>
-      </div>
+    >
+      <div v-if="aiLoading" class="signal-line animate-scan h-full w-full" />
+      <div v-else-if="timerStore.isRunning" class="signal-line h-full w-full" />
     </div>
+    <span v-if="aiLoading" role="status" aria-live="polite" class="sr-only">
+      {{ $t('timer.aiLoading') }}
+    </span>
 
     <div
       v-if="aiErrorCode"
       role="alert"
-      class="mb-3 flex items-center gap-2 border border-destructive/50 bg-destructive/10 px-3 py-2 text-ui text-destructive"
+      class="mb-2 flex items-center justify-between gap-2 border border-destructive/50 bg-destructive/10 px-3 py-1.5 text-ui text-destructive"
     >
-      <AlertCircle class="h-4 w-4 shrink-0" />
-      <span>{{ $t(`timer.errors.${aiErrorCode}`) }}</span>
+      <span class="flex items-center gap-2 min-w-0">
+        <AlertCircle class="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span class="truncate">{{ $t(`timer.errors.${aiErrorCode}`) }}</span>
+      </span>
+      <button
+        type="button"
+        :aria-label="$t('timer.cancelEditButton')"
+        class="shrink-0 text-destructive/80 hover:text-destructive"
+        @click="aiErrorCode = null"
+      >
+        <X class="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
     </div>
 
-    <!-- Fluid Tab Sequence:
-         1. Description Input -> 2. Project Selector -> 3. Project-Scoped Tag Selector ->
-         4. Billable Toggle -> 5. Start/Stop Button ( plus [✨ AI Auto-Fill] button ) -->
-    <div class="grid grid-cols-1 gap-2.5 lg:grid-cols-12 lg:items-center">
+    <!-- Seamless Fluid Tab Sequence:
+         1. Borderless Description Input -> 2. Project/Task Popover -> 3. Tag Icon Popover ->
+         4. Billable Icon Toggle -> 5. Start/Stop Icon Button (`⌘I` for silent AI Auto-Fill) -->
+    <div class="flex flex-col md:flex-row md:items-center gap-1.5 md:gap-2">
       <!-- 1. Description Input + Top-10 Recall Dropdown -->
-      <div class="relative lg:col-span-4">
+      <div class="relative flex-1 min-w-0">
         <input
           ref="descriptionInputRef"
           v-model="timerStore.description"
           type="text"
           data-tour="timer-description"
           :placeholder="$t('timer.descriptionPlaceholder')"
-          class="h-10 max-md:min-h-[44px] w-full border border-border-input bg-bg-primary px-3.5 text-sm text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
+          class="h-10 w-full border-0 border-b border-transparent bg-transparent px-2 text-sm sm:text-base font-medium text-text-primary placeholder:text-text-faint focus:border-signal/60 focus:outline-none transition-colors"
           @focus="showRecallDropdown = topMatches.length > 0"
           @input="showRecallDropdown = topMatches.length > 0"
           @keydown="handleDescriptionKeydown"
@@ -449,6 +423,7 @@ onUnmounted(() => {
                     <span
                       class="h-2.5 w-2.5 shrink-0"
                       :style="{ backgroundColor: tpl.projectColorSnapshot }"
+                      aria-hidden="true"
                     />
                     <span class="truncate font-medium">{{ tpl.description }}</span>
                     <span class="truncate text-xs text-text-muted">
@@ -465,110 +440,93 @@ onUnmounted(() => {
         </Transition>
       </div>
 
-      <!-- 2. Project Selector (+ Optional Project-Scoped Task Selector) -->
-      <div class="lg:col-span-2 flex gap-1.5">
-        <select
-          :value="timerStore.projectId"
-          data-tour="timer-project"
-          :aria-label="$t('timer.projectLabel')"
-          class="h-10 max-md:min-h-[44px] w-full border border-border-input bg-bg-primary px-2.5 text-ui font-medium text-text-primary focus:border-signal focus:outline-none"
-          @change="timerStore.selectProject(($event.target as HTMLSelectElement).value)"
-        >
-          <option
-            v-for="proj in catalogStore.sortedProjects"
-            :key="proj.id"
-            :value="proj.id"
+      <!-- Inline Toolbar: Borderless Project/Task, Icon Tags, Icon Billable, Digits & Action -->
+      <div class="relative flex items-center justify-between md:justify-end gap-1.5 md:gap-2 shrink-0">
+        <div class="flex items-center gap-0.5 sm:gap-1 min-w-0">
+          <!-- 2. Borderless Project & Task Selector -->
+          <TimerProjectTaskPopover
+            :project-id="timerStore.projectId"
+            :task-id="timerStore.taskId"
+            variant="command"
+            data-tour="timer-project"
+            test-id="command-project-trigger"
+            @select="handleProjectTaskSelect"
+          />
+
+          <!-- 3. Borderless Toggl-Style Tag Icon Popover -->
+          <UiTagMultiSelect
+            v-model="timerStore.tagIds"
+            :tags="scopedTags"
+            variant="command-icon"
+            data-tour="timer-tags"
+            test-id="command-timer-tags-trigger"
+          />
+
+          <!-- 4. Borderless Icon-Only Billable Toggle -->
+          <UiBillableToggle
+            v-model="timerStore.isBillable"
+            variant="command"
+            data-tour="timer-billable"
+            test-id="command-timer-billable-toggle"
+          />
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="hidden md:block h-5 w-px bg-border-hairline" aria-hidden="true" />
+
+          <!-- Clickable Elapsed Clock when ActiveTimer is running (FR-5.2) -->
+          <button
+            v-if="timerStore.isRunning"
+            type="button"
+            data-testid="active-timer-clock-trigger"
+            :aria-expanded="showStartAdjustPopover"
+            :aria-label="activeClockTitle"
+            :title="activeClockTitle"
+            class="btn-press inline-flex h-9 max-md:min-h-[40px] items-center px-2 border border-transparent hover:bg-bg-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-signal cursor-pointer"
+            @click="toggleStartAdjustPopover"
           >
-            {{ displayProjectName(proj) }}
-          </option>
-        </select>
-
-        <select
-          v-if="scopedTaskNodes.length > 0"
-          :value="timerStore.taskId ?? ''"
-          data-tour="timer-task"
-          :aria-label="$t('timer.taskSelectorPlaceholder')"
-          class="h-10 max-md:min-h-[44px] w-full border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
-          @change="timerStore.selectTask(($event.target as HTMLSelectElement).value || undefined)"
-        >
-          <option value="">{{ $t('timer.taskSelectorPlaceholder') }}</option>
-          <option
-            v-for="node in scopedTaskNodes"
-            :key="node.task.id"
-            :value="node.task.id"
-          >
-            {{ node.depth === 1 ? '↳ ' : node.depth === 2 ? '↳↳ ' : '' }}{{ node.task.name }}
-          </option>
-        </select>
-      </div>
-
-      <!-- 3. Project-Scoped Searchable Tag Multiselect -->
-      <div class="lg:col-span-2">
-        <UiTagMultiSelect
-          v-model="timerStore.tagIds"
-          :tags="scopedTags"
-          variant="field"
-          size="md"
-          data-tour="timer-tags"
-          test-id="command-timer-tags-trigger"
-        />
-      </div>
-
-      <!-- 4. Billable Toggle -->
-      <div class="lg:col-span-1">
-        <UiBillableToggle
-          v-model="timerStore.isBillable"
-          variant="command"
-          data-tour="timer-billable"
-          test-id="command-timer-billable-toggle"
-        />
-      </div>
-
-      <!-- 5. Start/Stop Button + Live Telemetry Digits + [✨ AI Auto-Fill] -->
-      <div class="relative lg:col-span-3 flex items-center justify-between lg:justify-end gap-2">
-        <button
-          type="button"
-          data-tour="timer-ai-autofill"
-          :disabled="aiLoading"
-          :title="`${$t('timer.aiAutofillButton')} (⌘I / Ctrl+I)`"
-          class="btn-press inline-flex h-10 max-md:min-h-[44px] items-center gap-1.5 border border-signal/45 bg-signal-soft px-3 text-ui font-medium text-signal hover:bg-signal/20 disabled:opacity-50 transition-colors focus:border-signal focus:outline-none"
-          @click="triggerAiAutofill"
-        >
-          <Sparkles class="h-4 w-4" />
-          <span class="hidden xl:inline">
-            {{ aiLoading ? $t('timer.aiLoading') : '✨' }}
-          </span>
-        </button>
-
-        <!-- Clickable Elapsed Clock when ActiveTimer is running (FR-5.2) -->
-        <button
-          v-if="timerStore.isRunning"
-          type="button"
-          data-testid="active-timer-clock-trigger"
-          :aria-expanded="showStartAdjustPopover"
-          :title="$t('timer.liveStart.adjustTooltip')"
-          class="btn-press inline-flex h-10 max-md:min-h-[44px] items-center px-2 border border-transparent hover:border-signal/50 hover:bg-signal-soft transition-colors focus:outline-none focus-visible:border-signal cursor-pointer"
-          @click="toggleStartAdjustPopover"
-        >
+            <BrandTimerDigits
+              :seconds="timerStore.currentElapsedSeconds"
+              running
+              size="md"
+            />
+          </button>
           <BrandTimerDigits
+            v-else
             :seconds="timerStore.currentElapsedSeconds"
-            running
+            :running="false"
             size="md"
           />
-        </button>
-        <BrandTimerDigits
-          v-else
-          :seconds="timerStore.currentElapsedSeconds"
-          :running="false"
-          size="md"
-        />
+
+          <!-- 5. Icon-Only Start / Stop Trigger -->
+          <button
+            type="button"
+            data-tour="timer-submit"
+            :aria-label="timerStore.isRunning ? $t('timer.stopButton') : $t('timer.startButton')"
+            :title="
+              timerStore.isRunning
+                ? `${$t('timer.stopButton')} [S]`
+                : `${$t('timer.startButton')} [Enter]`
+            "
+            class="btn-press inline-flex h-9 w-9 max-md:h-10 max-md:w-10 shrink-0 items-center justify-center text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+            :class="
+              timerStore.isRunning
+                ? 'bg-red-600 hover:bg-red-500'
+                : 'bg-accent hover:bg-accent-hover'
+            "
+            @click="handlePrimaryAction"
+          >
+            <Square v-if="timerStore.isRunning" class="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+            <Play v-else class="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+          </button>
+        </div>
 
         <!-- Live Start Time Adjustment Popover (FR-5.2) -->
         <Transition name="orbital-dropdown">
           <form
             v-if="showStartAdjustPopover && timerStore.isRunning"
             data-testid="active-timer-adjust-popover"
-            class="absolute right-0 max-md:bottom-14 md:top-12 z-50 w-80 overflow-hidden border border-border-hairline bg-bg-elevated p-3.5 shadow-2xl space-y-3"
+            class="absolute right-0 max-md:bottom-12 md:top-11 z-50 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden border border-border-hairline bg-bg-elevated p-3.5 shadow-2xl space-y-3"
             @submit.prevent="handleApplyAdjustedStart"
             @keydown.esc.stop="showStartAdjustPopover = false"
           >
@@ -581,7 +539,7 @@ onUnmounted(() => {
                 class="text-text-muted hover:text-text-primary"
                 @click="showStartAdjustPopover = false"
               >
-                <X class="h-4 w-4" />
+                <X class="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -637,28 +595,12 @@ onUnmounted(() => {
                 :disabled="!draftAdjustedPreview"
                 class="btn-press inline-flex h-8 items-center gap-1.5 bg-accent px-3 text-xs font-semibold uppercase text-white hover:bg-accent-hover transition-colors disabled:opacity-40"
               >
-                <Check class="h-3.5 w-3.5" />
+                <Check class="h-3.5 w-3.5" aria-hidden="true" />
                 <span>{{ $t('timer.liveStart.applyButton') }}</span>
               </button>
             </div>
           </form>
         </Transition>
-
-        <button
-          type="button"
-          data-tour="timer-submit"
-          class="btn-press inline-flex h-10 max-md:min-h-[44px] items-center gap-2 px-4 text-xs font-semibold uppercase tracking-wider text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-signal"
-          :class="
-            timerStore.isRunning
-              ? 'bg-red-600 hover:bg-red-500'
-              : 'bg-accent hover:bg-accent-hover'
-          "
-          @click="handlePrimaryAction"
-        >
-          <Square v-if="timerStore.isRunning" class="h-3.5 w-3.5 fill-current" />
-          <Play v-else class="h-3.5 w-3.5 fill-current" />
-          <span>{{ timerStore.isRunning ? $t('timer.stopButton') : $t('timer.startButton') }}</span>
-        </button>
       </div>
     </div>
   </div>

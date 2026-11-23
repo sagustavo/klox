@@ -71,6 +71,11 @@ We establish the **Orbital "Musk-Tech" Design System** across the entire applica
 - **Compact Mobile Navigation (`< 768px`):** Uses a `48px` (`< 12%` viewport height) single-row mobile header opening an accessible modal slide-over `reka-ui` `Dialog` drawer (`100svh`, inert backdrop, focus restoration, `Esc`/outside dismiss) layered cleanly at `z-50` above the mobile bottom timer dock (`z-40`).
 - **Settings-Only Theme & In-App Language:** Theme selection (`Dark` / `Light` / `System`) lives exclusively in `/app/settings` (removed from app, landing, and auth headers), and in-app language selection lives exclusively in `/app/settings` while unauthenticated Landing (`/`, `/pt-br`) and Auth (`/login`) headers retain only a minimal `Globe` locale switcher. Sign Out renders as an icon-only control with `aria-label` and tooltip.
 
+### 2.7 Seamless Command Timer Bar, Ghost Row Actions & Tag Label Fidelity (Sprint 4 / UX-2.4)
+- **Borderless Command Timer Bar (`CommandTimerBar.vue`):** Consolidates the workspace capture strip into a borderless single-row desktop bar (and compact 2-row mobile dock) without status titles, redundant keycap rows, or a visible AI Auto-Fill button (`⌘I`/`Ctrl+I` triggers a sweeping top `.signal-line` scan animation). Pairs a borderless description input with `TimerProjectTaskPopover` (`variant="command"`), fine-pointer hover/click `UiTagMultiSelect` (`variant="command-icon"`), borderless `$` `UiBillableToggle` (`variant="command"`), modernized `BrandTimerDigits`, and an icon-only `Play`/`Square` action button.
+- **Unified Ghost Row Actions (`.row-action-ghost`):** Standardizes non-billable, empty-tag, Continue (`Play`), and Delete (`Trash2`) tracker feed row controls on a borderless hover-reveal button pattern (`opacity: 0` at rest on desktop hover-capable pointers, revealed via `.group/row:hover`, `.group/row:focus-within`, and `:focus-visible`, and `opacity: 0.7` on `@media (hover: none)` touch devices).
+- **Tag Label Fidelity:** Never prepends synthetic `#` characters to `ProjectTag` labels across feed rows, pickers, analytics charts/tables, catalog confirmations, CSV previews, or landing visuals (`#` renders only when entered by the user, while `#ID` remains scoped to external work item identifiers).
+
 ---
 
 ## 3. Consequences

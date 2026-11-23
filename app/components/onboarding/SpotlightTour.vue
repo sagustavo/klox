@@ -30,7 +30,7 @@ const stepMeta = computed(() => {
       title: t('onboarding.tour.step4Title'),
       body: t('onboarding.tour.step4Body'),
       keycap: '⌘I',
-      targetAttr: 'timer-ai-autofill',
+      targetAttr: 'timer-description',
     },
     5: {
       title: t('onboarding.tour.step5Title'),
