@@ -1,4 +1,5 @@
 import { elapsedSeconds } from '~/domain/duration';
+import { tenantStorageKey } from '~/domain/auth';
 import { publishDomainEvent } from '~/domain/events';
 import { UNASSIGNED_PROJECT_ID, applyProjectSwitch } from '~/domain/invariants';
 import type { ActiveTimer, EntityId, TimeLog } from '~/domain/types';
@@ -10,6 +11,7 @@ const STORAGE_ACTIVE_TIMER_KEY = 'klox_active_timer';
 
 export const useTimerStore = defineStore('timer', () => {
   const activeTimer = ref<ActiveTimer | null>(null);
+  const activeUid = ref<string | null>(null);
 
   // Draft composer state (synchronized with ActiveTimer when running)
   const description = ref('');
@@ -41,12 +43,13 @@ export const useTimerStore = defineStore('timer', () => {
   }
 
   function persistLocal(timer: ActiveTimer | null) {
-    if (import.meta.server) return;
+    if (import.meta.server || !activeUid.value) return;
     try {
+      const storageKey = tenantStorageKey(STORAGE_ACTIVE_TIMER_KEY, activeUid.value);
       if (timer) {
-        localStorage.setItem(STORAGE_ACTIVE_TIMER_KEY, JSON.stringify(timer));
+        localStorage.setItem(storageKey, JSON.stringify(timer));
       } else {
-        localStorage.removeItem(STORAGE_ACTIVE_TIMER_KEY);
+        localStorage.removeItem(storageKey);
       }
     } catch {
       // Ignore storage errors
@@ -61,12 +64,35 @@ export const useTimerStore = defineStore('timer', () => {
     isBillable.value = timer.isBillable;
   }
 
+  function reset() {
+    activeTimer.value = null;
+    activeUid.value = null;
+    description.value = '';
+    projectId.value = UNASSIGNED_PROJECT_ID;
+    taskId.value = undefined;
+    tagIds.value = [];
+    isBillable.value = false;
+  }
+
   async function hydrate(uid: string, isDemo: boolean): Promise<void> {
     if (import.meta.server) return;
     startTicker();
 
+    if (activeUid.value !== uid) {
+      activeTimer.value = null;
+      description.value = '';
+      projectId.value = UNASSIGNED_PROJECT_ID;
+      taskId.value = undefined;
+      tagIds.value = [];
+      isBillable.value = false;
+      activeUid.value = uid;
+    }
+
     try {
-      const raw = localStorage.getItem(STORAGE_ACTIVE_TIMER_KEY);
+      let raw = localStorage.getItem(tenantStorageKey(STORAGE_ACTIVE_TIMER_KEY, uid));
+      if (raw === null && uid === 'demo-user') {
+        raw = localStorage.getItem(STORAGE_ACTIVE_TIMER_KEY);
+      }
       if (raw) {
         const parsed = JSON.parse(raw) as ActiveTimer;
         if (parsed?.startTimeUTC) {
@@ -90,6 +116,9 @@ export const useTimerStore = defineStore('timer', () => {
         activeTimer.value = remoteTimer;
         applyTimerToDraft(remoteTimer);
         persistLocal(remoteTimer);
+      } else if (snap.exists() && !remoteTimer) {
+        activeTimer.value = null;
+        persistLocal(null);
       }
     } catch (err) {
       console.warn('[Klox timer hydrate fallback to local]', err);
@@ -356,6 +385,7 @@ export const useTimerStore = defineStore('timer', () => {
     isRunning,
     currentElapsedSeconds,
     hydrate,
+    reset,
     selectProject,
     selectTask,
     toggleTag,

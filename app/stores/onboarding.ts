@@ -1,4 +1,5 @@
 import { subscribeDomainEvents } from '~/domain/events';
+import { tenantStorageKey } from '~/domain/auth';
 import {
   ALL_CHECKLIST_ITEMS,
   applyDomainEventToOnboarding,
@@ -20,6 +21,7 @@ export const useOnboardingStore = defineStore('onboarding', () => {
   const tourStep = ref(1);
   const isHelpSheetOpen = ref(false);
   const loadedUid = ref<string | null>(null);
+  const activeUid = ref<string | null>(null);
   let unsubscribeEvents: (() => void) | null = null;
 
   const completedCount = computed(() => {
@@ -29,16 +31,26 @@ export const useOnboardingStore = defineStore('onboarding', () => {
   const totalChecklistCount = computed(() => ALL_CHECKLIST_ITEMS.length);
 
   function persistLocal() {
-    if (import.meta.server) return;
+    if (import.meta.server || !activeUid.value) return;
     try {
-      localStorage.setItem(STORAGE_ONBOARDING_KEY, JSON.stringify(state.value));
+      const uid = activeUid.value;
+      localStorage.setItem(tenantStorageKey(STORAGE_ONBOARDING_KEY, uid), JSON.stringify(state.value));
       localStorage.setItem(
-        STORAGE_CHECKLIST_DISMISSED_KEY,
+        tenantStorageKey(STORAGE_CHECKLIST_DISMISSED_KEY, uid),
         isChecklistDismissed.value ? '1' : '0'
       );
     } catch {
       // Ignore quota errors
     }
+  }
+
+  function reset() {
+    state.value = createDefaultOnboardingState();
+    isChecklistDismissed.value = false;
+    isTourActive.value = false;
+    tourStep.value = 1;
+    loadedUid.value = null;
+    activeUid.value = null;
   }
 
   async function syncRemote(uid: string | undefined, isDemo: boolean) {
@@ -86,12 +98,21 @@ export const useOnboardingStore = defineStore('onboarding', () => {
     ensureEventSubscription();
     if (loadedUid.value === uid) return;
 
+    state.value = createDefaultOnboardingState();
+    isChecklistDismissed.value = false;
+    activeUid.value = uid;
+
     try {
-      const raw = localStorage.getItem(STORAGE_ONBOARDING_KEY);
+      let raw = localStorage.getItem(tenantStorageKey(STORAGE_ONBOARDING_KEY, uid));
+      let dismissedRaw = localStorage.getItem(tenantStorageKey(STORAGE_CHECKLIST_DISMISSED_KEY, uid));
+      if (raw === null && uid === 'demo-user') {
+        raw = localStorage.getItem(STORAGE_ONBOARDING_KEY);
+        dismissedRaw = localStorage.getItem(STORAGE_CHECKLIST_DISMISSED_KEY);
+      }
       if (raw) {
         state.value = JSON.parse(raw) as OnboardingState;
       }
-      isChecklistDismissed.value = localStorage.getItem(STORAGE_CHECKLIST_DISMISSED_KEY) === '1';
+      isChecklistDismissed.value = dismissedRaw === '1';
       loadedUid.value = uid;
 
       if (isDemo) return;
@@ -216,6 +237,7 @@ export const useOnboardingStore = defineStore('onboarding', () => {
     completedCount,
     totalChecklistCount,
     hydrate,
+    reset,
     completeWizard,
     skipWizard,
     startTour,

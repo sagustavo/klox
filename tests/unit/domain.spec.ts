@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { mapFirebaseAuthErrorCode, tenantStorageKey } from '../../app/domain/auth';
 import {
   aggregateDailyStacked,
   aggregatePizzaSlices,
@@ -988,6 +989,37 @@ describe('domain/sidebar', () => {
     expect(resolveReopenSidebarState('expanded')).toBe('expanded');
     expect(resolveReopenSidebarState('collapsed')).toBe('collapsed');
     expect(resolveReopenSidebarState(undefined)).toBe('expanded');
+  });
+});
+
+describe('domain/auth', () => {
+  it('maps Firebase Auth error codes to localized client error keys', () => {
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/invalid-credential' })).toBe(
+      'AUTH_INVALID_CREDENTIALS'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/email-already-in-use' })).toBe(
+      'AUTH_EMAIL_IN_USE'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/weak-password' })).toBe('AUTH_WEAK_PASSWORD');
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/popup-closed-by-user' })).toBe(
+      'AUTH_POPUP_CLOSED'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/popup-blocked' })).toBe('AUTH_POPUP_BLOCKED');
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/unauthorized-domain' })).toBe(
+      'AUTH_UNAUTHORIZED_DOMAIN'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/operation-not-allowed' })).toBe(
+      'AUTH_PROVIDER_DISABLED'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/internal-error' })).toBe('AUTH_GENERIC_ERROR');
+  });
+
+  it('scopes localStorage keys cleanly by tenant uid', () => {
+    const demoKey = tenantStorageKey('klox_catalog_projects', 'demo-user');
+    const userKey = tenantStorageKey('klox_catalog_projects', 'firebase-uid-123');
+    expect(demoKey).toBe('klox_catalog_projects:demo-user');
+    expect(userKey).toBe('klox_catalog_projects:firebase-uid-123');
+    expect(demoKey).not.toBe(userKey);
   });
 });
 

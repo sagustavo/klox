@@ -36,15 +36,23 @@ async function handleSubmit() {
 }
 
 async function handleGoogle() {
-  const ok = await authStore.signInWithGoogle();
-  if (ok) {
-    await navigateTo(localePath(mode.value === 'signup' ? '/app/welcome' : '/app'));
+  const result = await authStore.signInWithGoogle();
+  if (result.ok) {
+    const shouldOnboard = firebaseConfigured.value
+      ? result.isNewUser
+      : mode.value === 'signup';
+    await navigateTo(localePath(shouldOnboard ? '/app/welcome' : '/app'));
   }
 }
 
 async function handleDemo() {
   authStore.enterDemoMode();
   await navigateTo(localePath('/app?demo=1'));
+}
+
+function toggleMode() {
+  authStore.errorCode = null;
+  mode.value = mode.value === 'signup' ? 'signin' : 'signup';
 }
 </script>
 
@@ -54,40 +62,7 @@ async function handleDemo() {
     :padded="false"
     class="w-full max-w-md p-8 shadow-2xl sm:p-10"
   >
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <p class="label-eyebrow text-signal">
-        {{ mode === 'signup' ? $t('auth.eyebrowSignUp') : $t('auth.eyebrowSignIn') }}
-      </p>
-
-      <div class="inline-flex border border-border-hairline bg-bg-primary text-xs font-medium">
-        <button
-          type="button"
-          class="btn-press h-8 px-3 transition-colors"
-          :class="
-            mode === 'signin'
-              ? 'bg-accent font-medium text-white'
-              : 'text-text-muted hover:text-text-primary'
-          "
-          @click="mode = 'signin'"
-        >
-          {{ $t('auth.modeSignIn') }}
-        </button>
-        <button
-          type="button"
-          class="btn-press h-8 px-3 transition-colors"
-          :class="
-            mode === 'signup'
-              ? 'bg-accent font-medium text-white'
-              : 'text-text-muted hover:text-text-primary'
-          "
-          @click="mode = 'signup'"
-        >
-          {{ $t('auth.modeSignUp') }}
-        </button>
-      </div>
-    </div>
-
-    <h1 class="display-wide mt-4 text-2xl text-text-primary">
+    <h1 class="display-wide text-2xl text-text-primary">
       {{ mode === 'signup' ? $t('auth.signUpTitle') : $t('auth.signInTitle') }}
     </h1>
     <p class="mt-2 text-sm text-text-muted">
@@ -200,15 +175,31 @@ async function handleDemo() {
       </button>
     </div>
 
-    <div class="mt-7 border-t border-border-hairline pt-5 text-center text-ui text-text-muted">
-      <span>{{ $t('auth.supportPrompt') }}</span>
-      {{ ' ' }}
-      <a
-        href="mailto:contact@klox.dev"
-        class="text-signal hover:underline"
-      >
-        contact@klox.dev
-      </a>
+    <div class="mt-7 space-y-2 border-t border-border-hairline pt-5 text-center text-ui text-text-muted">
+      <div>
+        <span>
+          {{ mode === 'signup' ? $t('auth.switchToSignInPrompt') : $t('auth.switchToSignUpPrompt') }}
+        </span>
+        {{ ' ' }}
+        <button
+          type="button"
+          class="font-medium text-signal hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+          @click="toggleMode"
+        >
+          {{ mode === 'signup' ? $t('auth.switchToSignInAction') : $t('auth.switchToSignUpAction') }}
+        </button>
+      </div>
+
+      <div class="text-xs text-text-faint">
+        <span>{{ $t('auth.supportPrompt') }}</span>
+        {{ ' ' }}
+        <a
+          href="mailto:contact@klox.dev"
+          class="text-signal hover:underline"
+        >
+          contact@klox.dev
+        </a>
+      </div>
     </div>
   </UiInstrumentPanel>
 </template>

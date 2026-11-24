@@ -15,8 +15,18 @@ export default defineNuxtConfig({
     '/app/**': { ssr: false },
     '/pt-br/app': { ssr: false },
     '/pt-br/app/**': { ssr: false },
-    '/login': { ssr: false },
-    '/pt-br/login': { ssr: false },
+    '/login': {
+      ssr: false,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
+    },
+    '/pt-br/login': {
+      ssr: false,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
+    },
     '/api/**': { cors: false },
   },
 

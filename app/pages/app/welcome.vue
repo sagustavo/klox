@@ -31,7 +31,8 @@ const isSubmitting = ref(false);
 
 onMounted(async () => {
   await authStore.init();
-  const uid = authStore.user?.uid ?? 'demo-user';
+  if (!authStore.user) return;
+  const uid = authStore.user.uid;
   await Promise.all([
     prefsStore.hydrate(uid, authStore.isDemoMode),
     catalogStore.hydrate(uid, authStore.isDemoMode),
@@ -83,13 +84,14 @@ async function onChangeHourCycle(cycle: HourCyclePreference) {
 }
 
 async function handleSkipAll() {
-  const uid = authStore.user?.uid ?? 'demo-user';
-  await onboardingStore.skipWizard(uid, authStore.isDemoMode);
+  if (!authStore.user) return;
+  await onboardingStore.skipWizard(authStore.user.uid, authStore.isDemoMode);
   await navigateTo(localePath('/app'));
 }
 
 async function handleFinish(startTourAfter: boolean) {
-  const uid = authStore.user?.uid ?? 'demo-user';
+  if (!authStore.user) return;
+  const uid = authStore.user.uid;
   isSubmitting.value = true;
   try {
     await onboardingStore.completeWizard({

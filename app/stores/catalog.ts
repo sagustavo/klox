@@ -1,4 +1,5 @@
 import { generateRandomId } from '~/domain/ids';
+import { tenantStorageKey } from '~/domain/auth';
 import {
   PROJECT_COLOR_PALETTE,
   UNASSIGNED_PROJECT_ID,
@@ -26,6 +27,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   const tags = ref<ProjectTag[]>([]);
   const tasks = ref<Task[]>([]);
   const loadedUid = ref<string | null>(null);
+  const activeUid = ref<string | null>(null);
   const loading = ref(false);
 
   const sortedProjects = computed(() => {
@@ -77,11 +79,12 @@ export const useCatalogStore = defineStore('catalog', () => {
   }
 
   function persistLocal() {
-    if (import.meta.server) return;
+    if (import.meta.server || !activeUid.value) return;
     try {
-      localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(projects.value));
-      localStorage.setItem(STORAGE_TAGS_KEY, JSON.stringify(tags.value));
-      localStorage.setItem(STORAGE_TASKS_KEY, JSON.stringify(tasks.value));
+      const uid = activeUid.value;
+      localStorage.setItem(tenantStorageKey(STORAGE_PROJECTS_KEY, uid), JSON.stringify(projects.value));
+      localStorage.setItem(tenantStorageKey(STORAGE_TAGS_KEY, uid), JSON.stringify(tags.value));
+      localStorage.setItem(tenantStorageKey(STORAGE_TASKS_KEY, uid), JSON.stringify(tasks.value));
     } catch {
       // Ignore quota errors
     }
@@ -90,9 +93,21 @@ export const useCatalogStore = defineStore('catalog', () => {
   function loadLocal(uid: string) {
     if (import.meta.server) return;
     try {
-      const rawProjects = localStorage.getItem(STORAGE_PROJECTS_KEY);
-      const rawTags = localStorage.getItem(STORAGE_TAGS_KEY);
-      const rawTasks = localStorage.getItem(STORAGE_TASKS_KEY);
+      let rawProjects = localStorage.getItem(tenantStorageKey(STORAGE_PROJECTS_KEY, uid));
+      let rawTags = localStorage.getItem(tenantStorageKey(STORAGE_TAGS_KEY, uid));
+      let rawTasks = localStorage.getItem(tenantStorageKey(STORAGE_TASKS_KEY, uid));
+
+      if (rawProjects === null && uid === 'demo-user') {
+        const legacyProjects = localStorage.getItem(STORAGE_PROJECTS_KEY);
+        if (legacyProjects) {
+          const parsedLegacy = JSON.parse(legacyProjects) as Project[];
+          if (parsedLegacy.every((p) => p.userId === 'demo-user')) {
+            rawProjects = legacyProjects;
+            rawTags = localStorage.getItem(STORAGE_TAGS_KEY);
+            rawTasks = localStorage.getItem(STORAGE_TASKS_KEY);
+          }
+        }
+      }
 
       projects.value = rawProjects ? (JSON.parse(rawProjects) as Project[]) : [];
       tags.value = rawTags ? (JSON.parse(rawTags) as ProjectTag[]) : [];
@@ -104,6 +119,15 @@ export const useCatalogStore = defineStore('catalog', () => {
     }
 
     ensureUnassignedLocal(uid);
+  }
+
+  function reset() {
+    projects.value = [];
+    tags.value = [];
+    tasks.value = [];
+    loadedUid.value = null;
+    activeUid.value = null;
+    loading.value = false;
   }
 
   function ensureUnassignedLocal(uid: string): Project {
@@ -120,6 +144,13 @@ export const useCatalogStore = defineStore('catalog', () => {
   async function hydrate(uid: string, isDemo: boolean): Promise<void> {
     if (import.meta.server) return;
     if (loadedUid.value === uid && projects.value.length > 0) return;
+
+    if (loadedUid.value !== uid) {
+      projects.value = [];
+      tags.value = [];
+      tasks.value = [];
+    }
+    activeUid.value = uid;
 
     loading.value = true;
     try {
@@ -521,6 +552,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     sortedProjects,
     loading,
     hydrate,
+    reset,
     getProjectById,
     getTagsForProject,
     getTagById,

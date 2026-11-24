@@ -1,4 +1,5 @@
 import { elapsedSeconds, normalizeDescription, toDateKey } from '~/domain/duration';
+import { tenantStorageKey } from '~/domain/auth';
 import { publishDomainEvent, type TimeLogSource } from '~/domain/events';
 import { generateRandomId } from '~/domain/ids';
 import { UNASSIGNED_PROJECT_ID, tagsForProject } from '~/domain/invariants';
@@ -17,6 +18,7 @@ const STORAGE_LOGS_KEY = 'klox_time_logs';
 export const useTimeLogsStore = defineStore('timeLogs', () => {
   const logs = ref<TimeLog[]>([]);
   const loadedUid = ref<string | null>(null);
+  const activeUid = ref<string | null>(null);
   const loading = ref(false);
   const streaming = ref(false);
   const streamedCount = ref(0);
@@ -35,22 +37,42 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
   );
 
   function persistLocal() {
-    if (import.meta.server) return;
+    if (import.meta.server || !activeUid.value) return;
     try {
-      localStorage.setItem(STORAGE_LOGS_KEY, JSON.stringify(logs.value));
+      localStorage.setItem(
+        tenantStorageKey(STORAGE_LOGS_KEY, activeUid.value),
+        JSON.stringify(logs.value)
+      );
     } catch {
       // Ignore quota errors
     }
   }
 
-  function loadLocal() {
+  function loadLocal(uid: string) {
     if (import.meta.server) return;
     try {
-      const raw = localStorage.getItem(STORAGE_LOGS_KEY);
-      logs.value = raw ? (JSON.parse(raw) as TimeLog[]) : [];
+      let raw = localStorage.getItem(tenantStorageKey(STORAGE_LOGS_KEY, uid));
+      if (raw === null && uid === 'demo-user') {
+        raw = localStorage.getItem(STORAGE_LOGS_KEY);
+      }
+      const parsed = raw ? (JSON.parse(raw) as TimeLog[]) : [];
+      logs.value = parsed.filter((l) => l.userId === uid);
     } catch {
       logs.value = [];
     }
+  }
+
+  function reset() {
+    logs.value = [];
+    loadedUid.value = null;
+    activeUid.value = null;
+    loading.value = false;
+    streaming.value = false;
+    streamedCount.value = 0;
+    activeHydratePromise = null;
+    activeHydrateUid = null;
+    upsertedDuringStream.clear();
+    deletedDuringStream.clear();
   }
 
   async function hydrate(uid: string, isDemo: boolean): Promise<void> {
@@ -60,8 +82,12 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     }
     if (loadedUid.value === uid && logs.value.length > 0 && !streaming.value) return;
 
-    loadLocal();
-    const hasCachedLogsForUser = logs.value.length > 0 && logs.value[0]?.userId === uid;
+    if (loadedUid.value !== uid) {
+      logs.value = [];
+    }
+    activeUid.value = uid;
+    loadLocal(uid);
+    const hasCachedLogsForUser = logs.value.length > 0 && logs.value.every((l) => l.userId === uid);
     if (!hasCachedLogsForUser && !isDemo) {
       logs.value = [];
     }
@@ -607,6 +633,7 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     streaming,
     streamedCount,
     hydrate,
+    reset,
     buildTimeLogEntity,
     createTimeLog,
     createTimeLogsBatch,

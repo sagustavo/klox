@@ -1,5 +1,10 @@
+import { mapFirebaseAuthErrorCode } from '~/domain/auth';
 import { getFirebaseClient, hasFirebaseConfig } from '~/utils/firebaseClient';
+import { useCatalogStore } from './catalog';
+import { useOnboardingStore } from './onboarding';
 import { usePreferencesStore } from './preferences';
+import { useTimeLogsStore } from './timeLogs';
+import { useTimerStore } from './timer';
 
 export interface AuthUser {
   uid: string;
@@ -8,7 +13,19 @@ export interface AuthUser {
   isDemo: boolean;
 }
 
+interface FirebaseUserLike {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+}
+
+export interface GoogleSignInResult {
+  ok: boolean;
+  isNewUser: boolean;
+}
+
 const DEMO_SESSION_KEY = 'klox_demo_session';
+const AUTH_SESSION_HINT_KEY = 'klox_auth_session';
 
 const DEMO_USER: AuthUser = {
   uid: 'demo-user',
@@ -23,81 +40,161 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false);
   const errorCode = ref<string | null>(null);
 
-  let initPromise: Promise<void> | null = null;
+  let listenerPromise: Promise<void> | null = null;
+  let initialAuthResolved = false;
 
   const isAuthenticated = computed(() => Boolean(user.value));
   const isDemoMode = computed(() => Boolean(user.value?.isDemo));
+
+  function resetTenantStores() {
+    useCatalogStore().reset();
+    useTimeLogsStore().reset();
+    useTimerStore().reset();
+    useOnboardingStore().reset();
+  }
+
+  function toAuthUser(
+    fbUser: FirebaseUserLike,
+    overrideDisplayName?: string,
+    fallbackDisplayName?: string
+  ): AuthUser {
+    const cleanOverride = overrideDisplayName?.trim();
+    return {
+      uid: fbUser.uid,
+      email: fbUser.email,
+      displayName:
+        cleanOverride ||
+        fbUser.displayName ||
+        fallbackDisplayName ||
+        fbUser.email?.split('@')[0] ||
+        'User',
+      isDemo: false,
+    };
+  }
+
+  async function applySignedInFirebaseUser(
+    fbUser: FirebaseUserLike,
+    overrideDisplayName?: string
+  ): Promise<void> {
+    if (import.meta.client) {
+      localStorage.removeItem(DEMO_SESSION_KEY);
+      localStorage.setItem(AUTH_SESSION_HINT_KEY, '1');
+    }
+
+    const sameRealUser = Boolean(
+      user.value && !user.value.isDemo && user.value.uid === fbUser.uid
+    );
+    const nextUser = toAuthUser(
+      fbUser,
+      overrideDisplayName,
+      sameRealUser ? (user.value?.displayName ?? undefined) : undefined
+    );
+
+    if (!sameRealUser) {
+      resetTenantStores();
+    }
+
+    user.value = nextUser;
+    ready.value = true;
+
+    if (!sameRealUser) {
+      const prefsStore = usePreferencesStore();
+      await prefsStore.hydrate(nextUser.uid, false);
+    }
+  }
+
+  function activateDemoState() {
+    if (import.meta.server) return;
+    if (user.value && user.value.uid !== DEMO_USER.uid) {
+      resetTenantStores();
+    }
+    localStorage.removeItem(AUTH_SESSION_HINT_KEY);
+    localStorage.setItem(DEMO_SESSION_KEY, '1');
+    user.value = { ...DEMO_USER };
+    ready.value = true;
+  }
+
+  function ensureFirebaseAuthListener(): Promise<void> {
+    if (listenerPromise) return listenerPromise;
+
+    const prefsStore = usePreferencesStore();
+    listenerPromise = new Promise<void>((resolve) => {
+      getFirebaseClient()
+        .then(async (fb) => {
+          if (!fb) {
+            activateDemoState();
+            await prefsStore.hydrate(DEMO_USER.uid, true);
+            initialAuthResolved = true;
+            resolve();
+            return;
+          }
+
+          const { onAuthStateChanged } = await import('firebase/auth');
+          fb.auth.languageCode = prefsStore.preferences.locale === 'pt-br' ? 'pt-BR' : 'en';
+
+          onAuthStateChanged(fb.auth, async (fbUser) => {
+            if (fbUser) {
+              await applySignedInFirebaseUser(fbUser);
+            } else if (import.meta.client && localStorage.getItem(DEMO_SESSION_KEY) === '1') {
+              activateDemoState();
+              await prefsStore.hydrate(DEMO_USER.uid, true);
+            } else {
+              if (import.meta.client) {
+                localStorage.removeItem(AUTH_SESSION_HINT_KEY);
+              }
+              if (user.value) {
+                resetTenantStores();
+              }
+              user.value = null;
+              ready.value = true;
+              await prefsStore.hydrate(null, true);
+            }
+            initialAuthResolved = true;
+            resolve();
+          });
+        })
+        .catch(async () => {
+          if (import.meta.client && localStorage.getItem(DEMO_SESSION_KEY) === '1') {
+            activateDemoState();
+            await prefsStore.hydrate(DEMO_USER.uid, true);
+          } else {
+            user.value = null;
+            ready.value = true;
+          }
+          initialAuthResolved = true;
+          resolve();
+        });
+    });
+
+    return listenerPromise;
+  }
 
   async function init(forceDemo = false): Promise<void> {
     if (import.meta.server) return;
     const prefsStore = usePreferencesStore();
 
     if (forceDemo || !hasFirebaseConfig()) {
-      const savedDemo = localStorage.getItem(DEMO_SESSION_KEY);
-      if (forceDemo || !hasFirebaseConfig() || savedDemo === '1') {
-        localStorage.setItem(DEMO_SESSION_KEY, '1');
-        user.value = { ...DEMO_USER };
-        await prefsStore.hydrate(user.value.uid, true);
+      activateDemoState();
+      await prefsStore.hydrate(DEMO_USER.uid, true);
+      return;
+    }
+
+    await ensureFirebaseAuthListener();
+
+    // Defensive sync if a sign-in just completed while initialAuthResolved was already true
+    if (initialAuthResolved && (!user.value || user.value.isDemo)) {
+      const fb = await getFirebaseClient();
+      if (fb?.auth.currentUser) {
+        await applySignedInFirebaseUser(fb.auth.currentUser);
       }
-      ready.value = true;
-      return;
     }
-
-    if (localStorage.getItem(DEMO_SESSION_KEY) === '1') {
-      user.value = { ...DEMO_USER };
-      await prefsStore.hydrate(user.value.uid, true);
-      ready.value = true;
-      return;
-    }
-
-    if (initPromise) return initPromise;
-
-    initPromise = new Promise<void>((resolve) => {
-      getFirebaseClient()
-        .then(async (fb) => {
-          if (!fb) {
-            user.value = { ...DEMO_USER };
-            await prefsStore.hydrate(user.value.uid, true);
-            ready.value = true;
-            resolve();
-            return;
-          }
-          const { onAuthStateChanged } = await import('firebase/auth');
-          fb.auth.languageCode = prefsStore.preferences.locale === 'pt-br' ? 'pt-BR' : 'en';
-
-          onAuthStateChanged(fb.auth, async (fbUser) => {
-            if (fbUser) {
-              user.value = {
-                uid: fbUser.uid,
-                email: fbUser.email,
-                displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
-                isDemo: false,
-              };
-              await prefsStore.hydrate(fbUser.uid, false);
-            } else {
-              user.value = null;
-              await prefsStore.hydrate(null, true);
-            }
-            ready.value = true;
-            resolve();
-          });
-        })
-        .catch(() => {
-          ready.value = true;
-          resolve();
-        });
-    });
-
-    return initPromise;
   }
 
   function enterDemoMode() {
     if (import.meta.server) return;
-    localStorage.setItem(DEMO_SESSION_KEY, '1');
-    user.value = { ...DEMO_USER };
-    ready.value = true;
+    activateDemoState();
     const prefsStore = usePreferencesStore();
-    prefsStore.hydrate(DEMO_USER.uid, true);
+    void prefsStore.hydrate(DEMO_USER.uid, true);
   }
 
   async function signInWithEmail(email: string, password: string): Promise<boolean> {
@@ -111,10 +208,13 @@ export const useAuthStore = defineStore('auth', () => {
       }
       localStorage.removeItem(DEMO_SESSION_KEY);
       const { signInWithEmailAndPassword } = await import('firebase/auth');
-      await signInWithEmailAndPassword(fb.auth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(fb.auth, email.trim(), password);
+      await applySignedInFirebaseUser(cred.user);
+      void ensureFirebaseAuthListener();
       return true;
     } catch (err: unknown) {
-      errorCode.value = mapFirebaseAuthError(err);
+      console.error('[Klox Auth Error]', err);
+      errorCode.value = mapFirebaseAuthErrorCode(err);
       return false;
     } finally {
       loading.value = false;
@@ -140,32 +240,42 @@ export const useAuthStore = defineStore('auth', () => {
       if (displayName?.trim()) {
         await updateProfile(cred.user, { displayName: displayName.trim() });
       }
+      await applySignedInFirebaseUser(cred.user, displayName);
+      void ensureFirebaseAuthListener();
       return true;
     } catch (err: unknown) {
-      errorCode.value = mapFirebaseAuthError(err);
+      console.error('[Klox Auth Error]', err);
+      errorCode.value = mapFirebaseAuthErrorCode(err);
       return false;
     } finally {
       loading.value = false;
     }
   }
 
-  async function signInWithGoogle(): Promise<boolean> {
+  async function signInWithGoogle(): Promise<GoogleSignInResult> {
     errorCode.value = null;
     loading.value = true;
     try {
       const fb = await getFirebaseClient();
       if (!fb) {
         enterDemoMode();
-        return true;
+        return { ok: true, isNewUser: false };
       }
       localStorage.removeItem(DEMO_SESSION_KEY);
-      const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
+      const { GoogleAuthProvider, getAdditionalUserInfo, signInWithPopup } = await import(
+        'firebase/auth'
+      );
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(fb.auth, provider);
-      return true;
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const cred = await signInWithPopup(fb.auth, provider);
+      const isNewUser = Boolean(getAdditionalUserInfo(cred)?.isNewUser);
+      await applySignedInFirebaseUser(cred.user);
+      void ensureFirebaseAuthListener();
+      return { ok: true, isNewUser };
     } catch (err: unknown) {
-      errorCode.value = mapFirebaseAuthError(err);
-      return false;
+      console.error('[Klox Auth Error]', err);
+      errorCode.value = mapFirebaseAuthErrorCode(err);
+      return { ok: false, isNewUser: false };
     } finally {
       loading.value = false;
     }
@@ -174,13 +284,15 @@ export const useAuthStore = defineStore('auth', () => {
   async function signOutUser(): Promise<void> {
     if (import.meta.client) {
       localStorage.removeItem(DEMO_SESSION_KEY);
+      localStorage.removeItem(AUTH_SESSION_HINT_KEY);
     }
     const fb = await getFirebaseClient();
-    if (fb && !user.value?.isDemo) {
+    if (fb) {
       const { signOut } = await import('firebase/auth');
       await signOut(fb.auth);
     }
     user.value = null;
+    resetTenantStores();
   }
 
   async function getIdToken(): Promise<string | null> {
@@ -206,24 +318,3 @@ export const useAuthStore = defineStore('auth', () => {
     getIdToken,
   };
 });
-
-function mapFirebaseAuthError(err: unknown): string {
-  const code = (err as { code?: string })?.code || '';
-  if (
-    code.includes('invalid-credential') ||
-    code.includes('wrong-password') ||
-    code.includes('user-not-found')
-  ) {
-    return 'AUTH_INVALID_CREDENTIALS';
-  }
-  if (code.includes('email-already-in-use')) {
-    return 'AUTH_EMAIL_IN_USE';
-  }
-  if (code.includes('weak-password')) {
-    return 'AUTH_WEAK_PASSWORD';
-  }
-  if (code.includes('popup-closed-by-user')) {
-    return 'AUTH_POPUP_CLOSED';
-  }
-  return 'AUTH_GENERIC_ERROR';
-}

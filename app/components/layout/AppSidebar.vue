@@ -119,7 +119,7 @@ function openHelpFromDrawer() {
 async function handleSignOut() {
   mobileDrawerOpen.value = false;
   await authStore.signOutUser();
-  await navigateTo(localePath('/login'));
+  await navigateTo(localePath('/'));
 }
 
 function handleGlobalSidebarShortcut(event: KeyboardEvent) {

@@ -4,10 +4,12 @@ import { Globe, ArrowRight } from 'lucide-vue-next';
 const { locale, setLocale } = useI18n();
 const localePath = useLocalePath();
 
-const hasDemoSession = ref(false);
+const hasActiveSession = ref(false);
 
 onMounted(() => {
-  hasDemoSession.value = localStorage.getItem('klox_demo_session') === '1';
+  hasActiveSession.value =
+    localStorage.getItem('klox_demo_session') === '1' ||
+    localStorage.getItem('klox_auth_session') === '1';
 });
 
 function toggleLocale() {
@@ -62,7 +64,7 @@ function toggleLocale() {
           </button>
 
           <ClientOnly>
-            <template v-if="hasDemoSession">
+            <template v-if="hasActiveSession">
               <NuxtLink :to="localePath('/app')" class="btn-orbit h-9 px-4">
                 <span>{{ $t('nav.openApp') }}</span>
                 <ArrowRight class="h-3.5 w-3.5" />

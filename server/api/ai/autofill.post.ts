@@ -30,7 +30,10 @@ function checkRateLimit(userKey: string): boolean {
   return true;
 }
 
-async function verifyBearerTokenIfConfigured(authHeader: string | undefined): Promise<string | null> {
+async function verifyBearerTokenIfConfigured(
+  authHeader: string | undefined,
+  projectId: string
+): Promise<string | null> {
   if (!authHeader?.startsWith('Bearer ')) return null;
   const idToken = authHeader.slice('Bearer '.length).trim();
   if (!idToken) return null;
@@ -38,10 +41,11 @@ async function verifyBearerTokenIfConfigured(authHeader: string | undefined): Pr
   try {
     const { getApps, initializeApp } = await import('firebase-admin/app');
     const { getAuth } = await import('firebase-admin/auth');
-    const app = getApps()[0] ?? initializeApp();
+    const app = getApps()[0] ?? initializeApp(projectId ? { projectId } : undefined);
     const decoded = await getAuth(app).verifyIdToken(idToken);
     return decoded.uid;
-  } catch {
+  } catch (err) {
+    console.warn('[Klox /api/ai/autofill auth verify failed]', err);
     return null;
   }
 }
@@ -58,11 +62,12 @@ export default defineEventHandler(async (event) => {
 
   const config = useRuntimeConfig(event);
   const authHeader = getHeader(event, 'authorization');
-  const firebaseProjectConfigured = Boolean(config.public?.firebaseProjectId);
+  const firebaseProjectId = String(config.public?.firebaseProjectId || '');
+  const firebaseProjectConfigured = Boolean(firebaseProjectId);
 
   let rateKey = 'demo-anonymous';
   if (firebaseProjectConfigured && !body.isDemo) {
-    const uid = await verifyBearerTokenIfConfigured(authHeader);
+    const uid = await verifyBearerTokenIfConfigured(authHeader, firebaseProjectId);
     if (!uid) {
       throw createError({
         statusCode: 401,
