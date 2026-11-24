@@ -26,6 +26,7 @@ export default defineNuxtConfig({
     '@nuxtjs/i18n',
     '@pinia/nuxt',
     '@vueuse/nuxt',
+    '@vercel/analytics',
   ],
 
   css: ['~/assets/css/tokens.css'],
