@@ -819,7 +819,7 @@ async function confirmCatalogDelete() {
       test-id="catalog-delete-confirm-dialog"
       @update:open="(open) => { if (!open && !isDeleting) pendingDelete = null; }"
       @confirm="confirmCatalogDelete"
-      @cancel="pendingDelete = null"
+      @cancel="() => { if (!isDeleting) pendingDelete = null; }"
     />
   </div>
 </template>

@@ -1178,7 +1178,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
       test-id="tracker-delete-confirm-dialog"
       @update:open="(open) => { if (!open && !isConfirmingDelete) pendingDeleteTarget = null; }"
       @confirm="confirmDeletePending"
-      @cancel="pendingDeleteTarget = null"
+      @cancel="() => { if (!isConfirmingDelete) pendingDeleteTarget = null; }"
     />
   </div>
 </template>
