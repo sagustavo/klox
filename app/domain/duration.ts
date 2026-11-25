@@ -44,8 +44,27 @@ export function parseHMS(hms: string): number | null {
   return m * 60 + s;
 }
 
+const DATE_KEY_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+const ISO_DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function getDateKeyFormatter(timeZone: string): Intl.DateTimeFormat {
+  const key = timeZone || 'UTC';
+  let formatter = DATE_KEY_FORMATTER_CACHE.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: key,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    DATE_KEY_FORMATTER_CACHE.set(key, formatter);
+  }
+  return formatter;
+}
+
 /**
  * Computes "YYYY-MM-DD" in the user's preferred IANA timezone (ADR-0005).
+ * Uses a cached `Intl.DateTimeFormat` to avoid per-call `TZDate` allocation on large imports.
  */
 export function toDateKey(utcIsoOrDate: string | Date, timeZone: string): string {
   const instant = typeof utcIsoOrDate === 'string' ? new Date(utcIsoOrDate) : utcIsoOrDate;
@@ -53,12 +72,26 @@ export function toDateKey(utcIsoOrDate: string | Date, timeZone: string): string
     throw new Error(`Invalid date passed to toDateKey: ${String(utcIsoOrDate)}`);
   }
   try {
-    const zoned = new TZDate(instant.getTime(), timeZone);
-    return format(zoned, 'yyyy-MM-dd');
+    const formatter = getDateKeyFormatter(timeZone);
+    const formatted = formatter.format(instant);
+    if (ISO_DATE_KEY_RE.test(formatted)) {
+      return formatted;
+    }
+    const parts = formatter.formatToParts(instant);
+    const year = parts.find((p) => p.type === 'year')?.value;
+    const month = parts.find((p) => p.type === 'month')?.value;
+    const day = parts.find((p) => p.type === 'day')?.value;
+    if (year && month && day) {
+      return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
   } catch {
     // Fallback to UTC date if an unknown timezone string is supplied
-    return format(new TZDate(instant.getTime(), 'UTC'), 'yyyy-MM-dd');
   }
+  const utcFormatted = getDateKeyFormatter('UTC').format(instant);
+  if (ISO_DATE_KEY_RE.test(utcFormatted)) {
+    return utcFormatted;
+  }
+  return instant.toISOString().slice(0, 10);
 }
 
 /**

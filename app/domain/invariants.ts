@@ -103,6 +103,25 @@ export function validateProjectTagRename(params: {
 }
 
 /**
+ * Domain Invariant (FR-6.1):
+ * An active timer is considered empty (and discarded cleanly on cancel/stop)
+ * when description is blank, project is unassigned, no task is linked, and no tags are selected.
+ */
+export function isEmptyActiveTimer(state: {
+  description: string;
+  projectId: EntityId | null | undefined;
+  taskId?: EntityId | null;
+  tagIds?: readonly EntityId[];
+}): boolean {
+  return (
+    state.description.trim() === '' &&
+    (!state.projectId || state.projectId === UNASSIGNED_PROJECT_ID) &&
+    !state.taskId &&
+    (state.tagIds?.length ?? 0) === 0
+  );
+}
+
+/**
  * Domain Invariant (GEMINI.md §2.2):
  * Switching projects clears any selected tags that do not belong to the new project
  * and defaults `isBillable` to the new Project's `isBillableDefault`.

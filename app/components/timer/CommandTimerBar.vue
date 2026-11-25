@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Check,
   Play,
+  RotateCcw,
   Square,
   X,
 } from 'lucide-vue-next';
@@ -29,6 +30,9 @@ const prefsStore = usePreferencesStore();
 const timerStore = useTimerStore();
 const timeLogsStore = useTimeLogsStore();
 const { formatTime } = useFormat(() => prefsStore.preferences);
+const { matchesCommand, getFormattedText, isRecording } = useShortcuts();
+
+const latestLog = computed(() => timeLogsStore.sortedLogs[0] ?? null);
 
 const descriptionInputRef = ref<HTMLInputElement | null>(null);
 const liveStartTimeInputRef = ref<HTMLInputElement | null>(null);
@@ -66,12 +70,27 @@ function focusDescription() {
   highlightedRecallIdx.value = -1;
 }
 
-function closeMenusAndBlur() {
+watch(
+  () => timerStore.focusDescriptionSignal,
+  () => {
+    nextTick(() => {
+      focusDescription();
+    });
+  }
+);
+
+async function closeMenusAndBlur() {
   showRecallDropdown.value = false;
   showStartAdjustPopover.value = false;
   highlightedRecallIdx.value = -1;
   if (document.activeElement instanceof HTMLElement) {
     document.activeElement.blur();
+  }
+  if (timerStore.isRunning && timerStore.isCurrentTimerEmpty && authStore.user) {
+    await timerStore.discardTimer({
+      uid: authStore.user.uid,
+      isDemo: authStore.isDemoMode,
+    });
   }
 }
 
@@ -197,7 +216,11 @@ function handleDescriptionKeydown(e: KeyboardEvent) {
     }
     e.preventDefault();
     showRecallDropdown.value = false;
-    handlePrimaryAction();
+    if (!timerStore.isRunning) {
+      void handlePrimaryAction();
+    } else if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     return;
   }
   if (e.key === 'Tab') {
@@ -274,54 +297,46 @@ const activeClockTitle = computed(() => {
   return `${started} · ${t('timer.liveStart.adjustTooltip')}`;
 });
 
+async function handleResumeLast() {
+  if (!authStore.user) return;
+  showRecallDropdown.value = false;
+  showStartAdjustPopover.value = false;
+  await timerStore.resumeLastActivity({
+    uid: authStore.user.uid,
+    isDemo: authStore.isDemoMode,
+  });
+}
+
 /**
- * Global keyboard shortcuts (GEMINI.md §3.2):
- * Guarded so single-key shortcuts (`N`, `S`) do NOT fire while focused inside INPUT, TEXTAREA, or SELECT.
- * `Cmd+I` / `Ctrl+I` and `Esc` work globally.
+ * Local Command Bar shortcuts (AI Auto-Fill & Esc cancel/blur):
+ * Global timer shortcuts (`timer.new`, `timer.stop`, `timer.resumeLast`) are dispatched workspace-wide in `app/layouts/app.vue`.
  */
 function handleGlobalKeydown(e: KeyboardEvent) {
-  if (document.querySelector('[role="alertdialog"], [role="dialog"]')) {
+  if (isRecording.value || document.querySelector('[role="alertdialog"], [role="dialog"]')) {
     return;
   }
 
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
+  if (matchesCommand(e, 'timer.aiAutofill')) {
     e.preventDefault();
     triggerAiAutofill();
     return;
   }
 
   if (e.key === 'Escape') {
-    closeMenusAndBlur();
-    return;
-  }
-
-  const active = document.activeElement;
-  const isEditable =
-    active instanceof HTMLElement &&
-    (active.tagName === 'INPUT' ||
-      active.tagName === 'TEXTAREA' ||
-      active.tagName === 'SELECT' ||
-      active.isContentEditable);
-
-  if (isEditable) return;
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-  if (e.key.toLowerCase() === 'n') {
-    e.preventDefault();
-    focusDescription();
-  } else if (e.key.toLowerCase() === 's') {
-    if (timerStore.isRunning && authStore.user) {
-      e.preventDefault();
-      timerStore.stopTimer({
-        uid: authStore.user.uid,
-        isDemo: authStore.isDemoMode,
-      });
+    if (document.querySelector('[data-dismissable-layer]')) {
+      return;
     }
+    void closeMenusAndBlur();
   }
 }
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown);
+  if (timerStore.isRunning && timerStore.isCurrentTimerEmpty) {
+    nextTick(() => {
+      focusDescription();
+    });
+  }
 });
 
 onUnmounted(() => {
@@ -498,6 +513,19 @@ onUnmounted(() => {
             size="md"
           />
 
+          <!-- Quick Resume Last Activity Trigger (FR-6.3) -->
+          <button
+            v-if="!timerStore.isRunning && latestLog"
+            type="button"
+            data-testid="command-resume-last"
+            :aria-label="$t('timer.resumeLastAria', { description: latestLog.description })"
+            :title="`${$t('timer.resumeLastTooltip', { description: latestLog.description })} [${getFormattedText('timer.resumeLast')}]`"
+            class="btn-press inline-flex h-9 w-9 max-md:h-10 max-md:w-10 shrink-0 items-center justify-center border border-border-hairline bg-bg-primary text-text-muted hover:border-signal/60 hover:text-signal transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+            @click="handleResumeLast"
+          >
+            <RotateCcw class="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+
           <!-- 5. Icon-Only Start / Stop Trigger -->
           <button
             type="button"
@@ -505,7 +533,7 @@ onUnmounted(() => {
             :aria-label="timerStore.isRunning ? $t('timer.stopButton') : $t('timer.startButton')"
             :title="
               timerStore.isRunning
-                ? `${$t('timer.stopButton')} [S]`
+                ? `${$t('timer.stopButton')} [${getFormattedText('timer.stop')}]`
                 : `${$t('timer.startButton')} [Enter]`
             "
             class="btn-press inline-flex h-9 w-9 max-md:h-10 max-md:w-10 shrink-0 items-center justify-center text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-signal"

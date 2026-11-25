@@ -5,6 +5,7 @@ export interface IdGenerator {
 }
 
 const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const UTF8_ENCODER = new TextEncoder();
 
 /**
  * Generates a Firestore-style 20-character random alphanumeric ID using Web Crypto.
@@ -37,7 +38,7 @@ export interface DeterministicLogKey {
  */
 export async function deterministicLogId(key: DeterministicLogKey): Promise<EntityId> {
   const payload = `${key.startTimeUTC}|${key.durationSeconds}|${key.normalizedDescription}|${key.projectName.trim().toLowerCase()}`;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload));
+  const digest = await crypto.subtle.digest('SHA-256', UTF8_ENCODER.encode(payload));
   const bytes = new Uint8Array(digest);
   let out = '';
   for (let i = 0; i < 22; i++) {

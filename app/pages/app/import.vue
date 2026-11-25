@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Download, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Play } from 'lucide-vue-next';
-import { formatHMS } from '~/domain/duration';
-import type { TogglDryRunPreview } from '~/domain/toggl';
+import type { TogglDryRunPreview, TogglRowImportStatus } from '~/domain/toggl';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
 import { usePreferencesStore } from '~/stores/preferences';
@@ -17,10 +16,20 @@ const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 const timeLogsStore = useTimeLogsStore();
 const prefsStore = usePreferencesStore();
-const { isCommitting, importProgress, buildPreview, commitPreview, exportCsvDownload } = useTogglCsv();
+const {
+  isParsing,
+  parseProgress,
+  isCommitting,
+  importProgress,
+  buildPreview,
+  refreshPreview,
+  commitPreview,
+  exportCsvDownload,
+} = useTogglCsv();
 
 const csvText = ref('');
-const preview = ref<TogglDryRunPreview | null>(null);
+const preview = shallowRef<TogglDryRunPreview | null>(null);
+const previewStatusFilter = ref<'all' | TogglRowImportStatus>('all');
 const commitResult = ref<{
   createdProjects: number;
   createdTags: number;
@@ -46,11 +55,13 @@ async function handleFileUpload(event: Event) {
   const text = await file.text();
   csvText.value = text;
   commitResult.value = null;
+  previewStatusFilter.value = 'all';
   preview.value = await buildPreview(text);
 }
 
 async function handleRunPreview() {
   commitResult.value = null;
+  previewStatusFilter.value = 'all';
   preview.value = await buildPreview(csvText.value);
 }
 
@@ -58,8 +69,12 @@ async function handleCommit() {
   if (!preview.value) return;
   const res = await commitPreview(preview.value);
   commitResult.value = res;
-  // Re-run preview so the user immediately sees idempotent 0 new logs / all duplicates
-  preview.value = await buildPreview(csvText.value);
+  // Refresh row status badges in O(N) without re-parsing or re-hashing
+  preview.value = refreshPreview(preview.value);
+}
+
+function toggleSummaryStatusFilter(target: TogglRowImportStatus) {
+  previewStatusFilter.value = previewStatusFilter.value === target ? 'all' : target;
 }
 
 function handleExport() {
@@ -130,12 +145,20 @@ function handleExport() {
       <div class="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
-          :disabled="!csvText.trim()"
+          :disabled="!csvText.trim() || isParsing"
           class="btn-press inline-flex h-10 items-center gap-2 border border-border-hairline bg-bg-primary px-4 text-xs font-semibold uppercase tracking-wider text-text-primary hover:border-signal disabled:opacity-40 transition-colors"
           @click="handleRunPreview"
         >
           <Play class="h-4 w-4 text-signal" />
-          <span>{{ $t('csv.previewButton') }}</span>
+          <span class="tabular-telemetry">
+            {{
+              isParsing
+                ? parseProgress
+                  ? `${$t('csv.parsing')} (${parseProgress.processed}/${parseProgress.total})`
+                  : $t('csv.parsing')
+                : $t('csv.previewButton')
+            }}
+          </span>
         </button>
 
         <button
@@ -186,23 +209,37 @@ function handleExport() {
     <div v-if="preview" class="space-y-4">
       <!-- Summary Telemetry Grid -->
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <div class="border border-border-hairline bg-bg-elevated p-4">
+        <button
+          type="button"
+          data-testid="csv-summary-pending"
+          :aria-pressed="previewStatusFilter === 'pending'"
+          class="border bg-bg-elevated p-4 text-left transition-colors hover:border-signal"
+          :class="previewStatusFilter === 'pending' ? 'border-signal bg-signal-soft/30' : 'border-border-hairline'"
+          @click="toggleSummaryStatusFilter('pending')"
+        >
           <div class="label-eyebrow text-text-muted">
             {{ $t('csv.summaryNewLogs') }}
           </div>
           <div class="display-wide tabular-telemetry mt-2 text-2xl text-signal">
             {{ preview.newLogsCount }}
           </div>
-        </div>
+        </button>
 
-        <div class="border border-border-hairline bg-bg-elevated p-4">
+        <button
+          type="button"
+          data-testid="csv-summary-imported"
+          :aria-pressed="previewStatusFilter === 'imported'"
+          class="border bg-bg-elevated p-4 text-left transition-colors hover:border-emerald-500/60"
+          :class="previewStatusFilter === 'imported' ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-border-hairline'"
+          @click="toggleSummaryStatusFilter('imported')"
+        >
           <div class="label-eyebrow text-text-muted">
             {{ $t('csv.summaryDuplicates') }}
           </div>
           <div class="display-wide tabular-telemetry mt-2 text-2xl text-text-primary">
             {{ preview.duplicateLogsCount }}
           </div>
-        </div>
+        </button>
 
         <div class="border border-border-hairline bg-bg-elevated p-4">
           <div class="label-eyebrow text-text-muted">
@@ -281,65 +318,21 @@ function handleExport() {
           <span>{{ $t('csv.summaryErrors') }} ({{ preview.errors.length }})</span>
         </div>
         <ul class="space-y-1 text-ui text-destructive">
-          <li v-for="err in preview.errors" :key="err.rowNumber">
+          <li v-for="err in preview.errors.slice(0, 50)" :key="err.rowNumber">
             {{ t(`csv.errors.${err.code}`, { row: err.rowNumber }) }}
           </li>
         </ul>
+        <p v-if="preview.errors.length > 50" class="tabular-telemetry text-xs text-destructive/80">
+          {{ $t('csv.errorsOverflow', { count: preview.errors.length - 50 }) }}
+        </p>
       </div>
 
-      <!-- Parsed Rows Preview Table -->
-      <div
+      <!-- Paginated & Column-Filterable Preview Table -->
+      <CsvTogglPreviewTable
         v-if="preview.logRows.length > 0"
-        class="relative overflow-hidden border border-border-hairline bg-bg-elevated overflow-x-auto"
-      >
-        <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
-        <table class="w-full text-left text-sm">
-          <thead class="border-b border-border-hairline bg-bg-primary text-xs font-medium uppercase tracking-wider text-text-muted">
-            <tr>
-              <th class="px-4 py-3">#</th>
-              <th class="px-4 py-3">{{ $t('dashboard.colDate') }}</th>
-              <th class="px-4 py-3">{{ $t('dashboard.colDescription') }}</th>
-              <th class="px-4 py-3">{{ $t('dashboard.colProject') }}</th>
-              <th class="px-4 py-3">{{ $t('dashboard.colTags') }}</th>
-              <th class="px-4 py-3 text-right">{{ $t('dashboard.colDuration') }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border-hairline">
-            <tr
-              v-for="row in preview.logRows.slice(0, 50)"
-              :key="row.deterministicId"
-              class="hover:bg-bg-hover"
-            >
-              <td class="tabular-telemetry px-4 py-2.5 text-ui text-text-muted">
-                {{ row.rowNumber }}
-              </td>
-              <td class="tabular-telemetry px-4 py-2.5 text-ui text-text-muted whitespace-nowrap">
-                {{ row.startDateKey }}
-              </td>
-              <td class="px-4 py-2.5 font-medium text-text-primary">
-                {{ row.description }}
-              </td>
-              <td class="px-4 py-2.5 text-ui text-text-muted">
-                {{ row.projectName || $t('catalog.unassigned') }}
-              </td>
-              <td class="px-4 py-2.5">
-                <div class="flex flex-wrap gap-1.5">
-                  <span
-                    v-for="tag in row.tagNames"
-                    :key="tag"
-                    class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-xs text-text-muted"
-                  >
-                    {{ tag }}
-                  </span>
-                </div>
-              </td>
-              <td class="tabular-telemetry px-4 py-2.5 text-right font-semibold text-text-primary">
-                {{ formatHMS(row.durationSeconds) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        v-model:status-filter="previewStatusFilter"
+        :rows="preview.logRows"
+      />
     </div>
   </div>
 </template>

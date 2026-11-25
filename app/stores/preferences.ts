@@ -1,8 +1,24 @@
 import { DEFAULT_PREFERENCES, detectBrowserPreferences } from '~/domain/preferences';
+import { sanitizeShortcutOverrides } from '~/domain/shortcuts';
 import type { UserPreferences } from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
 
 const STORAGE_KEY = 'klox_user_preferences';
+
+function normalizePreferences(raw: UserPreferences): UserPreferences {
+  const cleanShortcuts = sanitizeShortcutOverrides(raw.keyboardShortcuts);
+  const next: UserPreferences = {
+    locale: raw.locale,
+    timeZone: raw.timeZone,
+    weekStartsOn: raw.weekStartsOn,
+    dateFormat: raw.dateFormat,
+    hourCycle: raw.hourCycle,
+  };
+  if (Object.keys(cleanShortcuts).length > 0) {
+    next.keyboardShortcuts = cleanShortcuts;
+  }
+  return next;
+}
 
 export const usePreferencesStore = defineStore('preferences', () => {
   const preferences = ref<UserPreferences>({ ...DEFAULT_PREFERENCES });
@@ -14,12 +30,12 @@ export const usePreferencesStore = defineStore('preferences', () => {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<UserPreferences>;
-        return { ...detectBrowserPreferences(window.navigator), ...parsed };
+        return normalizePreferences({ ...detectBrowserPreferences(window.navigator), ...parsed });
       }
     } catch {
       // Ignore malformed storage
     }
-    const detected = detectBrowserPreferences(window.navigator);
+    const detected = normalizePreferences(detectBrowserPreferences(window.navigator));
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(detected));
     } catch {
@@ -52,7 +68,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
       const snap = await getDoc(doc(fb.db, 'users', uid));
       const remotePrefs = snap.data()?.preferences as Partial<UserPreferences> | undefined;
       if (remotePrefs) {
-        const merged: UserPreferences = { ...local, ...remotePrefs };
+        const merged = normalizePreferences({ ...local, ...remotePrefs });
         preferences.value = merged;
         saveLocal(merged);
       }
@@ -66,10 +82,10 @@ export const usePreferencesStore = defineStore('preferences', () => {
     uid?: string | null,
     isDemo = true
   ) {
-    const next: UserPreferences = {
+    const next = normalizePreferences({
       ...preferences.value,
       ...patch,
-    };
+    });
     preferences.value = next;
     saveLocal(next);
 
@@ -83,7 +99,10 @@ export const usePreferencesStore = defineStore('preferences', () => {
       await setDoc(
         doc(fb.db, 'users', uid),
         {
-          preferences: next,
+          preferences: {
+            ...next,
+            keyboardShortcuts: next.keyboardShortcuts ?? null,
+          },
           updatedAt: new Date().toISOString(),
         },
         { merge: true }

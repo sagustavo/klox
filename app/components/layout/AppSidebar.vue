@@ -40,6 +40,7 @@ const onboardingStore = useOnboardingStore();
 const timerStore = useTimerStore();
 const { sidebarState, syncFromStorage, setSidebarState, cycleSidebar, reopenSidebar } =
   useSidebarState();
+const { isRecording, getKeycaps, matchesCommand } = useShortcuts();
 
 const mobileDrawerOpen = ref(false);
 
@@ -123,10 +124,8 @@ async function handleSignOut() {
 }
 
 function handleGlobalSidebarShortcut(event: KeyboardEvent) {
-  if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) {
-    return;
-  }
-  if (event.key !== '\\' && event.code !== 'Backslash') {
+  if (isRecording.value) return;
+  if (!matchesCommand(event, 'ui.toggleSidebar')) {
     return;
   }
   if (document.querySelector('[role="alertdialog"]')) {
@@ -281,7 +280,7 @@ onBeforeUnmount(() => {
               <HelpCircle class="h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
               <span>{{ $t('nav.help') }}</span>
             </span>
-            <BrandKeycapBadge keys="?" size="sm" />
+            <BrandKeycapBadge :keys="getKeycaps('ui.toggleHelp')" size="sm" />
           </button>
 
           <div
@@ -363,7 +362,7 @@ onBeforeUnmount(() => {
                 class="orbital-tooltip z-50 flex items-center gap-2 border border-border-hairline bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-primary shadow-xl"
               >
                 <span>{{ $t('nav.sidebarCollapse') }}</span>
-                <BrandKeycapBadge :keys="['⌘', '\\']" size="sm" />
+                <BrandKeycapBadge :keys="getKeycaps('ui.toggleSidebar')" size="sm" />
               </TooltipContent>
             </TooltipPortal>
           </TooltipRoot>
@@ -386,7 +385,7 @@ onBeforeUnmount(() => {
                 class="orbital-tooltip z-50 flex items-center gap-2 border border-border-hairline bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-primary shadow-xl"
               >
                 <span>{{ $t('nav.sidebarHide') }}</span>
-                <BrandKeycapBadge :keys="['⌘', '\\']" size="sm" />
+                <BrandKeycapBadge :keys="getKeycaps('ui.toggleSidebar')" size="sm" />
               </TooltipContent>
             </TooltipPortal>
           </TooltipRoot>
@@ -510,7 +509,7 @@ onBeforeUnmount(() => {
                 class="orbital-tooltip z-50 flex items-center gap-2 border border-border-hairline bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-primary shadow-xl"
               >
                 <span>{{ $t('nav.sidebarExpand') }}</span>
-                <BrandKeycapBadge :keys="['⌘', '\\']" size="sm" />
+                <BrandKeycapBadge :keys="getKeycaps('ui.toggleSidebar')" size="sm" />
               </TooltipContent>
             </TooltipPortal>
           </TooltipRoot>
@@ -533,7 +532,7 @@ onBeforeUnmount(() => {
                 class="orbital-tooltip z-50 flex items-center gap-2 border border-border-hairline bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-primary shadow-xl"
               >
                 <span>{{ $t('nav.sidebarHide') }}</span>
-                <BrandKeycapBadge :keys="['⌘', '\\']" size="sm" />
+                <BrandKeycapBadge :keys="getKeycaps('ui.toggleSidebar')" size="sm" />
               </TooltipContent>
             </TooltipPortal>
           </TooltipRoot>
@@ -552,7 +551,7 @@ onBeforeUnmount(() => {
             <HelpCircle class="h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
             <span class="truncate">{{ $t('nav.help') }}</span>
           </span>
-          <BrandKeycapBadge keys="?" size="sm" />
+          <BrandKeycapBadge :keys="getKeycaps('ui.toggleHelp')" size="sm" />
         </button>
 
         <TooltipRoot v-else>
@@ -574,7 +573,7 @@ onBeforeUnmount(() => {
               class="orbital-tooltip z-50 flex items-center gap-2 border border-border-hairline bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-primary shadow-xl"
             >
               <span>{{ $t('nav.help') }}</span>
-              <BrandKeycapBadge keys="?" size="sm" />
+              <BrandKeycapBadge :keys="getKeycaps('ui.toggleHelp')" size="sm" />
             </TooltipContent>
           </TooltipPortal>
         </TooltipRoot>
@@ -664,7 +663,7 @@ onBeforeUnmount(() => {
           class="orbital-tooltip z-50 flex items-center gap-2 border border-border-hairline bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-primary shadow-xl"
         >
           <span>{{ $t('nav.sidebarShow') }}</span>
-          <BrandKeycapBadge :keys="['⌘', '\\']" size="sm" />
+          <BrandKeycapBadge :keys="getKeycaps('ui.toggleSidebar')" size="sm" />
         </TooltipContent>
       </TooltipPortal>
     </TooltipRoot>

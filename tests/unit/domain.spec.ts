@@ -35,6 +35,7 @@ import {
   createUnassignedProject,
   flattenTaskTree,
   formatTaskHierarchyLabel,
+  isEmptyActiveTimer,
   resolveTagNames,
   tagsForProject,
   validateProjectTagRename,
@@ -48,6 +49,15 @@ import {
 } from '../../app/domain/onboarding';
 import { buildRecallTemplates, validateAiPrediction } from '../../app/domain/recall';
 import {
+  captureShortcutFromEvent,
+  detectShortcutConflicts,
+  formatShortcutKeycaps,
+  isSingleKeyShortcut,
+  matchesShortcutEvent,
+  normalizeShortcutBinding,
+  sanitizeShortcutOverrides,
+} from '../../app/domain/shortcuts';
+import {
   DEFAULT_SIDEBAR_STATE,
   SIDEBAR_STORAGE_KEY,
   cycleSidebarState,
@@ -56,7 +66,10 @@ import {
 } from '../../app/domain/sidebar';
 import {
   TOGGL_CSV_HEADERS,
+  createEmptyTogglPreviewFilters,
+  filterTogglPreviewRows,
   parseAndPreviewTogglCsv,
+  refreshTogglPreviewStatuses,
   serializeTogglCsv,
 } from '../../app/domain/toggl';
 import type { Project, ProjectTag, Task, TimeLog } from '../../app/domain/types';
@@ -1020,6 +1033,225 @@ describe('domain/auth', () => {
     expect(demoKey).toBe('klox_catalog_projects:demo-user');
     expect(userKey).toBe('klox_catalog_projects:firebase-uid-123');
     expect(demoKey).not.toBe(userKey);
+  });
+});
+
+describe('domain/toggl (NFR-1.2 High-Volume 3,500+ Row Parsing, Statuses & Column Filtering)', () => {
+  it('parses 3,500 CSV rows in yieldable chunks, computes pending/imported statuses, filters by column, and paginates', async () => {
+    const rowCount = 3500;
+    const lines = [TOGGL_CSV_HEADERS.join(',')];
+    for (let i = 0; i < rowCount; i++) {
+      const day = String((i % 28) + 1).padStart(2, '0');
+      const month = String((Math.floor(i / 28) % 12) + 1).padStart(2, '0');
+      const project = i % 3 === 0 ? 'XP Core API' : i % 3 === 1 ? 'Klox Web' : '';
+      const tags = i % 2 === 0 ? 'backend, review' : 'frontend';
+      const duration = i % 5 === 0 ? '01:30:00' : '00:45:00';
+      lines.push(
+        `Gustavo,gustavo@klox.dev,,${project},,Task item #${i},Yes,2026-${month}-${day},09:00:00,2026-${month}-${day},09:45:00,${duration},"${tags}"`
+      );
+    }
+    const csvText = lines.join('\n');
+    const progressCalls: Array<{ processed: number; total: number }> = [];
+
+    const firstPreview = await parseAndPreviewTogglCsv({
+      csvText,
+      existingProjects: [],
+      existingTags: [],
+      existingLogs: [],
+      chunkSize: 500,
+      onProgress: (processed, total) => progressCalls.push({ processed, total }),
+    });
+
+    expect(firstPreview.errors).toHaveLength(0);
+    expect(firstPreview.logRows).toHaveLength(rowCount);
+    expect(firstPreview.newLogsCount).toBe(rowCount);
+    expect(firstPreview.duplicateLogsCount).toBe(0);
+    expect(progressCalls.length).toBeGreaterThan(2);
+    expect(progressCalls[progressCalls.length - 1]).toEqual({ processed: rowCount, total: rowCount });
+    expect(firstPreview.logRows[0]?.importStatus).toBe('pending');
+
+    // Simulate the first 100 rows already existing in TimeLogsStore -> refresh statuses in O(N)
+    const existingLogs: TimeLog[] = firstPreview.logRows.slice(0, 100).map((r) => ({
+      id: r.deterministicId,
+      userId: 'u1',
+      description: r.description,
+      normalizedDescription: r.normalizedDescription,
+      projectId: 'p1',
+      projectNameSnapshot: r.projectName || 'General / Unassigned',
+      projectColorSnapshot: '#3B82F6',
+      tagIds: [],
+      isBillable: r.isBillable,
+      startTime: r.startTimeUTC,
+      endTime: r.endTimeUTC,
+      durationSeconds: r.durationSeconds,
+      timeZone: 'UTC',
+      dateKey: r.startDateKey,
+    }));
+
+    const refreshed = refreshTogglPreviewStatuses({
+      preview: firstPreview,
+      existingProjects: [],
+      existingTags: [],
+      existingLogs,
+    });
+
+    expect(refreshed.duplicateLogsCount).toBe(100);
+    expect(refreshed.newLogsCount).toBe(rowCount - 100);
+    expect(refreshed.logRows[0]?.importStatus).toBe('imported');
+    expect(refreshed.logRows[100]?.importStatus).toBe('pending');
+
+    // Filter by status + project + tag + duration + description + date
+    const importedOnly = filterTogglPreviewRows(refreshed.logRows, {
+      ...createEmptyTogglPreviewFilters(),
+      status: 'imported',
+    });
+    expect(importedOnly).toHaveLength(100);
+
+    const apiBackend90m = filterTogglPreviewRows(refreshed.logRows, {
+      ...createEmptyTogglPreviewFilters(),
+      projectQuery: 'xp core',
+      tagQuery: 'review',
+      durationQuery: '01:30',
+      descriptionQuery: 'task item #30',
+    });
+    expect(apiBackend90m.some((r) => r.description === 'Task item #30')).toBe(true);
+    expect(
+      apiBackend90m.every(
+        (r) =>
+          r.projectName === 'XP Core API' &&
+          r.tagNames.includes('review') &&
+          r.durationSeconds === 5400
+      )
+    ).toBe(true);
+
+    const unassignedFiltered = filterTogglPreviewRows(refreshed.logRows, {
+      ...createEmptyTogglPreviewFilters(),
+      projectQuery: 'Unassigned',
+    });
+    expect(unassignedFiltered.length).toBeGreaterThan(0);
+    expect(unassignedFiltered.every((r) => r.projectName === '')).toBe(true);
+
+    const paged = paginateItems({
+      items: refreshed.logRows,
+      pageIndex: 2,
+      pageSize: 50,
+    });
+    expect(paged.items).toHaveLength(50);
+    expect(paged.startItem).toBe(101);
+    expect(paged.endItem).toBe(150);
+    expect(paged.totalPages).toBe(70);
+  });
+});
+
+describe('domain/invariants (FR-6.1 Empty ActiveTimer Discard Rule)', () => {
+  it('marks an active timer empty only when description is blank, project is unassigned, and no task/tags are set', () => {
+    expect(
+      isEmptyActiveTimer({
+        description: '',
+        projectId: 'system_unassigned',
+      })
+    ).toBe(true);
+
+    expect(
+      isEmptyActiveTimer({
+        description: '   ',
+        projectId: null,
+        taskId: null,
+        tagIds: [],
+      })
+    ).toBe(true);
+
+    expect(
+      isEmptyActiveTimer({
+        description: 'Write docs',
+        projectId: 'system_unassigned',
+      })
+    ).toBe(false);
+
+    expect(
+      isEmptyActiveTimer({
+        description: '',
+        projectId: 'proj-123',
+      })
+    ).toBe(false);
+
+    expect(
+      isEmptyActiveTimer({
+        description: '',
+        projectId: 'system_unassigned',
+        taskId: 'task-1',
+      })
+    ).toBe(false);
+
+    expect(
+      isEmptyActiveTimer({
+        description: '',
+        projectId: 'system_unassigned',
+        tagIds: ['tag-1'],
+      })
+    ).toBe(false);
+  });
+});
+
+describe('domain/shortcuts (FR-6.3 Customizable Keyboard Shortcuts & Conflict Detection)', () => {
+  it('normalizes shortcut bindings, captures keyboard events, and matches platform combos cleanly', () => {
+    expect(normalizeShortcutBinding('shift+mod+k')).toBe('Mod+Shift+K');
+    expect(normalizeShortcutBinding('cmd+i')).toBe('Mod+I');
+    expect(normalizeShortcutBinding('ctrl+alt+r')).toBe('Ctrl+Alt+R');
+    expect(normalizeShortcutBinding('r')).toBe('R');
+    expect(normalizeShortcutBinding('?')).toBe('?');
+    expect(normalizeShortcutBinding('Escape')).toBeNull();
+    expect(normalizeShortcutBinding('Tab')).toBeNull();
+    expect(normalizeShortcutBinding('Shift')).toBeNull();
+
+    // Capturing events collapses meta/ctrl into Mod and ignores Shift on plain '?'
+    expect(captureShortcutFromEvent({ key: 'k', ctrlKey: true, shiftKey: true })).toBe('Mod+Shift+K');
+    expect(captureShortcutFromEvent({ key: '?', shiftKey: true })).toBe('?');
+    expect(captureShortcutFromEvent({ key: 'R', shiftKey: true })).toBe('Shift+R');
+    expect(captureShortcutFromEvent({ key: 'Escape' })).toBeNull();
+
+    // Matching single-key vs shifted vs Mod shortcuts
+    expect(matchesShortcutEvent({ key: 'r' }, 'R')).toBe(true);
+    expect(matchesShortcutEvent({ key: 'R', shiftKey: true }, 'R')).toBe(false);
+    expect(matchesShortcutEvent({ key: 'R', shiftKey: true }, 'Shift+R')).toBe(true);
+    expect(matchesShortcutEvent({ key: '?', shiftKey: true }, '?')).toBe(true);
+    expect(matchesShortcutEvent({ key: 'i', metaKey: true }, 'Mod+I')).toBe(true);
+    expect(matchesShortcutEvent({ key: 'i', ctrlKey: true }, 'Mod+I')).toBe(true);
+    expect(matchesShortcutEvent({ key: 'IntlBackslash', code: 'Backslash', ctrlKey: true }, 'Mod+\\')).toBe(
+      true
+    );
+
+    expect(isSingleKeyShortcut('R')).toBe(true);
+    expect(isSingleKeyShortcut('Shift+R')).toBe(true);
+    expect(isSingleKeyShortcut('?')).toBe(true);
+    expect(isSingleKeyShortcut('Mod+I')).toBe(false);
+
+    expect(formatShortcutKeycaps('Mod+Shift+K', true)).toEqual(['⌘', '⇧', 'K']);
+    expect(formatShortcutKeycaps('Mod+Shift+K', false)).toEqual(['Ctrl', 'Shift', 'K']);
+  });
+
+  it('sanitizes overrides and detects colliding commands accurately', () => {
+    const clean = sanitizeShortcutOverrides({
+      'timer.new': 'n', // equals default -> omitted
+      'timer.resumeLast': 'shift+r',
+      'invalid.cmd': 'K',
+      'timer.stop': 'Escape', // invalid -> omitted
+    });
+    expect(clean).toEqual({
+      'timer.resumeLast': 'Shift+R',
+    });
+
+    const conflicts = detectShortcutConflicts({
+      'timer.new': 'K',
+      'timer.stop': 'S',
+      'timer.resumeLast': 'K',
+      'timer.aiAutofill': 'Mod+I',
+      'ui.toggleSidebar': 'Mod+\\',
+      'ui.toggleHelp': '?',
+    });
+    expect(conflicts['timer.new']).toEqual(['timer.resumeLast']);
+    expect(conflicts['timer.resumeLast']).toEqual(['timer.new']);
+    expect(conflicts['timer.stop']).toBeUndefined();
   });
 });
 

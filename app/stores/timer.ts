@@ -1,9 +1,10 @@
 import { elapsedSeconds } from '~/domain/duration';
 import { tenantStorageKey } from '~/domain/auth';
 import { publishDomainEvent } from '~/domain/events';
-import { UNASSIGNED_PROJECT_ID, applyProjectSwitch } from '~/domain/invariants';
+import { UNASSIGNED_PROJECT_ID, applyProjectSwitch, isEmptyActiveTimer } from '~/domain/invariants';
 import type { ActiveTimer, EntityId, TimeLog } from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
+import { useAuthStore } from './auth';
 import { useCatalogStore } from './catalog';
 import { useTimeLogsStore } from './timeLogs';
 
@@ -19,11 +20,36 @@ export const useTimerStore = defineStore('timer', () => {
   const taskId = ref<EntityId | undefined>(undefined);
   const tagIds = ref<EntityId[]>([]);
   const isBillable = ref(false);
+  const focusDescriptionSignal = ref(0);
 
   const nowMs = ref(Date.now());
   let tickHandle: ReturnType<typeof setInterval> | null = null;
+  let pendingSyncHandle: ReturnType<typeof setTimeout> | null = null;
+  let applyingTimerState = false;
 
   const isRunning = computed(() => Boolean(activeTimer.value));
+
+  const isCurrentTimerEmpty = computed(() => {
+    const current = activeTimer.value;
+    if (!current) return false;
+    return isEmptyActiveTimer({
+      description: description.value.trim() || current.description,
+      projectId: projectId.value || current.projectId,
+      taskId: taskId.value ?? current.taskId,
+      tagIds: tagIds.value.length > 0 ? tagIds.value : current.tagIds,
+    });
+  });
+
+  function requestDescriptionFocus() {
+    focusDescriptionSignal.value += 1;
+  }
+
+  function clearPendingSync() {
+    if (pendingSyncHandle) {
+      clearTimeout(pendingSyncHandle);
+      pendingSyncHandle = null;
+    }
+  }
 
   /**
    * Resilience Invariant (GEMINI.md §2.4):
@@ -57,35 +83,82 @@ export const useTimerStore = defineStore('timer', () => {
   }
 
   function applyTimerToDraft(timer: ActiveTimer) {
-    description.value = timer.description;
-    projectId.value = timer.projectId;
-    taskId.value = timer.taskId;
-    tagIds.value = [...timer.tagIds];
-    isBillable.value = timer.isBillable;
+    applyingTimerState = true;
+    try {
+      description.value = timer.description;
+      projectId.value = timer.projectId;
+      taskId.value = timer.taskId;
+      tagIds.value = [...timer.tagIds];
+      isBillable.value = timer.isBillable;
+    } finally {
+      applyingTimerState = false;
+    }
   }
 
   function reset() {
-    activeTimer.value = null;
-    activeUid.value = null;
-    description.value = '';
-    projectId.value = UNASSIGNED_PROJECT_ID;
-    taskId.value = undefined;
-    tagIds.value = [];
-    isBillable.value = false;
+    clearPendingSync();
+    applyingTimerState = true;
+    try {
+      activeTimer.value = null;
+      activeUid.value = null;
+      description.value = '';
+      projectId.value = UNASSIGNED_PROJECT_ID;
+      taskId.value = undefined;
+      tagIds.value = [];
+      isBillable.value = false;
+    } finally {
+      applyingTimerState = false;
+    }
   }
+
+  watch(
+    [description, projectId, taskId, tagIds, isBillable],
+    () => {
+      if (applyingTimerState || !activeTimer.value || !activeUid.value) return;
+
+      const updated: ActiveTimer = {
+        description: description.value.trim(),
+        projectId: projectId.value || UNASSIGNED_PROJECT_ID,
+        ...(taskId.value ? { taskId: taskId.value } : {}),
+        tagIds: [...tagIds.value],
+        isBillable: isBillable.value,
+        startTimeUTC: activeTimer.value.startTimeUTC,
+      };
+      activeTimer.value = updated;
+      persistLocal(updated);
+
+      const targetUid = activeUid.value;
+      const authStore = useAuthStore();
+      if (authStore.isDemoMode) return;
+
+      clearPendingSync();
+      pendingSyncHandle = setTimeout(() => {
+        pendingSyncHandle = null;
+        if (!activeTimer.value || activeUid.value !== targetUid) return;
+        void syncActiveTimerRemote(targetUid, false, activeTimer.value);
+      }, 600);
+    },
+    { flush: 'sync', deep: true }
+  );
 
   async function hydrate(uid: string, isDemo: boolean): Promise<void> {
     if (import.meta.server) return;
     startTicker();
 
     if (activeUid.value !== uid) {
-      activeTimer.value = null;
-      description.value = '';
-      projectId.value = UNASSIGNED_PROJECT_ID;
-      taskId.value = undefined;
-      tagIds.value = [];
-      isBillable.value = false;
-      activeUid.value = uid;
+      clearPendingSync();
+      applyingTimerState = true;
+      try {
+        activeTimer.value = null;
+        description.value = '';
+        projectId.value = UNASSIGNED_PROJECT_ID;
+        taskId.value = undefined;
+        tagIds.value = [];
+        isBillable.value = false;
+        activeUid.value = uid;
+      } finally {
+        applyingTimerState = false;
+      }
     }
 
     try {
@@ -112,12 +185,22 @@ export const useTimerStore = defineStore('timer', () => {
       const { doc, getDoc } = await import('firebase/firestore');
       const snap = await getDoc(doc(fb.db, 'users', uid));
       const remoteTimer = snap.data()?.activeTimer as ActiveTimer | null | undefined;
-      if (remoteTimer?.startTimeUTC) {
-        activeTimer.value = remoteTimer;
+      if (remoteTimer && typeof remoteTimer.startTimeUTC === 'string') {
+        applyingTimerState = true;
+        try {
+          activeTimer.value = remoteTimer;
+        } finally {
+          applyingTimerState = false;
+        }
         applyTimerToDraft(remoteTimer);
         persistLocal(remoteTimer);
       } else if (snap.exists() && !remoteTimer) {
-        activeTimer.value = null;
+        applyingTimerState = true;
+        try {
+          activeTimer.value = null;
+        } finally {
+          applyingTimerState = false;
+        }
         persistLocal(null);
       }
     } catch (err) {
@@ -280,17 +363,50 @@ export const useTimerStore = defineStore('timer', () => {
   }
 
   /**
-   * Single Active Timer Constraint (GEMINI.md §2.4):
-   * Starting a new Timer while one is running automatically stops and commits the running Timer first.
+   * Stops and discards an empty running ActiveTimer without creating a TimeLog (FR-6.1).
    */
-  async function startTimer(params: { uid: string; isDemo: boolean }): Promise<void> {
+  async function discardTimer(params: { uid: string; isDemo: boolean }): Promise<void> {
+    clearPendingSync();
+    if (!activeTimer.value) return;
+
+    applyingTimerState = true;
+    try {
+      activeTimer.value = null;
+      description.value = '';
+      projectId.value = UNASSIGNED_PROJECT_ID;
+      taskId.value = undefined;
+      tagIds.value = [];
+      isBillable.value = false;
+    } finally {
+      applyingTimerState = false;
+    }
+
+    await syncActiveTimerRemote(params.uid, params.isDemo, null);
+  }
+
+  /**
+   * Single Active Timer Constraint (GEMINI.md §2.4):
+   * Starting a new Timer while one is running automatically stops and commits the running Timer first
+   * (or discards it cleanly if empty per FR-6.1).
+   */
+  async function startTimer(params: {
+    uid: string;
+    isDemo: boolean;
+    allowEmptyDescription?: boolean;
+  }): Promise<void> {
+    clearPendingSync();
     if (activeTimer.value) {
-      await stopTimer(params);
+      if (isCurrentTimerEmpty.value) {
+        await discardTimer(params);
+      } else {
+        await stopTimer(params);
+      }
     }
 
     const nowIso = new Date().toISOString();
+    const trimmedDesc = description.value.trim();
     const nextTimer: ActiveTimer = {
-      description: description.value.trim() || 'Untitled task',
+      description: params.allowEmptyDescription ? trimmedDesc : trimmedDesc || 'Untitled task',
       projectId: projectId.value || UNASSIGNED_PROJECT_ID,
       ...(taskId.value ? { taskId: taskId.value } : {}),
       tagIds: [...tagIds.value],
@@ -298,7 +414,12 @@ export const useTimerStore = defineStore('timer', () => {
       startTimeUTC: nowIso,
     };
 
-    activeTimer.value = nextTimer;
+    applyingTimerState = true;
+    try {
+      activeTimer.value = nextTimer;
+    } finally {
+      applyingTimerState = false;
+    }
     nowMs.value = Date.now();
     startTicker();
 
@@ -306,9 +427,43 @@ export const useTimerStore = defineStore('timer', () => {
     publishDomainEvent({ type: 'TimerStarted', at: nowIso });
   }
 
+  /**
+   * Instant-Start Activity on `N` (FR-6.1):
+   * Immediately starts a live timer from a single keystroke and focuses the description input.
+   */
+  async function startInstantTimer(params: { uid: string; isDemo: boolean }): Promise<void> {
+    if (activeTimer.value) {
+      if (isCurrentTimerEmpty.value) {
+        requestDescriptionFocus();
+        return;
+      }
+      await stopTimer(params);
+    }
+
+    applyingTimerState = true;
+    try {
+      description.value = '';
+      projectId.value = UNASSIGNED_PROJECT_ID;
+      taskId.value = undefined;
+      tagIds.value = [];
+      isBillable.value = false;
+    } finally {
+      applyingTimerState = false;
+    }
+
+    await startTimer({ ...params, allowEmptyDescription: true });
+    requestDescriptionFocus();
+  }
+
   async function stopTimer(params: { uid: string; isDemo: boolean }): Promise<TimeLog | null> {
+    clearPendingSync();
     const current = activeTimer.value;
     if (!current) return null;
+
+    if (isCurrentTimerEmpty.value) {
+      await discardTimer(params);
+      return null;
+    }
 
     const endTimeUTC = new Date().toISOString();
     const duration = elapsedSeconds(current.startTimeUTC, Date.parse(endTimeUTC));
@@ -319,7 +474,13 @@ export const useTimerStore = defineStore('timer', () => {
     const committedTagIds = [...tagIds.value];
     const committedBillable = isBillable.value;
 
-    activeTimer.value = null;
+    applyingTimerState = true;
+    try {
+      activeTimer.value = null;
+      description.value = '';
+    } finally {
+      applyingTimerState = false;
+    }
     await syncActiveTimerRemote(params.uid, params.isDemo, null);
 
     const timeLogsStore = useTimeLogsStore();
@@ -339,9 +500,29 @@ export const useTimerStore = defineStore('timer', () => {
 
     publishDomainEvent({ type: 'TimerStopped', at: endTimeUTC });
 
-    // Reset draft description for the next task while keeping current project context
-    description.value = '';
     return created;
+  }
+
+  /**
+   * Resume Last Logged Activity (FR-6.3):
+   * Finds the most recent TimeLog, populates its metadata, and starts a live timer.
+   */
+  async function resumeLastActivity(params: {
+    uid: string;
+    isDemo: boolean;
+  }): Promise<TimeLog | null> {
+    const timeLogsStore = useTimeLogsStore();
+    if (timeLogsStore.logs.length === 0) {
+      await timeLogsStore.hydrate(params.uid, params.isDemo);
+    }
+    const latest = timeLogsStore.sortedLogs[0];
+    if (!latest) return null;
+    await continueFromLog({
+      uid: params.uid,
+      isDemo: params.isDemo,
+      log: latest,
+    });
+    return latest;
   }
 
   /**
@@ -383,16 +564,22 @@ export const useTimerStore = defineStore('timer', () => {
     tagIds,
     isBillable,
     isRunning,
+    isCurrentTimerEmpty,
+    focusDescriptionSignal,
     currentElapsedSeconds,
     hydrate,
     reset,
+    requestDescriptionFocus,
     selectProject,
     selectTask,
     toggleTag,
     startTimer,
+    startInstantTimer,
     startTimerFromTask,
     continueFromLog,
+    resumeLastActivity,
     stopTimer,
+    discardTimer,
     updateActiveTimerStart,
   };
 });

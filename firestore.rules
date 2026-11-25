@@ -15,7 +15,7 @@ rules_version = '2';
 //   - displayName: string | null (optional, <= 120 chars)
 //   - email: string | null (optional, <= 254 chars, PII — owner-only read)
 //   - activeTimer: map | null (optional, singleton live stopwatch state)
-//   - preferences: map (optional, regional settings: locale, timeZone, weekStartsOn, dateFormat, hourCycle)
+//   - preferences: map (optional, regional settings: locale, timeZone, weekStartsOn, dateFormat, hourCycle; optional keyboardShortcuts map <= 20 entries)
 //   - onboarding: map (optional, wizardStatus, version, profile, checklist, timestamps)
 //   - updatedAt: string (optional, UTC ISO timestamp <= 64 chars)
 //
@@ -143,12 +143,13 @@ service cloud.firestore {
     function isValidPreferences(prefs) {
       return prefs is map &&
         prefs.keys().hasAll(['locale', 'timeZone', 'weekStartsOn', 'dateFormat', 'hourCycle']) &&
-        prefs.keys().hasOnly(['locale', 'timeZone', 'weekStartsOn', 'dateFormat', 'hourCycle']) &&
+        prefs.keys().hasOnly(['locale', 'timeZone', 'weekStartsOn', 'dateFormat', 'hourCycle', 'keyboardShortcuts']) &&
         prefs.locale in ['en', 'pt-br'] &&
         isNonEmptyString(prefs.timeZone, 100) &&
         prefs.weekStartsOn in [0, 1, 6] &&
         prefs.dateFormat in ['locale', 'YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'] &&
-        prefs.hourCycle in ['h12', 'h23'];
+        prefs.hourCycle in ['h12', 'h23'] &&
+        (!('keyboardShortcuts' in prefs) || prefs.keyboardShortcuts == null || (prefs.keyboardShortcuts is map && prefs.keyboardShortcuts.size() <= 20));
     }
 
     function isValidOnboarding(onboarding) {

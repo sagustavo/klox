@@ -70,7 +70,7 @@ Driven by real-world high-volume testing (importing thousands of historical Togg
 | ID | Work Item Type | Title | Area | Priority | Plan | Status |
 |---|---|---|---|---|---|---|
 | **NFR-1.1** | Product Backlog Item | 7-Day Windowed Tracker Feed Pagination | Performance & Scale | 2 - High | Free | Next |
-| **NFR-1.2** | Product Backlog Item | High-Volume Toggl CSV Import Optimization & Filterable Preview Table | Performance & Scale | 2 - High | Free | Next |
+| **NFR-1.2** | Product Backlog Item | High-Volume Toggl CSV Import Optimization & Filterable Preview Table | Performance & Scale | 2 - High | Free | Done |
 | **FR-5.1** | Product Backlog Item | Same-Day Log Grouping & Expandable Accordion | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-5.2** | Product Backlog Item | Direct Click-to-Edit Time Range, Overlapping Logs & Live Start Adjustment | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-5.3** | Product Backlog Item | Destructive Action Confirmation & Project Tag Renaming | Catalog & Safety | 2 - High | Free | Done |
@@ -89,9 +89,9 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 
 | ID | Work Item Type | Title | Area | Priority | Plan | Status |
 |---|---|---|---|---|---|---|
-| **FR-6.1** | Product Backlog Item | Instant-Start Activity on `N` & Discard Empty Timer on Cancel/Stop | Timer & Log Ergonomics | 2 - High | Free | Next |
+| **FR-6.1** | Product Backlog Item | Instant-Start Activity on `N` & Discard Empty Timer on Cancel/Stop | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-6.2** | Product Backlog Item | Retroactive AI Auto-Fill on Historical TimeLogs | AI & Recall | 3 - Medium | Free | Next |
-| **FR-6.3** | Product Backlog Item | VS Code-Style Customizable Keyboard Shortcuts & Resume Last Activity | Keyboard & Shortcuts | 2 - High | Free | Next |
+| **FR-6.3** | Product Backlog Item | VS Code-Style Customizable Keyboard Shortcuts & Resume Last Activity | Keyboard & Shortcuts | 2 - High | Free | Done |
 | **FR-6.4** | Product Backlog Item | Multi-Provider Authentication Linking (Google OAuth & Email/Password) | Authentication & Security | 2 - High | Free | Next |
 | **FR-6.5** | Product Backlog Item | Password Reset Flow with Email Confirmation | Authentication & Security | 2 - High | Free | Next |
 | **FR-6.6** | Product Backlog Item | User Profile Management & Time-Tracking Activity Heatmap | Profile & Telemetry | 3 - Medium | Free | Next |
@@ -178,15 +178,15 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Performance & Scale`
 - **Phase:** `9`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `csv; toggl; performance; table; phase-9`
 - **Description:** Tune memory allocation, SHA-256 hashing, reactive store updates, and Firestore `writeBatch` ingestion so multi-year Toggl Track CSVs with thousands of rows import without blocking the main UI thread. Upgrade the preview table for large datasets with pagination, per-column filtering, and row import status badges.
 - **Acceptance Criteria:**
-  - [ ] Preview parsing and batch Firestore commits (`writeBatch`) handle 3,000+ CSV rows smoothly without freezing the browser tab or starving UI rendering.
-  - [ ] Replace the static preview table with a paginated data table component (evaluating specialized table primitives) that supports per-column filtering.
-  - [ ] Every preview row displays a clear status badge distinguishing already-existing records (`Imported`) from new records (`Pending` / `Ready to Import`).
+  - [x] Preview parsing and batch Firestore commits (`writeBatch`) handle 3,000+ CSV rows smoothly without freezing the browser tab or starving UI rendering.
+  - [x] Replace the static preview table with a paginated data table component (evaluating specialized table primitives) that supports per-column filtering.
+  - [x] Every preview row displays a clear status badge distinguishing already-existing records (`Imported`) from new records (`Pending` / `Ready to Import`).
 
 #### [FR-5.1] Same-Day Log Grouping & Expandable Accordion
 - **Work Item Type:** `Product Backlog Item`
@@ -362,16 +362,16 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Timer & Log Ergonomics`
 - **Phase:** `10`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `keyboard; timer; velocity; phase-10`
-- **Description:** Reduce time-to-track to a single keystroke. Pressing `N` (when not editing an input) must immediately start a live timer and focus the description box so users start counting the exact second an activity begins, with zero penalty if they cancel an empty timer.
+- **Description:** Reduce time-to-track to a single keystroke. Pressing `N` (when not editing an input) must immediately start a live timer and focus the description box so users start counting the exact second an activity begins, with zero penalty if they cancel an empty timer. ([ADR-0011](../adr/0011-customizable-keyboard-shortcuts-and-instant-timer.md))
 - **Acceptance Criteria:**
-  - [ ] Pressing `N` (from non-editable global mode) focuses the Command Timer Bar description input AND immediately starts `ActiveTimer` (`startTimeUTC = now`) without requiring the user to click `Start` or press `Enter` first. (If a timer is already running, Single Active Timer invariant commits the previous timer first.)
-  - [ ] Only the `Description` field is required to track an activity (`Project`, `Task`, and `Tags` remain optional and default cleanly to unassigned / blank).
-  - [ ] Pressing `Esc` after typing a description blurs the description input / closes popovers while keeping the newly started timer running.
-  - [ ] If an `ActiveTimer` is currently running with **empty `description` AND no non-default `projectId` selected** (`system_unassigned` / blank), pressing `Esc` or `S` stops and **discards** the timer cleanly without persisting an empty `TimeLog` to Firestore or `localStorage`.
+  - [x] Pressing `N` (from non-editable global mode) focuses the Command Timer Bar description input AND immediately starts `ActiveTimer` (`startTimeUTC = now`) without requiring the user to click `Start` or press `Enter` first. (If a timer is already running, Single Active Timer invariant commits the previous timer first.)
+  - [x] Only the `Description` field is required to track an activity (`Project`, `Task`, and `Tags` remain optional and default cleanly to unassigned / blank).
+  - [x] Pressing `Esc` after typing a description blurs the description input / closes popovers while keeping the newly started timer running.
+  - [x] If an `ActiveTimer` is currently running with **empty `description` AND no non-default `projectId` selected** (`system_unassigned` / blank), pressing `Esc` or `S` stops and **discards** the timer cleanly without persisting an empty `TimeLog` to Firestore or `localStorage`.
 
 #### [FR-6.2] Retroactive AI Auto-Fill on Historical TimeLogs
 - **Work Item Type:** `Product Backlog Item`
@@ -391,18 +391,18 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Keyboard & Shortcuts`
 - **Phase:** `10`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Done`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `keyboard; shortcuts; customization; resume-activity; settings; phase-10`
-- **Description:** Provide a VS Code-inspired Keyboard Shortcuts editor in Settings allowing power users to inspect, search, customize, and reset every global shortcut in Klox, including a dedicated **`Resume Last Logged Activity`** command so users can restart their most recent activity with one keystroke.
+- **Description:** Provide a VS Code-inspired Keyboard Shortcuts editor in Settings allowing power users to inspect, search, customize, and reset every global shortcut in Klox, including a dedicated **`Resume Last Logged Activity`** command so users can restart their most recent activity with one keystroke. ([ADR-0011](../adr/0011-customizable-keyboard-shortcuts-and-instant-timer.md))
 - **Acceptance Criteria:**
-  - [ ] Add a searchable Keyboard Shortcuts settings panel (modeled after VS Code's keybindings table) listing every Klox command ID, description, current keybinding pill, edit trigger, conflict warning badge, and reset button.
-  - [ ] Interactive keystroke recorder captures single keys (`N`, `S`, `R`, etc.) and modifier combos (`Cmd/Ctrl+I`, `Shift+P`, etc.) when rebinding a command.
-  - [ ] Conflict detection warns the user (or prevents silent shadowing) if a keybinding collides with another Klox command, with a one-click **"Reset to Default"** per command and **"Reset All Shortcuts"**.
-  - [ ] Custom keymap overrides persist per user in `UserPreferences` (Firestore + `localStorage`) and are respected dynamically by global keyboard listeners (preserving the editable-element focus guard for single-key shortcuts) and reflected live in UI keycap badges and the `?` Help sheet.
-  - [ ] Implement the **`Resume Last Logged Activity`** command (with default + customizable shortcut): finds the user's most recent `TimeLog`, populates `(description, projectId, taskId, tagIds, isBillable)`, and immediately starts a new `ActiveTimer` (committing any currently running timer first).
-  - [ ] Also expose a quick UI button/action in the recent logs list / Command Timer Bar to trigger `Resume Last Logged Activity` or re-run any historical log.
+  - [x] Add a searchable Keyboard Shortcuts settings panel (modeled after VS Code's keybindings table) listing every Klox command ID, description, current keybinding pill, edit trigger, conflict warning badge, and reset button.
+  - [x] Interactive keystroke recorder captures single keys (`N`, `S`, `R`, etc.) and modifier combos (`Cmd/Ctrl+I`, `Shift+P`, etc.) when rebinding a command.
+  - [x] Conflict detection warns the user (or prevents silent shadowing) if a keybinding collides with another Klox command, with a one-click **"Reset to Default"** per command and **"Reset All Shortcuts"**.
+  - [x] Custom keymap overrides persist per user in `UserPreferences` (Firestore + `localStorage`) and are respected dynamically by global keyboard listeners (preserving the editable-element focus guard for single-key shortcuts) and reflected live in UI keycap badges and the `?` Help sheet.
+  - [x] Implement the **`Resume Last Logged Activity`** command (with default + customizable shortcut): finds the user's most recent `TimeLog`, populates `(description, projectId, taskId, tagIds, isBillable)`, and immediately starts a new `ActiveTimer` (committing any currently running timer first).
+  - [x] Also expose a quick UI button/action in the recent logs list / Command Timer Bar to trigger `Resume Last Logged Activity` or re-run any historical log.
 
 #### [FR-6.4] Multi-Provider Authentication Linking (Google OAuth & Email/Password)
 - **Work Item Type:** `Product Backlog Item`

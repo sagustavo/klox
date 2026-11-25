@@ -95,7 +95,8 @@ function updateThemePreference(theme: ThemeOption) {
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
+  <div class="space-y-6">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
     <div class="relative overflow-hidden lg:col-span-7 border border-border-hairline bg-bg-elevated p-6">
       <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
       <div class="flex items-center justify-between border-b border-border-hairline pb-4">
@@ -293,5 +294,8 @@ function updateThemePreference(theme: ThemeOption) {
         </div>
       </dl>
     </div>
+    </div>
+
+    <SettingsKeyboardShortcutsPanel id="shortcuts" @saved="flashSaved" />
   </div>
 </template>

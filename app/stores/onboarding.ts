@@ -84,7 +84,7 @@ export const useOnboardingStore = defineStore('onboarding', () => {
       if (isTourActive.value) {
         if (event.type === 'AiAutofillUsed' && tourStep.value === 4) {
           tourStep.value = 5;
-        } else if (event.type === 'TimerStarted' && tourStep.value <= 5) {
+        } else if (event.type === 'TimerStarted' && tourStep.value === 5) {
           tourStep.value = 6;
         } else if (event.type === 'TimerStopped' && tourStep.value === 6) {
           completeTour();

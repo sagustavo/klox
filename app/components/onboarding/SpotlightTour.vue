@@ -4,14 +4,15 @@ import { useOnboardingStore } from '~/stores/onboarding';
 
 const { t } = useI18n();
 const onboardingStore = useOnboardingStore();
+const { getKeycaps, matchesCommand } = useShortcuts();
 
 const stepMeta = computed(() => {
   const step = onboardingStore.tourStep;
-  const map: Record<number, { title: string; body: string; keycap: string; targetAttr: string }> = {
+  const map: Record<number, { title: string; body: string; keycap: string | string[]; targetAttr: string }> = {
     1: {
       title: t('onboarding.tour.step1Title'),
       body: t('onboarding.tour.step1Body'),
-      keycap: 'N',
+      keycap: getKeycaps('timer.new'),
       targetAttr: 'timer-description',
     },
     2: {
@@ -29,7 +30,7 @@ const stepMeta = computed(() => {
     4: {
       title: t('onboarding.tour.step4Title'),
       body: t('onboarding.tour.step4Body'),
-      keycap: '⌘I',
+      keycap: getKeycaps('timer.aiAutofill'),
       targetAttr: 'timer-description',
     },
     5: {
@@ -41,7 +42,7 @@ const stepMeta = computed(() => {
     6: {
       title: t('onboarding.tour.step6Title'),
       body: t('onboarding.tour.step6Body'),
-      keycap: 'S',
+      keycap: getKeycaps('timer.stop'),
       targetAttr: 'timer-submit',
     },
   };
@@ -85,7 +86,7 @@ function onGlobalTourListeners(event: KeyboardEvent) {
   const activeEl = document.activeElement as HTMLElement | null;
   const isDescFocused = activeEl?.getAttribute('data-tour') === 'timer-description';
 
-  if (step === 1 && (event.key === 'n' || event.key === 'N' || isDescFocused)) {
+  if (step === 1 && (matchesCommand(event, 'timer.new') || isDescFocused)) {
     setTimeout(() => {
       if (onboardingStore.tourStep === 1) onboardingStore.tourStep = 2;
     }, 120);

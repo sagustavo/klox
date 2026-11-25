@@ -86,12 +86,23 @@ export type WeekStartDay = 0 | 1 | 6; // Sun | Mon | Sat
 export type DateFormatPreset = 'locale' | 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'MM/DD/YYYY';
 export type HourCyclePreference = 'h12' | 'h23';
 
+export type ShortcutCommandId =
+  | 'timer.new'
+  | 'timer.stop'
+  | 'timer.resumeLast'
+  | 'timer.aiAutofill'
+  | 'ui.toggleSidebar'
+  | 'ui.toggleHelp';
+
+export type KeyboardShortcutOverrides = Partial<Record<ShortcutCommandId, string>>;
+
 export interface UserPreferences {
   locale: SupportedLocale;
   timeZone: string; // IANA e.g. "America/Sao_Paulo"
   weekStartsOn: WeekStartDay;
   dateFormat: DateFormatPreset;
   hourCycle: HourCyclePreference;
+  keyboardShortcuts?: KeyboardShortcutOverrides;
 }
 
 export type ChecklistItemId =

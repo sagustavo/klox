@@ -313,7 +313,11 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
 
     const builtEntities: TimeLog[] = [];
 
-    for (const item of params.items) {
+    for (let idx = 0; idx < params.items.length; idx++) {
+      if (params.items.length > 500 && idx > 0 && idx % 500 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const item = params.items[idx]!;
       const project = projectById.get(item.projectId) ?? fallbackProject;
       const resolvedProjectId = project?.id ?? UNASSIGNED_PROJECT_ID;
 
@@ -393,6 +397,9 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
               params.onProgress?.(completed, total);
             })
           );
+          if (i + CONCURRENCY < chunks.length) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
         }
       } else {
         params.onProgress?.(total, total);

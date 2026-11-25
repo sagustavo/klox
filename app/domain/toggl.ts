@@ -24,6 +24,8 @@ export const TOGGL_CSV_HEADERS = [
   'Tags',
 ] as const;
 
+export type TogglRowImportStatus = 'pending' | 'imported';
+
 export interface ParsedTogglLogRow {
   rowNumber: number;
   deterministicId: EntityId;
@@ -37,6 +39,7 @@ export interface ParsedTogglLogRow {
   endTimeUTC: string;
   durationSeconds: number;
   startDateKey: string; // "YYYY-MM-DD"
+  importStatus: TogglRowImportStatus;
 }
 
 export interface ParsedTogglMetadataRow {
@@ -60,6 +63,83 @@ export interface TogglDryRunPreview {
   duplicateLogsCount: number;
 }
 
+export interface TogglPreviewColumnFilters {
+  status: 'all' | TogglRowImportStatus;
+  dateQuery: string;
+  descriptionQuery: string;
+  projectQuery: string;
+  tagQuery: string;
+  durationQuery: string;
+}
+
+export function createEmptyTogglPreviewFilters(): TogglPreviewColumnFilters {
+  return {
+    status: 'all',
+    dateQuery: '',
+    descriptionQuery: '',
+    projectQuery: '',
+    tagQuery: '',
+    durationQuery: '',
+  };
+}
+
+export function hasActiveTogglPreviewFilters(filters: TogglPreviewColumnFilters): boolean {
+  return (
+    filters.status !== 'all' ||
+    Boolean(filters.dateQuery.trim()) ||
+    Boolean(filters.descriptionQuery.trim()) ||
+    Boolean(filters.projectQuery.trim()) ||
+    Boolean(filters.tagQuery.trim()) ||
+    Boolean(filters.durationQuery.trim())
+  );
+}
+
+export function filterTogglPreviewRows(
+  rows: readonly ParsedTogglLogRow[],
+  filters: TogglPreviewColumnFilters,
+  unassignedLabel = 'General / Unassigned'
+): ParsedTogglLogRow[] {
+  if (!hasActiveTogglPreviewFilters(filters)) return [...rows];
+
+  const dateQ = filters.dateQuery.trim().toLowerCase();
+  const descQ = filters.descriptionQuery.trim().toLowerCase();
+  const projQ = filters.projectQuery.trim().toLowerCase();
+  const tagQ = filters.tagQuery.trim().toLowerCase();
+  const durQ = filters.durationQuery.trim().toLowerCase();
+
+  return rows.filter((row) => {
+    if (filters.status !== 'all' && row.importStatus !== filters.status) return false;
+    if (dateQ && !row.startDateKey.toLowerCase().includes(dateQ)) return false;
+    if (descQ) {
+      const descMatch = row.description.toLowerCase().includes(descQ);
+      const taskMatch = row.taskName ? row.taskName.toLowerCase().includes(descQ) : false;
+      if (!descMatch && !taskMatch) return false;
+    }
+    if (projQ) {
+      const displayProject = (row.projectName || unassignedLabel).toLowerCase();
+      if (!displayProject.includes(projQ)) return false;
+    }
+    if (tagQ) {
+      const joinedTags = row.tagNames.join(', ').toLowerCase();
+      if (!joinedTags.includes(tagQ)) return false;
+    }
+    if (durQ) {
+      const hms = formatHMS(row.durationSeconds).toLowerCase();
+      if (!hms.includes(durQ)) return false;
+    }
+    return true;
+  });
+}
+
+export function buildTogglCompositeKey(params: {
+  startTimeUTC: string;
+  durationSeconds: number;
+  normalizedDescription: string;
+  projectName: string;
+}): string {
+  return `${params.startTimeUTC}|${params.durationSeconds}|${params.normalizedDescription}|${(params.projectName || 'General / Unassigned').trim().toLowerCase()}`;
+}
+
 export function parseTogglBillable(raw: string | undefined): boolean {
   if (!raw) return false;
   const norm = raw.trim().toLowerCase();
@@ -81,142 +161,19 @@ export function splitTogglTags(raw: string | undefined): string[] {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/;
 
-/**
- * Parses a Toggl Track CSV string and produces a complete Dry-Run Preview against the user's catalog and logs.
- */
-export async function parseAndPreviewTogglCsv(params: {
-  csvText: string;
+function computePreviewCatalogAndStatuses(params: {
+  logRows: readonly ParsedTogglLogRow[];
+  metadataRows: readonly ParsedTogglMetadataRow[];
   existingProjects: readonly Project[];
   existingTags: readonly ProjectTag[];
   existingLogs: readonly TimeLog[];
-}): Promise<TogglDryRunPreview> {
-  const cleanText = params.csvText.replace(/^\uFEFF/, '').trim();
-  if (!cleanText) {
-    return {
-      logRows: [],
-      metadataRows: [],
-      errors: [],
-      newProjectNames: [],
-      newScopedTags: [],
-      newLogsCount: 0,
-      duplicateLogsCount: 0,
-    };
-  }
-
-  const parsed = Papa.parse<Record<string, string>>(cleanText, {
-    header: true,
-    skipEmptyLines: true,
-  });
-
-  const logRows: ParsedTogglLogRow[] = [];
-  const metadataRows: ParsedTogglMetadataRow[] = [];
-  const errors: TogglRowError[] = [];
-  const seenDeterministicIds = new Set<string>();
-
-  const candidateRows: Array<Omit<ParsedTogglLogRow, 'deterministicId'>> = [];
-
-  for (let i = 0; i < parsed.data.length; i++) {
-    const row = parsed.data[i] ?? {};
-    const rowNumber = i + 2; // 1-indexed + header row
-
-    const projectName = (row['Project'] ?? '').trim();
-    const taskName = (row['Task'] ?? '').trim();
-    const description = (row['Description'] ?? '').trim();
-    const startDate = (row['Start date'] ?? '').trim();
-    const startTime = (row['Start time'] ?? '').trim();
-    const endDate = (row['End date'] ?? '').trim();
-    const endTime = (row['End time'] ?? '').trim();
-    const durationStr = (row['Duration'] ?? '').trim();
-    const tagNames = splitTogglTags(row['Tags']);
-    const isBillable = parseTogglBillable(row['Billable']);
-
-    const hasTimingFields = Boolean(startDate || startTime || durationStr);
-
-    // Standalone metadata row (only Project and/or Tags populated)
-    if (!hasTimingFields && !description && (projectName || tagNames.length > 0)) {
-      metadataRows.push({
-        rowNumber,
-        projectName,
-        tagNames,
-      });
-      continue;
-    }
-
-    if (!startDate || !startTime || !durationStr) {
-      errors.push({ rowNumber, code: 'MISSING_FIELDS' });
-      continue;
-    }
-
-    if (!DATE_RE.test(startDate) || !TIME_RE.test(startTime)) {
-      errors.push({ rowNumber, code: 'INVALID_DATE_OR_TIME' });
-      continue;
-    }
-
-    const durationSeconds = parseHMS(durationStr);
-    if (durationSeconds === null || durationSeconds < 0) {
-      errors.push({ rowNumber, code: 'INVALID_DURATION' });
-      continue;
-    }
-
-    const normalizedStartTime = startTime.length === 5 ? `${startTime}:00` : startTime;
-    const startInstant = new Date(`${startDate}T${normalizedStartTime}Z`);
-    if (Number.isNaN(startInstant.getTime())) {
-      errors.push({ rowNumber, code: 'INVALID_DATE_OR_TIME' });
-      continue;
-    }
-
-    const startTimeUTC = startInstant.toISOString();
-    let endTimeUTC = new Date(startInstant.getTime() + durationSeconds * 1000).toISOString();
-
-    if (endDate && endTime && DATE_RE.test(endDate) && TIME_RE.test(endTime)) {
-      const normEndTime = endTime.length === 5 ? `${endTime}:00` : endTime;
-      const candidateEnd = new Date(`${endDate}T${normEndTime}Z`);
-      if (!Number.isNaN(candidateEnd.getTime()) && candidateEnd >= startInstant) {
-        endTimeUTC = candidateEnd.toISOString();
-      }
-    }
-
-    const finalDesc = description || taskName || projectName || 'Imported entry';
-    const normalizedDesc = normalizeDescription(finalDesc);
-
-    candidateRows.push({
-      rowNumber,
-      description: finalDesc,
-      normalizedDescription: normalizedDesc,
-      projectName,
-      taskName,
-      tagNames,
-      isBillable,
-      startTimeUTC,
-      endTimeUTC,
-      durationSeconds,
-      startDateKey: startDate,
-    });
-  }
-
-  // Compute all SHA-256 deterministic IDs in parallel
-  const computedIds = await Promise.all(
-    candidateRows.map((c) =>
-      deterministicLogId({
-        startTimeUTC: c.startTimeUTC,
-        durationSeconds: c.durationSeconds,
-        normalizedDescription: c.normalizedDescription,
-        projectName: c.projectName || 'General / Unassigned',
-      })
-    )
-  );
-
-  for (let i = 0; i < candidateRows.length; i++) {
-    const detId = computedIds[i]!;
-    if (seenDeterministicIds.has(detId)) continue;
-    seenDeterministicIds.add(detId);
-    logRows.push({
-      ...candidateRows[i]!,
-      deterministicId: detId,
-    });
-  }
-
-  // Compute new projects & new project-scoped tags that will be created
+}): {
+  logRows: ParsedTogglLogRow[];
+  newProjectNames: string[];
+  newScopedTags: Array<{ projectName: string; tagName: string }>;
+  newLogsCount: number;
+  duplicateLogsCount: number;
+} {
   const existingProjectsByLower = new Map<string, Project>();
   const existingProjectsById = new Map<string, Project>();
   for (const p of params.existingProjects) {
@@ -234,12 +191,31 @@ export async function parseAndPreviewTogglCsv(params: {
     existingTagsByProjAndName.add(`${ownerNameLower}::${t.name.trim().toLowerCase()}`);
   }
 
-  const allRowsForCatalog = [
-    ...logRows.map((r) => ({ projectName: r.projectName, tagNames: r.tagNames })),
-    ...metadataRows,
-  ];
+  for (const r of params.logRows) {
+    const trimmedProj = r.projectName.trim();
+    if (
+      trimmedProj &&
+      trimmedProj.toLowerCase() !== 'general / unassigned' &&
+      !existingProjectsByLower.has(trimmedProj.toLowerCase())
+    ) {
+      newProjectNamesSet.add(trimmedProj);
+    }
 
-  for (const item of allRowsForCatalog) {
+    const resolvedProjLabel = trimmedProj || 'General / Unassigned';
+    const resolvedProjLower = resolvedProjLabel.toLowerCase();
+
+    for (const tag of r.tagNames) {
+      const key = `${resolvedProjLower}::${tag.toLowerCase()}`;
+      if (!existingTagsByProjAndName.has(key) && !newScopedTagsMap.has(key)) {
+        newScopedTagsMap.set(key, {
+          projectName: resolvedProjLabel,
+          tagName: tag,
+        });
+      }
+    }
+  }
+
+  for (const item of params.metadataRows) {
     const trimmedProj = item.projectName.trim();
     if (
       trimmedProj &&
@@ -265,31 +241,246 @@ export async function parseAndPreviewTogglCsv(params: {
 
   const existingLogIdSet = new Set(params.existingLogs.map((l) => l.id));
   const existingCompositeSet = new Set(
-    params.existingLogs.map(
-      (l) =>
-        `${l.startTime}|${l.durationSeconds}|${l.normalizedDescription}|${l.projectNameSnapshot.trim().toLowerCase()}`
+    params.existingLogs.map((l) =>
+      buildTogglCompositeKey({
+        startTimeUTC: l.startTime,
+        durationSeconds: l.durationSeconds,
+        normalizedDescription: l.normalizedDescription,
+        projectName: l.projectNameSnapshot,
+      })
     )
   );
 
   let newLogsCount = 0;
   let duplicateLogsCount = 0;
-  for (const row of logRows) {
-    const composite = `${row.startTimeUTC}|${row.durationSeconds}|${row.normalizedDescription}|${(row.projectName || 'General / Unassigned').trim().toLowerCase()}`;
-    if (existingLogIdSet.has(row.deterministicId) || existingCompositeSet.has(composite)) {
+  const resolvedRows: ParsedTogglLogRow[] = new Array(params.logRows.length);
+
+  for (let i = 0; i < params.logRows.length; i++) {
+    const row = params.logRows[i]!;
+    const composite = buildTogglCompositeKey({
+      startTimeUTC: row.startTimeUTC,
+      durationSeconds: row.durationSeconds,
+      normalizedDescription: row.normalizedDescription,
+      projectName: row.projectName,
+    });
+    const isDuplicate =
+      existingLogIdSet.has(row.deterministicId) || existingCompositeSet.has(composite);
+    const importStatus: TogglRowImportStatus = isDuplicate ? 'imported' : 'pending';
+    if (isDuplicate) {
       duplicateLogsCount += 1;
     } else {
       newLogsCount += 1;
     }
+    resolvedRows[i] = row.importStatus === importStatus ? row : { ...row, importStatus };
   }
 
   return {
-    logRows,
-    metadataRows,
-    errors,
+    logRows: resolvedRows,
     newProjectNames: Array.from(newProjectNamesSet),
     newScopedTags: Array.from(newScopedTagsMap.values()),
     newLogsCount,
     duplicateLogsCount,
+  };
+}
+
+/**
+ * Parses a Toggl Track CSV string and produces a complete Dry-Run Preview against the user's catalog and logs.
+ * Processes validation and SHA-256 deterministic ID hashing in yieldable chunks so 3,000+ rows never block UI painting.
+ */
+export async function parseAndPreviewTogglCsv(params: {
+  csvText: string;
+  existingProjects: readonly Project[];
+  existingTags: readonly ProjectTag[];
+  existingLogs: readonly TimeLog[];
+  chunkSize?: number;
+  onProgress?: (processed: number, total: number) => void;
+}): Promise<TogglDryRunPreview> {
+  const cleanText = params.csvText.replace(/^\uFEFF/, '').trim();
+  if (!cleanText) {
+    return {
+      logRows: [],
+      metadataRows: [],
+      errors: [],
+      newProjectNames: [],
+      newScopedTags: [],
+      newLogsCount: 0,
+      duplicateLogsCount: 0,
+    };
+  }
+
+  const parsed = Papa.parse<Record<string, string>>(cleanText, {
+    header: true,
+    skipEmptyLines: true,
+  });
+
+  const totalRows = parsed.data.length;
+  const chunkSize = Math.max(50, Math.floor(params.chunkSize ?? 250));
+  const logRows: ParsedTogglLogRow[] = [];
+  const metadataRows: ParsedTogglMetadataRow[] = [];
+  const errors: TogglRowError[] = [];
+  const seenDeterministicIds = new Set<string>();
+
+  if (totalRows > 0) {
+    params.onProgress?.(0, totalRows);
+  }
+
+  for (let start = 0; start < totalRows; start += chunkSize) {
+    const end = Math.min(start + chunkSize, totalRows);
+    const candidateRows: Array<Omit<ParsedTogglLogRow, 'deterministicId' | 'importStatus'>> = [];
+
+    for (let i = start; i < end; i++) {
+      const row = parsed.data[i] ?? {};
+      const rowNumber = i + 2; // 1-indexed + header row
+
+      const projectName = (row['Project'] ?? '').trim();
+      const taskName = (row['Task'] ?? '').trim();
+      const description = (row['Description'] ?? '').trim();
+      const startDate = (row['Start date'] ?? '').trim();
+      const startTime = (row['Start time'] ?? '').trim();
+      const endDate = (row['End date'] ?? '').trim();
+      const endTime = (row['End time'] ?? '').trim();
+      const durationStr = (row['Duration'] ?? '').trim();
+      const tagNames = splitTogglTags(row['Tags']);
+      const isBillable = parseTogglBillable(row['Billable']);
+
+      const hasTimingFields = Boolean(startDate || startTime || durationStr);
+
+      // Standalone metadata row (only Project and/or Tags populated)
+      if (!hasTimingFields && !description && (projectName || tagNames.length > 0)) {
+        metadataRows.push({
+          rowNumber,
+          projectName,
+          tagNames,
+        });
+        continue;
+      }
+
+      if (!startDate || !startTime || !durationStr) {
+        errors.push({ rowNumber, code: 'MISSING_FIELDS' });
+        continue;
+      }
+
+      if (!DATE_RE.test(startDate) || !TIME_RE.test(startTime)) {
+        errors.push({ rowNumber, code: 'INVALID_DATE_OR_TIME' });
+        continue;
+      }
+
+      const durationSeconds = parseHMS(durationStr);
+      if (durationSeconds === null || durationSeconds < 0) {
+        errors.push({ rowNumber, code: 'INVALID_DURATION' });
+        continue;
+      }
+
+      const normalizedStartTime = startTime.length === 5 ? `${startTime}:00` : startTime;
+      const startInstant = new Date(`${startDate}T${normalizedStartTime}Z`);
+      if (Number.isNaN(startInstant.getTime())) {
+        errors.push({ rowNumber, code: 'INVALID_DATE_OR_TIME' });
+        continue;
+      }
+
+      const startTimeUTC = startInstant.toISOString();
+      let endTimeUTC = new Date(startInstant.getTime() + durationSeconds * 1000).toISOString();
+
+      if (endDate && endTime && DATE_RE.test(endDate) && TIME_RE.test(endTime)) {
+        const normEndTime = endTime.length === 5 ? `${endTime}:00` : endTime;
+        const candidateEnd = new Date(`${endDate}T${normEndTime}Z`);
+        if (!Number.isNaN(candidateEnd.getTime()) && candidateEnd >= startInstant) {
+          endTimeUTC = candidateEnd.toISOString();
+        }
+      }
+
+      const finalDesc = description || taskName || projectName || 'Imported entry';
+      const normalizedDesc = normalizeDescription(finalDesc);
+
+      candidateRows.push({
+        rowNumber,
+        description: finalDesc,
+        normalizedDescription: normalizedDesc,
+        projectName,
+        taskName,
+        tagNames,
+        isBillable,
+        startTimeUTC,
+        endTimeUTC,
+        durationSeconds,
+        startDateKey: startDate,
+      });
+    }
+
+    if (candidateRows.length > 0) {
+      const computedIds = await Promise.all(
+        candidateRows.map((c) =>
+          deterministicLogId({
+            startTimeUTC: c.startTimeUTC,
+            durationSeconds: c.durationSeconds,
+            normalizedDescription: c.normalizedDescription,
+            projectName: c.projectName || 'General / Unassigned',
+          })
+        )
+      );
+
+      for (let j = 0; j < candidateRows.length; j++) {
+        const detId = computedIds[j]!;
+        if (seenDeterministicIds.has(detId)) continue;
+        seenDeterministicIds.add(detId);
+        logRows.push({
+          ...candidateRows[j]!,
+          deterministicId: detId,
+          importStatus: 'pending',
+        });
+      }
+    }
+
+    params.onProgress?.(end, totalRows);
+    if (totalRows > chunkSize && end < totalRows) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  const computed = computePreviewCatalogAndStatuses({
+    logRows,
+    metadataRows,
+    existingProjects: params.existingProjects,
+    existingTags: params.existingTags,
+    existingLogs: params.existingLogs,
+  });
+
+  return {
+    logRows: computed.logRows,
+    metadataRows,
+    errors,
+    newProjectNames: computed.newProjectNames,
+    newScopedTags: computed.newScopedTags,
+    newLogsCount: computed.newLogsCount,
+    duplicateLogsCount: computed.duplicateLogsCount,
+  };
+}
+
+/**
+ * Re-computes import statuses and counts on an already-parsed preview in O(N)
+ * without re-running PapaParse or SHA-256 hashing.
+ */
+export function refreshTogglPreviewStatuses(params: {
+  preview: TogglDryRunPreview;
+  existingProjects: readonly Project[];
+  existingTags: readonly ProjectTag[];
+  existingLogs: readonly TimeLog[];
+}): TogglDryRunPreview {
+  const computed = computePreviewCatalogAndStatuses({
+    logRows: params.preview.logRows,
+    metadataRows: params.preview.metadataRows,
+    existingProjects: params.existingProjects,
+    existingTags: params.existingTags,
+    existingLogs: params.existingLogs,
+  });
+
+  return {
+    ...params.preview,
+    logRows: computed.logRows,
+    newProjectNames: computed.newProjectNames,
+    newScopedTags: computed.newScopedTags,
+    newLogsCount: computed.newLogsCount,
+    duplicateLogsCount: computed.duplicateLogsCount,
   };
 }
 

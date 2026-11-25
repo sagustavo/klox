@@ -1,7 +1,9 @@
 import { publishDomainEvent } from '~/domain/events';
 import { UNASSIGNED_PROJECT_ID } from '~/domain/invariants';
 import {
+  buildTogglCompositeKey,
   parseAndPreviewTogglCsv,
+  refreshTogglPreviewStatuses,
   serializeTogglCsv,
   type TogglDryRunPreview,
 } from '~/domain/toggl';
@@ -15,12 +17,33 @@ export function useTogglCsv() {
   const catalogStore = useCatalogStore();
   const timeLogsStore = useTimeLogsStore();
 
+  const isParsing = ref(false);
+  const parseProgress = ref<{ processed: number; total: number } | null>(null);
   const isCommitting = ref(false);
   const importProgress = ref<{ completed: number; total: number } | null>(null);
 
   async function buildPreview(csvText: string): Promise<TogglDryRunPreview> {
-    return parseAndPreviewTogglCsv({
-      csvText,
+    isParsing.value = true;
+    parseProgress.value = null;
+    try {
+      return await parseAndPreviewTogglCsv({
+        csvText,
+        existingProjects: catalogStore.projects,
+        existingTags: catalogStore.tags,
+        existingLogs: timeLogsStore.logs,
+        onProgress: (processed, total) => {
+          parseProgress.value = { processed, total };
+        },
+      });
+    } finally {
+      isParsing.value = false;
+      parseProgress.value = null;
+    }
+  }
+
+  function refreshPreview(preview: TogglDryRunPreview): TogglDryRunPreview {
+    return refreshTogglPreviewStatuses({
+      preview,
       existingProjects: catalogStore.projects,
       existingTags: catalogStore.tags,
       existingLogs: timeLogsStore.logs,
@@ -40,11 +63,9 @@ export function useTogglCsv() {
     importProgress.value = { completed: 0, total: preview.newLogsCount };
 
     try {
-      let createdProjects = 0;
-      let createdTags = 0;
       let skippedDuplicates = 0;
 
-      // 1. Ensure all projects exist (in parallel if multiple new projects)
+      // 1. Ensure all missing projects exist in a single batch
       const projectByLower = new Map<string, Project>();
       for (const p of catalogStore.projects) {
         projectByLower.set(p.name.trim().toLowerCase(), p);
@@ -54,21 +75,16 @@ export function useTogglCsv() {
         (name) => !projectByLower.has(name.trim().toLowerCase())
       );
 
-      const createdProjList = await Promise.all(
-        missingProjNames.map((projName) =>
-          catalogStore.createProject({
-            uid,
-            isDemo,
-            name: projName,
-            isBillableDefault: false,
-          })
-        )
-      );
+      const createdProjList = await catalogStore.createProjectsBatch({
+        uid,
+        isDemo,
+        items: missingProjNames.map((name) => ({ name, isBillableDefault: false })),
+      });
 
       for (const created of createdProjList) {
         projectByLower.set(created.name.trim().toLowerCase(), created);
-        createdProjects += 1;
       }
+      const createdProjects = createdProjList.length;
 
       const resolveProjectId = (rawName: string): EntityId => {
         const trimmed = rawName.trim();
@@ -78,7 +94,7 @@ export function useTogglCsv() {
         return projectByLower.get(trimmed.toLowerCase())?.id ?? UNASSIGNED_PROJECT_ID;
       };
 
-      // 2. Ensure all project-scoped tags exist (in parallel)
+      // 2. Ensure all missing project-scoped tags exist in a single batch
       const tagByProjAndLower = new Map<string, ProjectTag>();
       for (const t of catalogStore.tags) {
         tagByProjAndLower.set(`${t.projectId}::${t.name.trim().toLowerCase()}`, t);
@@ -89,31 +105,33 @@ export function useTogglCsv() {
         return !tagByProjAndLower.has(`${projectId}::${st.tagName.trim().toLowerCase()}`);
       });
 
-      const createdTagList = await Promise.all(
-        missingScopedTags.map((st) =>
-          catalogStore.createTag({
-            uid,
-            isDemo,
-            projectId: resolveProjectId(st.projectName),
-            name: st.tagName,
-          })
-        )
-      );
+      const createdTagList = await catalogStore.createTagsBatch({
+        uid,
+        isDemo,
+        items: missingScopedTags.map((st) => ({
+          projectId: resolveProjectId(st.projectName),
+          name: st.tagName,
+        })),
+      });
 
       for (const created of createdTagList) {
         tagByProjAndLower.set(
           `${created.projectId}::${created.name.trim().toLowerCase()}`,
           created
         );
-        createdTags += 1;
       }
+      const createdTags = createdTagList.length;
 
       // 3. Filter non-duplicate TimeLog rows and batch-commit via writeBatch (450/chunk, parallel)
       const existingIds = new Set(timeLogsStore.logs.map((l) => l.id));
       const existingComposites = new Set(
-        timeLogsStore.logs.map(
-          (l) =>
-            `${l.startTime}|${l.durationSeconds}|${l.normalizedDescription}|${l.projectNameSnapshot.trim().toLowerCase()}`
+        timeLogsStore.logs.map((l) =>
+          buildTogglCompositeKey({
+            startTimeUTC: l.startTime,
+            durationSeconds: l.durationSeconds,
+            normalizedDescription: l.normalizedDescription,
+            projectName: l.projectNameSnapshot,
+          })
         )
       );
 
@@ -129,7 +147,12 @@ export function useTogglCsv() {
       }> = [];
 
       for (const row of preview.logRows) {
-        const composite = `${row.startTimeUTC}|${row.durationSeconds}|${row.normalizedDescription}|${(row.projectName || 'General / Unassigned').trim().toLowerCase()}`;
+        const composite = buildTogglCompositeKey({
+          startTimeUTC: row.startTimeUTC,
+          durationSeconds: row.durationSeconds,
+          normalizedDescription: row.normalizedDescription,
+          projectName: row.projectName,
+        });
         if (existingIds.has(row.deterministicId) || existingComposites.has(composite)) {
           skippedDuplicates += 1;
           continue;
@@ -221,9 +244,12 @@ export function useTogglCsv() {
   }
 
   return {
+    isParsing,
+    parseProgress,
     isCommitting,
     importProgress,
     buildPreview,
+    refreshPreview,
     commitPreview,
     exportCsvDownload,
   };

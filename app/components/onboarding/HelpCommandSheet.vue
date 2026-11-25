@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Compass, ListChecks, SlidersHorizontal, X } from 'lucide-vue-next';
+import { Compass, Keyboard, ListChecks, SlidersHorizontal, X } from 'lucide-vue-next';
 import {
   DialogClose,
   DialogContent,
@@ -13,15 +13,10 @@ import { useOnboardingStore } from '~/stores/onboarding';
 
 const onboardingStore = useOnboardingStore();
 const localePath = useLocalePath();
-
-function isEditableElement(el: Element | null): boolean {
-  if (!el) return false;
-  const tag = el.tagName.toUpperCase();
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  return (el as HTMLElement).isContentEditable;
-}
+const { isRecording, getKeycaps, matchesCommand } = useShortcuts();
 
 function onGlobalKeydown(event: KeyboardEvent) {
+  if (isRecording.value) return;
   if (document.querySelector('[role="alertdialog"]')) {
     return;
   }
@@ -29,7 +24,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
     return;
   }
 
-  if (event.key === '?' && !isEditableElement(document.activeElement)) {
+  if (matchesCommand(event, 'ui.toggleHelp')) {
     event.preventDefault();
     onboardingStore.isHelpSheetOpen = !onboardingStore.isHelpSheetOpen;
   }
@@ -56,6 +51,11 @@ async function handleRestoreChecklist() {
 async function handleRerunWizard() {
   onboardingStore.isHelpSheetOpen = false;
   await navigateTo(localePath('/app/welcome'));
+}
+
+async function handleCustomizeShortcuts() {
+  onboardingStore.isHelpSheetOpen = false;
+  await navigateTo(localePath('/app/settings#shortcuts'));
 }
 </script>
 
@@ -96,11 +96,15 @@ async function handleRerunWizard() {
         <div class="space-y-2 text-sm">
           <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
             <span class="text-text-primary">{{ $t('onboarding.help.shortcutN') }}</span>
-            <BrandKeycapBadge keys="N" size="sm" />
+            <BrandKeycapBadge :keys="getKeycaps('timer.new')" size="sm" />
           </div>
           <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
             <span class="text-text-primary">{{ $t('onboarding.help.shortcutS') }}</span>
-            <BrandKeycapBadge keys="S" size="sm" />
+            <BrandKeycapBadge :keys="getKeycaps('timer.stop')" size="sm" />
+          </div>
+          <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
+            <span class="text-text-primary">{{ $t('onboarding.help.shortcutResumeLast') }}</span>
+            <BrandKeycapBadge :keys="getKeycaps('timer.resumeLast')" size="sm" />
           </div>
           <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
             <span class="text-text-primary">{{ $t('onboarding.help.shortcutTab') }}</span>
@@ -108,7 +112,7 @@ async function handleRerunWizard() {
           </div>
           <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
             <span class="text-text-primary">{{ $t('onboarding.help.shortcutAi') }}</span>
-            <BrandKeycapBadge :keys="['⌘', 'I']" size="sm" />
+            <BrandKeycapBadge :keys="getKeycaps('timer.aiAutofill')" size="sm" />
           </div>
           <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
             <span class="text-text-primary">{{ $t('onboarding.help.shortcutEsc') }}</span>
@@ -116,12 +120,24 @@ async function handleRerunWizard() {
           </div>
           <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
             <span class="text-text-primary">{{ $t('onboarding.help.shortcutSidebar') }}</span>
-            <BrandKeycapBadge :keys="['⌘', '\\']" size="sm" />
+            <BrandKeycapBadge :keys="getKeycaps('ui.toggleSidebar')" size="sm" />
           </div>
           <div class="flex items-center justify-between gap-3 border border-border-hairline bg-bg-primary px-3.5 py-2.5">
             <span class="text-text-primary">{{ $t('onboarding.help.shortcutHelp') }}</span>
-            <BrandKeycapBadge keys="?" size="sm" />
+            <BrandKeycapBadge :keys="getKeycaps('ui.toggleHelp')" size="sm" />
           </div>
+        </div>
+
+        <div class="flex justify-end">
+          <button
+            type="button"
+            data-testid="help-customize-shortcuts"
+            class="btn-press inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-signal hover:border-signal transition-colors"
+            @click="handleCustomizeShortcuts"
+          >
+            <Keyboard class="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{{ $t('onboarding.help.customizeShortcuts') }}</span>
+          </button>
         </div>
 
         <!-- Onboarding Actions -->

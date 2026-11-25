@@ -232,6 +232,73 @@ export const useCatalogStore = defineStore('catalog', () => {
     return project;
   }
 
+  /**
+   * High-throughput bulk project creation for Toggl CSV imports:
+   * deduplicates case-insensitively, updates reactive state & localStorage ONCE,
+   * and commits to Firestore in 450-op `writeBatch` chunks.
+   */
+  async function createProjectsBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    items: ReadonlyArray<{ name: string; color?: string; isBillableDefault?: boolean }>;
+  }): Promise<Project[]> {
+    if (params.items.length === 0) return [];
+
+    const byLower = new Map<string, Project>();
+    for (const p of projects.value) {
+      byLower.set(p.name.trim().toLowerCase(), p);
+    }
+
+    const nowIso = new Date().toISOString();
+    const created: Project[] = [];
+
+    for (const item of params.items) {
+      const trimmed = item.name.trim();
+      if (!trimmed) continue;
+      const lower = trimmed.toLowerCase();
+      if (byLower.has(lower)) continue;
+
+      const paletteIdx = (projects.value.length + created.length) % PROJECT_COLOR_PALETTE.length;
+      const fallbackColor = PROJECT_COLOR_PALETTE[paletteIdx] ?? '#3B82F6';
+      const color =
+        item.color && isValidHexColor(item.color) ? item.color.toUpperCase() : fallbackColor;
+
+      const project: Project = {
+        id: generateRandomId(),
+        userId: params.uid,
+        name: trimmed,
+        color,
+        isBillableDefault: Boolean(item.isBillableDefault),
+        createdAt: nowIso,
+      };
+      byLower.set(lower, project);
+      created.push(project);
+    }
+
+    if (created.length === 0) return [];
+
+    projects.value = [...projects.value, ...created];
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < created.length; i += BATCH_SIZE) {
+          const chunk = created.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const project of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'projects', project.id), project);
+          }
+          await batch.commit();
+        }
+      }
+    }
+
+    return created;
+  }
+
   async function updateProject(params: {
     uid: string;
     isDemo: boolean;
@@ -331,6 +398,67 @@ export const useCatalogStore = defineStore('catalog', () => {
     }
 
     return tag;
+  }
+
+  /**
+   * High-throughput bulk tag creation for Toggl CSV imports:
+   * deduplicates per project, updates reactive state & localStorage ONCE,
+   * and commits to Firestore in 450-op `writeBatch` chunks.
+   */
+  async function createTagsBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    items: ReadonlyArray<{ projectId: EntityId; name: string }>;
+  }): Promise<ProjectTag[]> {
+    if (params.items.length === 0) return [];
+
+    const byKey = new Map<string, ProjectTag>();
+    for (const t of tags.value) {
+      byKey.set(`${t.projectId}::${t.name.trim().toLowerCase()}`, t);
+    }
+
+    const nowIso = new Date().toISOString();
+    const created: ProjectTag[] = [];
+
+    for (const item of params.items) {
+      const trimmed = item.name.trim();
+      if (!trimmed) continue;
+      const key = `${item.projectId}::${trimmed.toLowerCase()}`;
+      if (byKey.has(key)) continue;
+
+      const tag: ProjectTag = {
+        id: generateRandomId(),
+        userId: params.uid,
+        projectId: item.projectId,
+        name: trimmed,
+        createdAt: nowIso,
+      };
+      byKey.set(key, tag);
+      created.push(tag);
+    }
+
+    if (created.length === 0) return [];
+
+    tags.value = [...tags.value, ...created];
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < created.length; i += BATCH_SIZE) {
+          const chunk = created.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const tag of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'tags', tag.id), tag);
+          }
+          await batch.commit();
+        }
+      }
+    }
+
+    return created;
   }
 
   async function renameTag(params: {
@@ -562,9 +690,11 @@ export const useCatalogStore = defineStore('catalog', () => {
     getFlattenedTasksForProject,
     getTaskHierarchicalLabel,
     createProject,
+    createProjectsBatch,
     updateProject,
     deleteProject,
     createTag,
+    createTagsBatch,
     renameTag,
     deleteTag,
     createTask,
