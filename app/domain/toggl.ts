@@ -63,70 +63,185 @@ export interface TogglDryRunPreview {
   duplicateLogsCount: number;
 }
 
+export const TOGGL_UNASSIGNED_FILTER_VALUE = '__klox_unassigned__';
+export const TOGGL_UNTAGGED_FILTER_VALUE = '__klox_untagged__';
+
+export interface TogglPreviewFilterOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export interface TogglPreviewFilterOptions {
+  statuses: TogglPreviewFilterOption[];
+  dates: TogglPreviewFilterOption[];
+  descriptions: TogglPreviewFilterOption[];
+  projects: TogglPreviewFilterOption[];
+  tags: TogglPreviewFilterOption[];
+}
+
+export interface TogglPreviewFilterLabels {
+  pending?: string;
+  imported?: string;
+  unassigned?: string;
+  untagged?: string;
+  noDescription?: string;
+}
+
 export interface TogglPreviewColumnFilters {
-  status: 'all' | TogglRowImportStatus;
-  dateQuery: string;
-  descriptionQuery: string;
-  projectQuery: string;
-  tagQuery: string;
-  durationQuery: string;
+  statuses: TogglRowImportStatus[];
+  dates: string[];
+  descriptions: string[];
+  projects: string[];
+  tags: string[];
 }
 
 export function createEmptyTogglPreviewFilters(): TogglPreviewColumnFilters {
   return {
-    status: 'all',
-    dateQuery: '',
-    descriptionQuery: '',
-    projectQuery: '',
-    tagQuery: '',
-    durationQuery: '',
+    statuses: [],
+    dates: [],
+    descriptions: [],
+    projects: [],
+    tags: [],
   };
 }
 
 export function hasActiveTogglPreviewFilters(filters: TogglPreviewColumnFilters): boolean {
   return (
-    filters.status !== 'all' ||
-    Boolean(filters.dateQuery.trim()) ||
-    Boolean(filters.descriptionQuery.trim()) ||
-    Boolean(filters.projectQuery.trim()) ||
-    Boolean(filters.tagQuery.trim()) ||
-    Boolean(filters.durationQuery.trim())
+    filters.statuses.length > 0 ||
+    filters.dates.length > 0 ||
+    filters.descriptions.length > 0 ||
+    filters.projects.length > 0 ||
+    filters.tags.length > 0
   );
+}
+
+/**
+ * Extracts per-column multi-select filter options and row counts in a single O(N) pass.
+ */
+export function extractTogglPreviewFilterOptions(
+  rows: readonly ParsedTogglLogRow[],
+  labels: TogglPreviewFilterLabels = {}
+): TogglPreviewFilterOptions {
+  const pendingLabel = labels.pending ?? 'Pending';
+  const importedLabel = labels.imported ?? 'Imported';
+  const unassignedLabel = labels.unassigned ?? 'General / Unassigned';
+  const untaggedLabel = labels.untagged ?? 'Untagged';
+  const noDescriptionLabel = labels.noDescription ?? '(No description)';
+
+  let pendingCount = 0;
+  let importedCount = 0;
+  const dateCounts = new Map<string, number>();
+  const descCounts = new Map<string, number>();
+  const projectCounts = new Map<string, number>();
+  const tagCounts = new Map<string, number>();
+  let unassignedCount = 0;
+  let untaggedCount = 0;
+
+  for (const row of rows) {
+    if (row.importStatus === 'imported') {
+      importedCount++;
+    } else {
+      pendingCount++;
+    }
+
+    if (row.startDateKey) {
+      dateCounts.set(row.startDateKey, (dateCounts.get(row.startDateKey) ?? 0) + 1);
+    }
+
+    descCounts.set(row.description, (descCounts.get(row.description) ?? 0) + 1);
+
+    if (row.projectName) {
+      projectCounts.set(row.projectName, (projectCounts.get(row.projectName) ?? 0) + 1);
+    } else {
+      unassignedCount++;
+    }
+
+    if (row.tagNames.length === 0) {
+      untaggedCount++;
+    } else {
+      const seenTags = new Set(row.tagNames);
+      for (const tag of seenTags) {
+        tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+      }
+    }
+  }
+
+  const statuses: TogglPreviewFilterOption[] = [];
+  if (pendingCount > 0) {
+    statuses.push({ value: 'pending', label: pendingLabel, count: pendingCount });
+  }
+  if (importedCount > 0) {
+    statuses.push({ value: 'imported', label: importedLabel, count: importedCount });
+  }
+
+  const dates: TogglPreviewFilterOption[] = Array.from(dateCounts.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([value, count]) => ({ value, label: value, count }));
+
+  const descriptions: TogglPreviewFilterOption[] = Array.from(descCounts.entries())
+    .map(([value, count]) => ({
+      value,
+      label: value || noDescriptionLabel,
+      count,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+
+  const projects: TogglPreviewFilterOption[] = Array.from(projectCounts.entries())
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .map(([value, count]) => ({ value, label: value, count }));
+  if (unassignedCount > 0) {
+    projects.push({
+      value: TOGGL_UNASSIGNED_FILTER_VALUE,
+      label: unassignedLabel,
+      count: unassignedCount,
+    });
+  }
+
+  const tags: TogglPreviewFilterOption[] = Array.from(tagCounts.entries())
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .map(([value, count]) => ({ value, label: value, count }));
+  if (untaggedCount > 0) {
+    tags.push({
+      value: TOGGL_UNTAGGED_FILTER_VALUE,
+      label: untaggedLabel,
+      count: untaggedCount,
+    });
+  }
+
+  return { statuses, dates, descriptions, projects, tags };
 }
 
 export function filterTogglPreviewRows(
   rows: readonly ParsedTogglLogRow[],
-  filters: TogglPreviewColumnFilters,
-  unassignedLabel = 'General / Unassigned'
+  filters: TogglPreviewColumnFilters
 ): ParsedTogglLogRow[] {
   if (!hasActiveTogglPreviewFilters(filters)) return [...rows];
 
-  const dateQ = filters.dateQuery.trim().toLowerCase();
-  const descQ = filters.descriptionQuery.trim().toLowerCase();
-  const projQ = filters.projectQuery.trim().toLowerCase();
-  const tagQ = filters.tagQuery.trim().toLowerCase();
-  const durQ = filters.durationQuery.trim().toLowerCase();
+  const statusSet = new Set<string>(filters.statuses);
+  const dateSet = new Set<string>(filters.dates);
+  const descSet = new Set<string>(filters.descriptions);
+  const projectSet = new Set<string>(filters.projects);
+  const tagSet = new Set<string>(filters.tags);
 
   return rows.filter((row) => {
-    if (filters.status !== 'all' && row.importStatus !== filters.status) return false;
-    if (dateQ && !row.startDateKey.toLowerCase().includes(dateQ)) return false;
-    if (descQ) {
-      const descMatch = row.description.toLowerCase().includes(descQ);
-      const taskMatch = row.taskName ? row.taskName.toLowerCase().includes(descQ) : false;
-      if (!descMatch && !taskMatch) return false;
+    if (statusSet.size > 0 && !statusSet.has(row.importStatus)) return false;
+    if (dateSet.size > 0 && !dateSet.has(row.startDateKey)) return false;
+    if (descSet.size > 0 && !descSet.has(row.description)) return false;
+
+    if (projectSet.size > 0) {
+      const projectKey = row.projectName || TOGGL_UNASSIGNED_FILTER_VALUE;
+      if (!projectSet.has(projectKey)) return false;
     }
-    if (projQ) {
-      const displayProject = (row.projectName || unassignedLabel).toLowerCase();
-      if (!displayProject.includes(projQ)) return false;
+
+    if (tagSet.size > 0) {
+      if (row.tagNames.length === 0) {
+        if (!tagSet.has(TOGGL_UNTAGGED_FILTER_VALUE)) return false;
+      } else if (!row.tagNames.some((tag) => tagSet.has(tag))) {
+        return false;
+      }
     }
-    if (tagQ) {
-      const joinedTags = row.tagNames.join(', ').toLowerCase();
-      if (!joinedTags.includes(tagQ)) return false;
-    }
-    if (durQ) {
-      const hms = formatHMS(row.durationSeconds).toLowerCase();
-      if (!hms.includes(durQ)) return false;
-    }
+
     return true;
   });
 }

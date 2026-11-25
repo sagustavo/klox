@@ -13,7 +13,7 @@ import { useOnboardingStore } from '~/stores/onboarding';
 
 const onboardingStore = useOnboardingStore();
 const localePath = useLocalePath();
-const { isRecording, getKeycaps, matchesCommand } = useShortcuts();
+const { isRecording, getKeycaps, getFormattedText, matchesCommand } = useShortcuts();
 
 function onGlobalKeydown(event: KeyboardEvent) {
   if (isRecording.value) return;
@@ -77,7 +77,9 @@ async function handleCustomizeShortcuts() {
               {{ $t('onboarding.help.title') }}
             </DialogTitle>
             <DialogDescription class="mt-1 text-ui text-text-muted">
-              <BrandWithKeys :text="$t('onboarding.help.subtitle')" />
+              <BrandWithKeys
+                :text="$t('onboarding.help.subtitle', { helpKey: getFormattedText('ui.toggleHelp') })"
+              />
             </DialogDescription>
           </div>
 

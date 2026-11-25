@@ -3,12 +3,22 @@ const props = defineProps<{
   text: string;
 }>();
 
+function parseKeyToken(inner: string): string | string[] {
+  if (inner === '+' || !inner.includes('+')) return inner;
+  if (inner.endsWith('++')) {
+    const prefix = inner.slice(0, -2).split('+').filter(Boolean);
+    return [...prefix, '+'];
+  }
+  const parts = inner.split('+').filter(Boolean);
+  return parts.length > 1 ? parts : (parts[0] ?? inner);
+}
+
 const segments = computed(() =>
   props.text.split(/(\[[^\]]+\])/g).map((part) => {
     const isKey = /^\[[^\]]+\]$/.test(part);
     return {
       isKey,
-      value: isKey ? part.slice(1, -1) : part,
+      value: isKey ? parseKeyToken(part.slice(1, -1)) : part,
     };
   })
 );

@@ -4,14 +4,14 @@ import { useOnboardingStore } from '~/stores/onboarding';
 
 const { t } = useI18n();
 const onboardingStore = useOnboardingStore();
-const { getKeycaps, matchesCommand } = useShortcuts();
+const { getKeycaps, getFormattedText, matchesCommand } = useShortcuts();
 
 const stepMeta = computed(() => {
   const step = onboardingStore.tourStep;
   const map: Record<number, { title: string; body: string; keycap: string | string[]; targetAttr: string }> = {
     1: {
-      title: t('onboarding.tour.step1Title'),
-      body: t('onboarding.tour.step1Body'),
+      title: t('onboarding.tour.step1Title', { newKey: getFormattedText('timer.new') }),
+      body: t('onboarding.tour.step1Body', { newKey: getFormattedText('timer.new') }),
       keycap: getKeycaps('timer.new'),
       targetAttr: 'timer-description',
     },
@@ -28,7 +28,7 @@ const stepMeta = computed(() => {
       targetAttr: 'timer-project',
     },
     4: {
-      title: t('onboarding.tour.step4Title'),
+      title: t('onboarding.tour.step4Title', { aiKey: getFormattedText('timer.aiAutofill') }),
       body: t('onboarding.tour.step4Body'),
       keycap: getKeycaps('timer.aiAutofill'),
       targetAttr: 'timer-description',
@@ -40,7 +40,7 @@ const stepMeta = computed(() => {
       targetAttr: 'timer-submit',
     },
     6: {
-      title: t('onboarding.tour.step6Title'),
+      title: t('onboarding.tour.step6Title', { stopKey: getFormattedText('timer.stop') }),
       body: t('onboarding.tour.step6Body'),
       keycap: getKeycaps('timer.stop'),
       targetAttr: 'timer-submit',

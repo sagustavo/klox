@@ -642,7 +642,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           v-model="manualDescription"
           type="text"
           required
-          :placeholder="$t('timer.descriptionPlaceholder')"
+          :placeholder="$t('timer.manualDescriptionPlaceholder')"
           class="sm:col-span-3 h-10 border border-border-input bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
         />
 

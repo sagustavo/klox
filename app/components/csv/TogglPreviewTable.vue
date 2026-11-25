@@ -12,6 +12,7 @@ import { paginateItems } from '~/domain/aggregation';
 import { formatHMS } from '~/domain/duration';
 import {
   createEmptyTogglPreviewFilters,
+  extractTogglPreviewFilterOptions,
   filterTogglPreviewRows,
   hasActiveTogglPreviewFilters,
   type ParsedTogglLogRow,
@@ -40,28 +41,40 @@ const pageSizeOptions = [25, 50, 100, 250] as const;
 const pageSize = ref<number>(50);
 const pageIndex = ref(0);
 
+function deriveStatusFilter(statuses: readonly TogglRowImportStatus[]): 'all' | TogglRowImportStatus {
+  return statuses.length === 1 ? statuses[0]! : 'all';
+}
+
 watch(
   () => props.statusFilter,
   (next) => {
-    if (filters.status !== next) {
-      filters.status = next;
+    if (deriveStatusFilter(filters.statuses) !== next) {
+      filters.statuses = next === 'all' ? [] : [next];
     }
   },
   { immediate: true }
 );
 
 watch(
-  () => filters.status,
+  () => filters.statuses,
   (next) => {
-    if (next !== props.statusFilter) {
-      emit('update:statusFilter', next);
+    const derived = deriveStatusFilter(next);
+    if (derived !== props.statusFilter) {
+      emit('update:statusFilter', derived);
     }
   }
 );
 
-const filteredRows = computed(() =>
-  filterTogglPreviewRows(props.rows, filters, t('catalog.unassigned'))
+const filterOptions = computed(() =>
+  extractTogglPreviewFilterOptions(props.rows, {
+    pending: t('csv.table.statusPending'),
+    imported: t('csv.table.statusImported'),
+    unassigned: t('catalog.unassigned'),
+    untagged: t('csv.table.untagged'),
+  })
 );
+
+const filteredRows = computed(() => filterTogglPreviewRows(props.rows, filters));
 
 const paginated = computed(() =>
   paginateItems({
@@ -75,12 +88,11 @@ const hasFilters = computed(() => hasActiveTogglPreviewFilters(filters));
 
 watch(
   [
-    () => filters.status,
-    () => filters.dateQuery,
-    () => filters.descriptionQuery,
-    () => filters.projectQuery,
-    () => filters.tagQuery,
-    () => filters.durationQuery,
+    () => filters.statuses,
+    () => filters.dates,
+    () => filters.descriptions,
+    () => filters.projects,
+    () => filters.tags,
     pageSize,
     () => props.rows,
   ],
@@ -88,6 +100,12 @@ watch(
     pageIndex.value = 0;
   }
 );
+
+function updateStatuses(values: string[]) {
+  filters.statuses = values.filter(
+    (v): v is TogglRowImportStatus => v === 'pending' || v === 'imported'
+  );
+}
 
 function resetFilters() {
   Object.assign(filters, createEmptyTogglPreviewFilters());
@@ -134,7 +152,7 @@ function resetFilters() {
       </label>
     </div>
 
-    <!-- Keyboard-Scrollable Table Region with Sticky Header & Inline Column Filters -->
+    <!-- Keyboard-Scrollable Table Region with Sticky Header & Minimalist Column Filter Popovers -->
     <div
       tabindex="0"
       role="region"
@@ -150,88 +168,54 @@ function resetFilters() {
             <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2.5 w-14">
               #
             </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2.5 whitespace-nowrap">
-              {{ $t('csv.table.colStatus') }}
+            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2 whitespace-nowrap">
+              <CsvColumnFilterHeader
+                :model-value="filters.statuses"
+                :options="filterOptions.statuses"
+                :label="$t('csv.table.colStatus')"
+                :searchable="false"
+                test-id="csv-filter-status"
+                @update:model-value="updateStatuses"
+              />
             </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2.5 whitespace-nowrap">
-              {{ $t('dashboard.colDate') }}
+            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2 whitespace-nowrap">
+              <CsvColumnFilterHeader
+                v-model="filters.dates"
+                :options="filterOptions.dates"
+                :label="$t('dashboard.colDate')"
+                :search-placeholder="$t('csv.table.searchDates')"
+                test-id="csv-filter-date"
+              />
             </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2.5">
-              {{ $t('dashboard.colDescription') }}
+            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2">
+              <CsvColumnFilterHeader
+                v-model="filters.descriptions"
+                :options="filterOptions.descriptions"
+                :label="$t('dashboard.colDescription')"
+                :search-placeholder="$t('csv.table.searchDescriptions')"
+                test-id="csv-filter-description"
+              />
             </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2.5">
-              {{ $t('dashboard.colProject') }}
+            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2">
+              <CsvColumnFilterHeader
+                v-model="filters.projects"
+                :options="filterOptions.projects"
+                :label="$t('dashboard.colProject')"
+                :search-placeholder="$t('csv.table.searchProjects')"
+                test-id="csv-filter-project"
+              />
             </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2.5">
-              {{ $t('dashboard.colTags') }}
+            <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2">
+              <CsvColumnFilterHeader
+                v-model="filters.tags"
+                :options="filterOptions.tags"
+                :label="$t('dashboard.colTags')"
+                :search-placeholder="$t('csv.table.searchTags')"
+                test-id="csv-filter-tags"
+              />
             </th>
             <th scope="col" class="border-b border-border-hairline bg-bg-primary px-3 py-2.5 text-right whitespace-nowrap">
               {{ $t('dashboard.colDuration') }}
-            </th>
-          </tr>
-          <tr>
-            <th scope="col" class="border-b border-border-hairline bg-bg-elevated px-3 py-2" />
-            <th scope="col" class="border-b border-border-hairline bg-bg-elevated px-3 py-2">
-              <select
-                v-model="filters.status"
-                data-testid="csv-filter-status"
-                :aria-label="$t('csv.table.filterStatusAria')"
-                class="h-8 w-full min-w-[104px] border border-border-input bg-bg-primary px-2 text-xs font-normal normal-case tracking-normal text-text-primary focus:border-signal focus:outline-none"
-              >
-                <option value="all">{{ $t('csv.table.statusAll') }}</option>
-                <option value="pending">{{ $t('csv.table.statusPending') }}</option>
-                <option value="imported">{{ $t('csv.table.statusImported') }}</option>
-              </select>
-            </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-elevated px-3 py-2">
-              <input
-                v-model="filters.dateQuery"
-                type="text"
-                data-testid="csv-filter-date"
-                :aria-label="$t('csv.table.filterDateAria')"
-                :placeholder="$t('csv.table.filterDatePlaceholder')"
-                class="tabular-telemetry h-8 w-full min-w-[104px] border border-border-input bg-bg-primary px-2 text-xs font-normal normal-case tracking-normal text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
-              />
-            </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-elevated px-3 py-2">
-              <input
-                v-model="filters.descriptionQuery"
-                type="text"
-                data-testid="csv-filter-description"
-                :aria-label="$t('csv.table.filterDescriptionAria')"
-                :placeholder="$t('csv.table.filterDescriptionPlaceholder')"
-                class="h-8 w-full min-w-[150px] border border-border-input bg-bg-primary px-2 text-xs font-normal normal-case tracking-normal text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
-              />
-            </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-elevated px-3 py-2">
-              <input
-                v-model="filters.projectQuery"
-                type="text"
-                data-testid="csv-filter-project"
-                :aria-label="$t('csv.table.filterProjectAria')"
-                :placeholder="$t('csv.table.filterProjectPlaceholder')"
-                class="h-8 w-full min-w-[120px] border border-border-input bg-bg-primary px-2 text-xs font-normal normal-case tracking-normal text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
-              />
-            </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-elevated px-3 py-2">
-              <input
-                v-model="filters.tagQuery"
-                type="text"
-                data-testid="csv-filter-tags"
-                :aria-label="$t('csv.table.filterTagsAria')"
-                :placeholder="$t('csv.table.filterTagsPlaceholder')"
-                class="h-8 w-full min-w-[110px] border border-border-input bg-bg-primary px-2 text-xs font-normal normal-case tracking-normal text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
-              />
-            </th>
-            <th scope="col" class="border-b border-border-hairline bg-bg-elevated px-3 py-2">
-              <input
-                v-model="filters.durationQuery"
-                type="text"
-                data-testid="csv-filter-duration"
-                :aria-label="$t('csv.table.filterDurationAria')"
-                :placeholder="$t('csv.table.filterDurationPlaceholder')"
-                class="tabular-telemetry h-8 w-full min-w-[88px] border border-border-input bg-bg-primary px-2 text-right text-xs font-normal normal-case tracking-normal text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
-              />
             </th>
           </tr>
         </thead>

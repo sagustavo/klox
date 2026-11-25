@@ -395,7 +395,7 @@ onUnmounted(() => {
           v-model="timerStore.description"
           type="text"
           data-tour="timer-description"
-          :placeholder="$t('timer.descriptionPlaceholder')"
+          :placeholder="$t('timer.descriptionPlaceholder', { newKey: getFormattedText('timer.new') })"
           class="h-10 w-full border-0 border-b border-transparent bg-transparent px-2 text-sm sm:text-base font-medium text-text-primary placeholder:text-text-faint focus:border-signal/60 focus:outline-none transition-colors"
           @focus="showRecallDropdown = topMatches.length > 0"
           @input="showRecallDropdown = topMatches.length > 0"

@@ -5,6 +5,7 @@ import { useOnboardingStore } from '~/stores/onboarding';
 
 const onboardingStore = useOnboardingStore();
 const localePath = useLocalePath();
+const { getFormattedText } = useShortcuts();
 
 const progressPercent = computed(() => {
   if (onboardingStore.totalChecklistCount === 0) return 0;
@@ -84,7 +85,15 @@ async function handleLaunchTour() {
           v-else
           class="h-4 w-4 shrink-0 text-text-muted mt-0.5"
         />
-        <BrandWithKeys :text="$t(`onboarding.checklist.items.${itemId}`)" />
+        <BrandWithKeys
+          :text="
+            $t(`onboarding.checklist.items.${itemId}`, {
+              newKey: getFormattedText('timer.new'),
+              stopKey: getFormattedText('timer.stop'),
+              aiKey: getFormattedText('timer.aiAutofill'),
+            })
+          "
+        />
       </div>
     </div>
   </div>

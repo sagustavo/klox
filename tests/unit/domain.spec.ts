@@ -66,7 +66,10 @@ import {
 } from '../../app/domain/sidebar';
 import {
   TOGGL_CSV_HEADERS,
+  TOGGL_UNASSIGNED_FILTER_VALUE,
+  TOGGL_UNTAGGED_FILTER_VALUE,
   createEmptyTogglPreviewFilters,
+  extractTogglPreviewFilterOptions,
   filterTogglPreviewRows,
   parseAndPreviewTogglCsv,
   refreshTogglPreviewStatuses,
@@ -1100,36 +1103,67 @@ describe('domain/toggl (NFR-1.2 High-Volume 3,500+ Row Parsing, Statuses & Colum
     expect(refreshed.logRows[0]?.importStatus).toBe('imported');
     expect(refreshed.logRows[100]?.importStatus).toBe('pending');
 
-    // Filter by status + project + tag + duration + description + date
+    // Extract multi-select filter options & filter by status + project + tag + description + date
+    const filterOptions = extractTogglPreviewFilterOptions(refreshed.logRows, {
+      unassigned: 'General / Unassigned',
+      untagged: 'Untagged',
+    });
+    expect(filterOptions.statuses).toEqual([
+      { value: 'pending', label: 'Pending', count: rowCount - 100 },
+      { value: 'imported', label: 'Imported', count: 100 },
+    ]);
+    expect(filterOptions.projects.some((opt) => opt.value === 'XP Core API')).toBe(true);
+    expect(
+      filterOptions.projects.some((opt) => opt.value === TOGGL_UNASSIGNED_FILTER_VALUE)
+    ).toBe(true);
+    expect(filterOptions.tags.some((opt) => opt.value === 'review')).toBe(true);
+
     const importedOnly = filterTogglPreviewRows(refreshed.logRows, {
       ...createEmptyTogglPreviewFilters(),
-      status: 'imported',
+      statuses: ['imported'],
     });
     expect(importedOnly).toHaveLength(100);
 
-    const apiBackend90m = filterTogglPreviewRows(refreshed.logRows, {
+    const bothStatuses = filterTogglPreviewRows(refreshed.logRows, {
       ...createEmptyTogglPreviewFilters(),
-      projectQuery: 'xp core',
-      tagQuery: 'review',
-      durationQuery: '01:30',
-      descriptionQuery: 'task item #30',
+      statuses: ['pending', 'imported'],
     });
-    expect(apiBackend90m.some((r) => r.description === 'Task item #30')).toBe(true);
+    expect(bothStatuses).toHaveLength(rowCount);
+
+    const apiTask30 = filterTogglPreviewRows(refreshed.logRows, {
+      ...createEmptyTogglPreviewFilters(),
+      projects: ['XP Core API'],
+      tags: ['review'],
+      descriptions: ['Task item #30'],
+    });
+    expect(apiTask30.length).toBeGreaterThan(0);
     expect(
-      apiBackend90m.every(
+      apiTask30.every(
         (r) =>
           r.projectName === 'XP Core API' &&
           r.tagNames.includes('review') &&
-          r.durationSeconds === 5400
+          r.description === 'Task item #30'
       )
     ).toBe(true);
 
     const unassignedFiltered = filterTogglPreviewRows(refreshed.logRows, {
       ...createEmptyTogglPreviewFilters(),
-      projectQuery: 'Unassigned',
+      projects: [TOGGL_UNASSIGNED_FILTER_VALUE],
     });
     expect(unassignedFiltered.length).toBeGreaterThan(0);
     expect(unassignedFiltered.every((r) => r.projectName === '')).toBe(true);
+
+    const untaggedOption = filterOptions.tags.find(
+      (opt) => opt.value === TOGGL_UNTAGGED_FILTER_VALUE
+    );
+    if (untaggedOption) {
+      const untaggedRows = filterTogglPreviewRows(refreshed.logRows, {
+        ...createEmptyTogglPreviewFilters(),
+        tags: [TOGGL_UNTAGGED_FILTER_VALUE],
+      });
+      expect(untaggedRows).toHaveLength(untaggedOption.count);
+      expect(untaggedRows.every((r) => r.tagNames.length === 0)).toBe(true);
+    }
 
     const paged = paginateItems({
       items: refreshed.logRows,
