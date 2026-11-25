@@ -94,7 +94,7 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 | **FR-6.3** | Product Backlog Item | VS Code-Style Customizable Keyboard Shortcuts & Resume Last Activity | Keyboard & Shortcuts | 2 - High | Free | Done |
 | **FR-6.4** | Product Backlog Item | Multi-Provider Authentication Linking (Google OAuth & Email/Password) | Authentication & Security | 2 - High | Free | Next |
 | **FR-6.5** | Product Backlog Item | Password Reset Flow with Email Confirmation | Authentication & Security | 2 - High | Free | Next |
-| **FR-6.6** | Product Backlog Item | User Profile Management & Time-Tracking Activity Heatmap | Profile & Telemetry | 3 - Medium | Free | Next |
+| **FR-6.6** | Product Backlog Item | User Profile Management & Time-Tracking Activity Heatmap | Profile & Telemetry | 3 - Medium | Free | Done |
 | **FR-6.7** | Product Backlog Item | In-App Feedback Submission & My Feedback Management | Feedback & Community | 2 - High | Free | Next |
 
 ### 3.3 Post-POC, Pro Plan & Vision (`Later` / Engineering `Next`)
@@ -436,19 +436,21 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
   - [ ] Completing the email confirmation link resets the password cleanly and allows immediate sign-in on `/login`.
 
 #### [FR-6.6] User Profile Management & Time-Tracking Activity Heatmap
-- **Work Item Type:** `Product Backlog Item`
+- **Work Item Type:** `Product Backlog Item` (`AB#29`)
 - **Area / Category:** `Profile & Telemetry`
 - **Phase:** `10`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Approved`)
 - **Priority:** `3 - Medium`
 - **Plan Tier:** `Free`
-- **Tags:** `profile; avatar; heatmap; analytics; phase-10`
-- **Description:** Introduce a User Profile page/section where users manage their identity (Display Name and Profile Picture, automatically synced from Google OAuth when available) and inspect a visual year-at-a-glance Time-Tracking Activity Heatmap.
+- **Tags:** `analytics; avatar; heatmap; phase-10; profile`
+- **Description:** Introduce a dedicated User Profile page (`/app/profile`, accessible from the sidebar account card) where users manage `displayName`, unique `username`, and profile picture (synced from Google OAuth when available), inspect a visual year-at-a-glance Time-Tracking Activity Heatmap, and safely wipe all workspace data (projects, tags, tasks, time entries, active timer) after an automatic lossless backup CSV download.
 - **Acceptance Criteria:**
-  - [ ] Users can edit and persist their `displayName` across Firebase Auth profile and Firestore `users/{uid}`.
-  - [ ] Users can upload or update a custom profile picture (validated size/type, stored safely and displayed in the app header/profile card).
-  - [ ] Accounts authenticated via Google OAuth automatically default to their Google `photoURL` unless the user uploads a custom avatar override.
-  - [ ] Render a GitHub-style daily contribution heatmap showing total tracked duration per `dateKey` (in `UserPreferences.timeZone`) with color intensity buckets and hover tooltips showing exact date and `HH:MM:SS` tracked.
+  - [x] Users can edit and persist their `displayName` across Firebase Auth profile and Firestore `users/{uid}`.
+  - [x] Users can claim and update a globally unique `username` backed by atomic Firestore transactions (`usernames/{username}`) and anti-enumeration security rules.
+  - [x] Users can upload or update a custom profile picture (validated size/type, resized client-side, stored safely and displayed in the sidebar/profile card).
+  - [x] Accounts authenticated via Google OAuth automatically default to their Google `photoURL` unless the user uploads a custom avatar override.
+  - [x] Render a GitHub-style daily contribution heatmap showing total tracked duration per `dateKey` (in `UserPreferences.timeZone`) with color intensity buckets and hover/focus/tap tooltips showing exact date and `HH:MM:SS` tracked.
+  - [x] Users can wipe all tags, projects, tasks, and activities behind a typed confirmation modal (`DELETE` / `APAGAR`) that automatically downloads a lossless re-importable backup CSV before deleting any data.
 
 #### [FR-6.7] In-App Feedback Submission & My Feedback Management
 - **Work Item Type:** `Product Backlog Item`

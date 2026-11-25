@@ -3,6 +3,7 @@ import { getFirebaseClient, hasFirebaseConfig } from '~/utils/firebaseClient';
 import { useCatalogStore } from './catalog';
 import { useOnboardingStore } from './onboarding';
 import { usePreferencesStore } from './preferences';
+import { useProfileStore } from './profile';
 import { useTimeLogsStore } from './timeLogs';
 import { useTimerStore } from './timer';
 
@@ -10,6 +11,8 @@ export interface AuthUser {
   uid: string;
   email: string | null;
   displayName: string | null;
+  photoURL: string | null;
+  providers: string[];
   isDemo: boolean;
 }
 
@@ -17,6 +20,11 @@ interface FirebaseUserLike {
   uid: string;
   email: string | null;
   displayName: string | null;
+  photoURL?: string | null;
+  providerData?: ReadonlyArray<{
+    providerId?: string | null;
+    photoURL?: string | null;
+  }>;
 }
 
 export interface GoogleSignInResult {
@@ -31,8 +39,23 @@ const DEMO_USER: AuthUser = {
   uid: 'demo-user',
   email: 'demo@klox.dev',
   displayName: 'Demo Engineer',
+  photoURL: null,
+  providers: ['demo'],
   isDemo: true,
 };
+
+function extractGooglePhotoUrl(fbUser: FirebaseUserLike): string | null {
+  const googleEntry = fbUser.providerData?.find((p) => p.providerId === 'google.com');
+  const candidate = googleEntry?.photoURL?.trim() || fbUser.photoURL?.trim() || '';
+  return candidate || null;
+}
+
+function extractProviderIds(fbUser: FirebaseUserLike): string[] {
+  const ids = (fbUser.providerData ?? [])
+    .map((p) => p.providerId)
+    .filter((id): id is string => Boolean(id));
+  return Array.from(new Set(ids));
+}
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null);
@@ -51,6 +74,7 @@ export const useAuthStore = defineStore('auth', () => {
     useTimeLogsStore().reset();
     useTimerStore().reset();
     useOnboardingStore().reset();
+    useProfileStore().reset();
   }
 
   function toAuthUser(
@@ -68,7 +92,21 @@ export const useAuthStore = defineStore('auth', () => {
         fallbackDisplayName ||
         fbUser.email?.split('@')[0] ||
         'User',
+      photoURL: extractGooglePhotoUrl(fbUser),
+      providers: extractProviderIds(fbUser),
       isDemo: false,
+    };
+  }
+
+  function syncProfileIdentity(patch: {
+    displayName?: string | null;
+    photoURL?: string | null;
+  }) {
+    if (!user.value) return;
+    user.value = {
+      ...user.value,
+      ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
+      ...(patch.photoURL !== undefined ? { photoURL: patch.photoURL } : {}),
     };
   }
 
@@ -99,7 +137,15 @@ export const useAuthStore = defineStore('auth', () => {
 
     if (!sameRealUser) {
       const prefsStore = usePreferencesStore();
-      await prefsStore.hydrate(nextUser.uid, false);
+      const profileStore = useProfileStore();
+      await Promise.all([
+        prefsStore.hydrate(nextUser.uid, false),
+        profileStore.hydrate(nextUser.uid, false, {
+          email: nextUser.email,
+          displayName: nextUser.displayName,
+          photoURL: nextUser.photoURL,
+        }),
+      ]);
     }
   }
 
@@ -112,6 +158,11 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem(DEMO_SESSION_KEY, '1');
     user.value = { ...DEMO_USER };
     ready.value = true;
+    void useProfileStore().hydrate(DEMO_USER.uid, true, {
+      email: DEMO_USER.email,
+      displayName: DEMO_USER.displayName,
+      photoURL: null,
+    });
   }
 
   function ensureFirebaseAuthListener(): Promise<void> {
@@ -315,6 +366,7 @@ export const useAuthStore = defineStore('auth', () => {
     signUpWithEmail,
     signInWithGoogle,
     signOutUser,
+    syncProfileIdentity,
     getIdToken,
   };
 });

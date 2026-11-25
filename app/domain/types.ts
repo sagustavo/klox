@@ -147,3 +147,52 @@ export interface DashboardFilters {
   descriptions?: string[]; // Normalized descriptions selected via dedicated Log Description multi-select
   searchQuery: string;
 }
+
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  displayName: string;
+  username: string | null;
+  googlePhotoUrl: string | null;
+  customAvatarUrl: string | null;
+  updatedAt?: string;
+}
+
+export type HeatmapIntensityLevel = 0 | 1 | 2 | 3 | 4;
+export type HeatmapRangeSelection = 'rolling_365' | number;
+
+export interface HeatmapDayCell {
+  dateKey: string; // "YYYY-MM-DD"
+  totalSeconds: number;
+  logCount: number;
+  level: HeatmapIntensityLevel;
+  inRange: boolean;
+  isToday: boolean;
+  isFuture: boolean;
+}
+
+export interface HeatmapMonthLabel {
+  weekIndex: number;
+  monthIndex: number; // 0..11
+  year: number;
+}
+
+export interface HeatmapSummary {
+  totalSeconds: number;
+  totalLogs: number;
+  activeDays: number;
+  longestStreakDays: number;
+  currentStreakDays: number;
+  bestDay: { dateKey: string; totalSeconds: number } | null;
+}
+
+export interface ActivityHeatmapData {
+  range: HeatmapRangeSelection;
+  startDateKey: string;
+  endDateKey: string;
+  weeks: HeatmapDayCell[][]; // Column-major: weeks[col][row], row length = 7
+  weekdayOrder: number[]; // 7 weekday indices (0=Sun..6=Sat) starting at weekStartsOn
+  monthLabels: HeatmapMonthLabel[];
+  p90Seconds: number;
+  summary: HeatmapSummary;
+}

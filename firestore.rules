@@ -4,9 +4,12 @@ rules_version = '2';
 // Assumed Data Model — Klox (klox.dev)
 // ===============================================================
 //
-// Strict per-user tenant isolation: all application documents live
-// under `users/{userId}/...`. An authenticated user may only read
-// and write documents where `request.auth.uid == userId`.
+// Strict per-user tenant isolation: all personal application documents
+// live under `users/{userId}/...`, where an authenticated user may only
+// read and write documents when `request.auth.uid == userId`.
+// The only shared top-level collection is `usernames/{username}`, a
+// minimal non-PII handle reservation index (`allow get` for authenticated
+// users, `allow list: if false` anti-enumeration) enforcing global uniqueness.
 // Cross-tenant access and unauthenticated access are denied everywhere.
 //
 // Collection: users/{userId}
@@ -14,10 +17,19 @@ rules_version = '2';
 // Fields:
 //   - displayName: string | null (optional, <= 120 chars)
 //   - email: string | null (optional, <= 254 chars, PII — owner-only read)
+//   - username: string | null (optional, 3..24 chars lowercase [a-z0-9_-], unique handle)
+//   - photoURL: string | null (optional, <= 2048 chars, Google/OAuth URL)
+//   - customAvatarUrl: string | null (optional, <= 120000 chars, raster WebP/JPEG/PNG data URI)
 //   - activeTimer: map | null (optional, singleton live stopwatch state)
 //   - preferences: map (optional, regional settings: locale, timeZone, weekStartsOn, dateFormat, hourCycle; optional keyboardShortcuts map <= 20 entries)
 //   - onboarding: map (optional, wizardStatus, version, profile, checklist, timestamps)
 //   - updatedAt: string (optional, UTC ISO timestamp <= 64 chars)
+//
+// Collection: usernames/{username}
+// Document ID: {username} (normalized lowercase handle, 3..24 chars [a-z0-9_-])
+// Fields:
+//   - uid: string (required, immutable, must equal request.auth.uid on create)
+//   - createdAt: string (required, immutable, UTC ISO timestamp 1..64 chars)
 //
 // Collection: users/{userId}/projects/{projectId}
 // Document ID: {projectId}
@@ -136,6 +148,14 @@ service cloud.firestore {
       return listVal is list && listVal.size() <= maxSize;
     }
 
+    function isValidUsernameHandle(handle) {
+      return handle is string &&
+        handle.size() >= 3 &&
+        handle.size() <= 24 &&
+        handle.matches('^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$') &&
+        !handle.matches('.*[-_]{2}.*');
+    }
+
     // ===============================================================
     // Domain Validators (Invoked on BOTH create and update)
     // ===============================================================
@@ -200,6 +220,9 @@ service cloud.firestore {
       return hasOnlyAllowedFields([
           'displayName',
           'email',
+          'username',
+          'photoURL',
+          'customAvatarUrl',
           'activeTimer',
           'preferences',
           'onboarding',
@@ -207,10 +230,38 @@ service cloud.firestore {
         ]) &&
         isOptionalBoundedString(data, 'displayName', 120) &&
         isOptionalBoundedString(data, 'email', 254) &&
+        (!('username' in data) || data.username == null || isValidUsernameHandle(data.username)) &&
+        (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 2048 && (data.photoURL.size() == 0 || data.photoURL.matches('^https://.+')))) &&
+        (!('customAvatarUrl' in data) || data.customAvatarUrl == null || (data.customAvatarUrl is string && data.customAvatarUrl.size() <= 120000 && data.customAvatarUrl.matches('^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/]+=*$'))) &&
         isOptionalBoundedString(data, 'updatedAt', 64) &&
         (!('activeTimer' in data) || isValidActiveTimer(data.activeTimer)) &&
         (!('preferences' in data) || isValidPreferences(data.preferences)) &&
         (!('onboarding' in data) || isValidOnboarding(data.onboarding));
+    }
+
+    function hasClaimedUsernameAfter(userId, handle) {
+      let claim = getAfter(/databases/$(database)/documents/usernames/$(handle));
+      return claim != null &&
+        'uid' in claim.data &&
+        claim.data.uid == userId;
+    }
+
+    // Enforce atomic usernames/{username} claim on create or username change.
+    // Short-circuits before getAfter() when username is absent, null, or
+    // unchanged on update so activeTimer/preferences/onboarding writes cost
+    // zero extra reads.
+    function isValidUserProfileUsernameOwnership(userId) {
+      return !('username' in request.resource.data) ||
+        request.resource.data.username == null ||
+        (
+          resource != null &&
+          'username' in resource.data &&
+          resource.data.username == request.resource.data.username
+        ) ||
+        (
+          isValidUsernameHandle(request.resource.data.username) &&
+          hasClaimedUsernameAfter(userId, request.resource.data.username)
+        );
     }
 
     function isValidProject(data, userId, projectId) {
@@ -329,8 +380,12 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
-      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow create: if isOwner(userId) &&
+        isValidUserProfile(request.resource.data) &&
+        isValidUserProfileUsernameOwnership(userId);
+      allow update: if isOwner(userId) &&
+        isValidUserProfile(request.resource.data) &&
+        isValidUserProfileUsernameOwnership(userId);
       allow delete: if isOwner(userId);
 
       match /projects/{projectId} {
@@ -372,6 +427,24 @@ service cloud.firestore {
           areImmutableFieldsUnchanged(['id', 'userId']);
         allow delete: if isOwner(userId) && isDocOwner();
       }
+    }
+
+    // ===============================================================
+    // Global Unique Username Index: usernames/{username}
+    // ===============================================================
+
+    match /usernames/{username} {
+      allow get: if isAuthenticated();
+      allow list: if false;
+      allow create: if isAuthenticated() &&
+        isValidUsernameHandle(username) &&
+        hasRequiredFields(['uid', 'createdAt']) &&
+        hasOnlyAllowedFields(['uid', 'createdAt']) &&
+        request.resource.data.uid == request.auth.uid &&
+        isNonEmptyString(request.resource.data.createdAt, 64) &&
+        !exists(/databases/$(database)/documents/usernames/$(username));
+      allow update: if false;
+      allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
     }
 
     // Default deny for all other paths

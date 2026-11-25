@@ -15,7 +15,7 @@ import {
   type TagRenameErrorCode,
   type TaskTreeNode,
 } from '~/domain/invariants';
-import type { EntityId, Project, ProjectTag, Task, TaskStatus } from '~/domain/types';
+import type { EntityId, Project, ProjectTag, Task, TaskDepth, TaskStatus } from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
 
 const STORAGE_PROJECTS_KEY = 'klox_catalog_projects';
@@ -673,6 +673,209 @@ export const useCatalogStore = defineStore('catalog', () => {
     }
   }
 
+  /**
+   * Bulk task creation for Toggl CSV backup restoration and imports.
+   * Splits `"Task / Subtask / Sub-subtask"` hierarchy paths up to 3 levels, creating
+   * parents before children and committing to Firestore in 450-op `writeBatch` chunks.
+   */
+  async function createTasksBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    items: ReadonlyArray<{ projectId: EntityId; taskPath: string }>;
+  }): Promise<Task[]> {
+    if (params.items.length === 0) return [];
+
+    const byKey = new Map<string, Task>();
+    for (const existing of tasks.value) {
+      const parentKey = existing.parentTaskId ?? '';
+      byKey.set(
+        `${existing.projectId}::${parentKey}::${existing.name.trim().toLowerCase()}`,
+        existing
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    const created: Task[] = [];
+
+    for (const item of params.items) {
+      const segments = item.taskPath
+        .split(/\s+\/\s+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 3);
+      if (segments.length === 0) continue;
+
+      let parentId: EntityId | undefined;
+      for (let depth = 0; depth < segments.length; depth++) {
+        const segmentName = segments[depth]!.slice(0, 200);
+        const key = `${item.projectId}::${parentId ?? ''}::${segmentName.toLowerCase()}`;
+        const existing = byKey.get(key);
+        if (existing) {
+          parentId = existing.id;
+          continue;
+        }
+
+        const task: Task = {
+          id: generateRandomId(),
+          userId: params.uid,
+          projectId: item.projectId,
+          ...(parentId ? { parentTaskId: parentId } : {}),
+          depth: depth as TaskDepth,
+          name: segmentName,
+          completedWorkHours: 0,
+          status: 'todo',
+          createdAt: nowIso,
+        };
+        byKey.set(key, task);
+        created.push(task);
+        parentId = task.id;
+      }
+    }
+
+    if (created.length === 0) return [];
+
+    tasks.value = [...tasks.value, ...created];
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < created.length; i += BATCH_SIZE) {
+          const chunk = created.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const task of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'tasks', task.id), task);
+          }
+          await batch.commit();
+        }
+      }
+    }
+
+    return created;
+  }
+
+  /**
+   * Authoritative uncached read of Projects, Tags, and Tasks for pre-wipe backup.
+   */
+  async function fetchAllRemoteCatalog(uid: string): Promise<{
+    projects: Project[];
+    tags: ProjectTag[];
+    tasks: Task[];
+  }> {
+    const fb = await getFirebaseClient();
+    if (!fb) {
+      return {
+        projects: [...projects.value],
+        tags: [...tags.value],
+        tasks: [...tasks.value],
+      };
+    }
+
+    const { collection, doc, getDocs, setDoc } = await import('firebase/firestore');
+    const [projSnap, tagSnap, taskSnap] = await Promise.all([
+      getDocs(collection(fb.db, 'users', uid, 'projects')),
+      getDocs(collection(fb.db, 'users', uid, 'tags')),
+      getDocs(collection(fb.db, 'users', uid, 'tasks')),
+    ]);
+
+    const remoteProjects = projSnap.docs.map((d) => d.data() as Project);
+    const remoteTags = tagSnap.docs.map((d) => d.data() as ProjectTag);
+    const remoteTasks = taskSnap.docs.map((d) => d.data() as Task);
+
+    if (!remoteProjects.some((p) => p.systemKey === 'unassigned')) {
+      const unassigned = createUnassignedProject(uid);
+      remoteProjects.unshift(unassigned);
+      await setDoc(doc(fb.db, 'users', uid, 'projects', unassigned.id), unassigned);
+    }
+
+    projects.value = remoteProjects;
+    tags.value = remoteTags;
+    tasks.value = remoteTasks;
+    activeUid.value = uid;
+    loadedUid.value = uid;
+    persistLocal();
+
+    return {
+      projects: remoteProjects,
+      tags: remoteTags,
+      tasks: remoteTasks,
+    };
+  }
+
+  /**
+   * Deletes all Tasks, ProjectTags, and Projects (both remote Firestore and local state),
+   * then immediately re-provisions the system `General / Unassigned` project invariant.
+   */
+  async function wipeAllData(params: {
+    uid: string;
+    isDemo: boolean;
+  }): Promise<{ deletedProjects: number; deletedTags: number; deletedTasks: number }> {
+    let deletedProjects = projects.value.filter(
+      (p) => p.systemKey !== 'unassigned' && p.id !== UNASSIGNED_PROJECT_ID
+    ).length;
+    let deletedTags = tags.value.length;
+    let deletedTasks = tasks.value.length;
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { collection, doc, getDocs, setDoc, writeBatch } = await import(
+          'firebase/firestore'
+        );
+        const [taskSnap, tagSnap, projSnap] = await Promise.all([
+          getDocs(collection(fb.db, 'users', params.uid, 'tasks')),
+          getDocs(collection(fb.db, 'users', params.uid, 'tags')),
+          getDocs(collection(fb.db, 'users', params.uid, 'projects')),
+        ]);
+
+        deletedTasks = taskSnap.docs.length;
+        deletedTags = tagSnap.docs.length;
+        deletedProjects = projSnap.docs.filter((d) => {
+          const data = d.data() as Partial<Project>;
+          return data.systemKey !== 'unassigned' && d.id !== UNASSIGNED_PROJECT_ID;
+        }).length;
+
+        const refsToDelete = [
+          ...taskSnap.docs.map((d) => d.ref),
+          ...tagSnap.docs.map((d) => d.ref),
+          ...projSnap.docs.map((d) => d.ref),
+        ];
+
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < refsToDelete.length; i += BATCH_SIZE) {
+          const chunk = refsToDelete.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const ref of chunk) {
+            batch.delete(ref);
+          }
+          await batch.commit();
+        }
+
+        const unassigned = createUnassignedProject(params.uid);
+        await setDoc(doc(fb.db, 'users', params.uid, 'projects', unassigned.id), unassigned);
+        projects.value = [unassigned];
+      } else {
+        projects.value = [createUnassignedProject(params.uid)];
+      }
+    } else {
+      projects.value = [createUnassignedProject(params.uid)];
+    }
+
+    tags.value = [];
+    tasks.value = [];
+    activeUid.value = params.uid;
+    loadedUid.value = params.uid;
+    persistLocal();
+
+    return {
+      deletedProjects,
+      deletedTags,
+      deletedTasks,
+    };
+  }
+
   return {
     projects,
     tags,
@@ -698,8 +901,11 @@ export const useCatalogStore = defineStore('catalog', () => {
     renameTag,
     deleteTag,
     createTask,
+    createTasksBatch,
     updateTask,
     updateTaskStatus,
     deleteTask,
+    fetchAllRemoteCatalog,
+    wipeAllData,
   };
 });

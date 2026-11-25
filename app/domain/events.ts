@@ -13,7 +13,9 @@ export type DomainEvent =
   | { type: 'AiAutofillUsed'; at: string }
   | { type: 'DashboardViewed'; at: string }
   | { type: 'CsvImported'; at: string; rows: number }
-  | { type: 'CsvExported'; at: string; rows: number };
+  | { type: 'CsvExported'; at: string; rows: number }
+  | { type: 'ProfileUpdated'; at: string }
+  | { type: 'WorkspaceWiped'; at: string };
 
 export type DomainEventHandler = (event: DomainEvent) => void;
 

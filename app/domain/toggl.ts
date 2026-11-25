@@ -1,8 +1,15 @@
 import Papa from 'papaparse';
 import { formatHMS, normalizeDescription, parseHMS } from './duration';
 import { deterministicLogId } from './ids';
-import { buildTagNameMap, resolveTagNames } from './invariants';
-import type { EntityId, Project, ProjectTag, TimeLog } from './types';
+import {
+  UNASSIGNED_PROJECT_ID,
+  buildTagNameMap,
+  buildTaskTree,
+  flattenTaskTree,
+  formatTaskHierarchyLabel,
+  resolveTagNames,
+} from './invariants';
+import type { EntityId, Project, ProjectTag, Task, TimeLog } from './types';
 
 /**
  * Official Toggl Track English CSV Headers (GEMINI.md §3.5).
@@ -45,6 +52,7 @@ export interface ParsedTogglLogRow {
 export interface ParsedTogglMetadataRow {
   rowNumber: number;
   projectName: string;
+  taskName: string;
   tagNames: string[];
 }
 
@@ -59,6 +67,7 @@ export interface TogglDryRunPreview {
   errors: TogglRowError[];
   newProjectNames: string[];
   newScopedTags: Array<{ projectName: string; tagName: string }>;
+  newTasks: Array<{ projectName: string; taskPath: string }>;
   newLogsCount: number;
   duplicateLogsCount: number;
 }
@@ -281,11 +290,13 @@ function computePreviewCatalogAndStatuses(params: {
   metadataRows: readonly ParsedTogglMetadataRow[];
   existingProjects: readonly Project[];
   existingTags: readonly ProjectTag[];
+  existingTasks?: readonly Task[];
   existingLogs: readonly TimeLog[];
 }): {
   logRows: ParsedTogglLogRow[];
   newProjectNames: string[];
   newScopedTags: Array<{ projectName: string; tagName: string }>;
+  newTasks: Array<{ projectName: string; taskPath: string }>;
   newLogsCount: number;
   duplicateLogsCount: number;
 } {
@@ -298,12 +309,30 @@ function computePreviewCatalogAndStatuses(params: {
 
   const newProjectNamesSet = new Set<string>();
   const newScopedTagsMap = new Map<string, { projectName: string; tagName: string }>();
+  const newTasksMap = new Map<string, { projectName: string; taskPath: string }>();
 
   const existingTagsByProjAndName = new Set<string>();
   for (const t of params.existingTags) {
     const owner = existingProjectsById.get(t.projectId);
-    const ownerNameLower = (owner?.name ?? 'General / Unassigned').trim().toLowerCase();
+    const ownerNameLower =
+      owner?.systemKey === 'unassigned' || owner?.id === UNASSIGNED_PROJECT_ID || !owner
+        ? 'general / unassigned'
+        : owner.name.trim().toLowerCase();
     existingTagsByProjAndName.add(`${ownerNameLower}::${t.name.trim().toLowerCase()}`);
+  }
+
+  const existingTasks = params.existingTasks ?? [];
+  const existingTasksByProjAndPath = new Set<string>();
+  for (const task of existingTasks) {
+    const owner = existingProjectsById.get(task.projectId);
+    const ownerNameLower =
+      owner?.systemKey === 'unassigned' || owner?.id === UNASSIGNED_PROJECT_ID || !owner
+        ? 'general / unassigned'
+        : owner.name.trim().toLowerCase();
+    const taskPathLower = formatTaskHierarchyLabel(task, existingTasks).trim().toLowerCase();
+    if (taskPathLower) {
+      existingTasksByProjAndPath.add(`${ownerNameLower}::${taskPathLower}`);
+    }
   }
 
   for (const r of params.logRows) {
@@ -316,7 +345,10 @@ function computePreviewCatalogAndStatuses(params: {
       newProjectNamesSet.add(trimmedProj);
     }
 
-    const resolvedProjLabel = trimmedProj || 'General / Unassigned';
+    const resolvedProjLabel =
+      trimmedProj && trimmedProj.toLowerCase() !== 'general / unassigned'
+        ? trimmedProj
+        : 'General / Unassigned';
     const resolvedProjLower = resolvedProjLabel.toLowerCase();
 
     for (const tag of r.tagNames) {
@@ -325,6 +357,17 @@ function computePreviewCatalogAndStatuses(params: {
         newScopedTagsMap.set(key, {
           projectName: resolvedProjLabel,
           tagName: tag,
+        });
+      }
+    }
+
+    const trimmedTask = r.taskName.trim();
+    if (trimmedTask) {
+      const taskKey = `${resolvedProjLower}::${trimmedTask.toLowerCase()}`;
+      if (!existingTasksByProjAndPath.has(taskKey) && !newTasksMap.has(taskKey)) {
+        newTasksMap.set(taskKey, {
+          projectName: resolvedProjLabel,
+          taskPath: trimmedTask,
         });
       }
     }
@@ -340,7 +383,10 @@ function computePreviewCatalogAndStatuses(params: {
       newProjectNamesSet.add(trimmedProj);
     }
 
-    const resolvedProjLabel = trimmedProj || 'General / Unassigned';
+    const resolvedProjLabel =
+      trimmedProj && trimmedProj.toLowerCase() !== 'general / unassigned'
+        ? trimmedProj
+        : 'General / Unassigned';
     const resolvedProjLower = resolvedProjLabel.toLowerCase();
 
     for (const tag of item.tagNames) {
@@ -349,6 +395,17 @@ function computePreviewCatalogAndStatuses(params: {
         newScopedTagsMap.set(key, {
           projectName: resolvedProjLabel,
           tagName: tag,
+        });
+      }
+    }
+
+    const trimmedTask = item.taskName.trim();
+    if (trimmedTask) {
+      const taskKey = `${resolvedProjLower}::${trimmedTask.toLowerCase()}`;
+      if (!existingTasksByProjAndPath.has(taskKey) && !newTasksMap.has(taskKey)) {
+        newTasksMap.set(taskKey, {
+          projectName: resolvedProjLabel,
+          taskPath: trimmedTask,
         });
       }
     }
@@ -393,6 +450,7 @@ function computePreviewCatalogAndStatuses(params: {
     logRows: resolvedRows,
     newProjectNames: Array.from(newProjectNamesSet),
     newScopedTags: Array.from(newScopedTagsMap.values()),
+    newTasks: Array.from(newTasksMap.values()),
     newLogsCount,
     duplicateLogsCount,
   };
@@ -406,6 +464,7 @@ export async function parseAndPreviewTogglCsv(params: {
   csvText: string;
   existingProjects: readonly Project[];
   existingTags: readonly ProjectTag[];
+  existingTasks?: readonly Task[];
   existingLogs: readonly TimeLog[];
   chunkSize?: number;
   onProgress?: (processed: number, total: number) => void;
@@ -418,6 +477,7 @@ export async function parseAndPreviewTogglCsv(params: {
       errors: [],
       newProjectNames: [],
       newScopedTags: [],
+      newTasks: [],
       newLogsCount: 0,
       duplicateLogsCount: 0,
     };
@@ -460,11 +520,12 @@ export async function parseAndPreviewTogglCsv(params: {
 
       const hasTimingFields = Boolean(startDate || startTime || durationStr);
 
-      // Standalone metadata row (only Project and/or Tags populated)
-      if (!hasTimingFields && !description && (projectName || tagNames.length > 0)) {
+      // Standalone metadata row (only Project, Task, and/or Tags populated)
+      if (!hasTimingFields && !description && (projectName || taskName || tagNames.length > 0)) {
         metadataRows.push({
           rowNumber,
           projectName,
+          taskName,
           tagNames,
         });
         continue;
@@ -557,6 +618,7 @@ export async function parseAndPreviewTogglCsv(params: {
     metadataRows,
     existingProjects: params.existingProjects,
     existingTags: params.existingTags,
+    existingTasks: params.existingTasks,
     existingLogs: params.existingLogs,
   });
 
@@ -566,6 +628,7 @@ export async function parseAndPreviewTogglCsv(params: {
     errors,
     newProjectNames: computed.newProjectNames,
     newScopedTags: computed.newScopedTags,
+    newTasks: computed.newTasks,
     newLogsCount: computed.newLogsCount,
     duplicateLogsCount: computed.duplicateLogsCount,
   };
@@ -579,6 +642,7 @@ export function refreshTogglPreviewStatuses(params: {
   preview: TogglDryRunPreview;
   existingProjects: readonly Project[];
   existingTags: readonly ProjectTag[];
+  existingTasks?: readonly Task[];
   existingLogs: readonly TimeLog[];
 }): TogglDryRunPreview {
   const computed = computePreviewCatalogAndStatuses({
@@ -586,6 +650,7 @@ export function refreshTogglPreviewStatuses(params: {
     metadataRows: params.preview.metadataRows,
     existingProjects: params.existingProjects,
     existingTags: params.existingTags,
+    existingTasks: params.existingTasks,
     existingLogs: params.existingLogs,
   });
 
@@ -594,25 +659,39 @@ export function refreshTogglPreviewStatuses(params: {
     logRows: computed.logRows,
     newProjectNames: computed.newProjectNames,
     newScopedTags: computed.newScopedTags,
+    newTasks: computed.newTasks,
     newLogsCount: computed.newLogsCount,
     duplicateLogsCount: computed.duplicateLogsCount,
   };
 }
 
 /**
- * Exports TimeLogs into an official Toggl Track CSV string prefixed with UTF-8 BOM (`\uFEFF`) for Excel compatibility.
+ * Exports TimeLogs (and optionally uncovered catalog Projects, ProjectTags, and hierarchical Tasks)
+ * into an official Toggl Track CSV string prefixed with UTF-8 BOM (`\uFEFF`) for Excel compatibility.
  */
 export function serializeTogglCsv(params: {
   logs: readonly TimeLog[];
   userName?: string | null;
   userEmail?: string | null;
-  tags?: readonly Pick<ProjectTag, 'id' | 'name'>[];
+  tags?: readonly (Pick<ProjectTag, 'id' | 'name'> & Partial<Pick<ProjectTag, 'projectId'>>)[];
+  projects?: readonly Project[];
+  tasks?: readonly Task[];
+  includeCatalogMetadata?: boolean;
 }): string {
   const userName = params.userName || 'Klox User';
   const userEmail = params.userEmail || 'user@klox.dev';
   const tagNameById = params.tags ? buildTagNameMap(params.tags) : undefined;
+  const allTasks = params.tasks ?? [];
+  const taskById = allTasks.length > 0 ? new Map(allTasks.map((t) => [t.id, t])) : undefined;
+  const projectById = params.projects
+    ? new Map(params.projects.map((p) => [p.id, p]))
+    : undefined;
 
-  const rows = params.logs.map((log) => {
+  const coveredProjectsLower = new Set<string>();
+  const coveredTagsLower = new Set<string>();
+  const coveredTasksLower = new Set<string>();
+
+  const rows: Array<Record<(typeof TOGGL_CSV_HEADERS)[number], string>> = params.logs.map((log) => {
     const startIso = new Date(log.startTime).toISOString();
     const endIso = new Date(log.endTime).toISOString();
 
@@ -621,12 +700,39 @@ export function serializeTogglCsv(params: {
     const endDate = endIso.slice(0, 10);
     const endTime = endIso.slice(11, 19);
 
+    const liveProj = projectById?.get(log.projectId);
+    const isUnassigned = liveProj
+      ? liveProj.systemKey === 'unassigned' || liveProj.id === UNASSIGNED_PROJECT_ID
+      : log.projectId === UNASSIGNED_PROJECT_ID ||
+        log.projectNameSnapshot.trim().toLowerCase() === 'general / unassigned';
+    const projName = liveProj?.name ?? log.projectNameSnapshot;
+    const projKeyLower = isUnassigned ? 'general / unassigned' : projName.trim().toLowerCase();
+
+    const liveTask = log.taskId ? taskById?.get(log.taskId) : undefined;
+    const taskLabel = liveTask
+      ? formatTaskHierarchyLabel(liveTask, allTasks)
+      : (log.taskNameSnapshot ?? '');
+
+    const resolvedTagNames = tagNameById
+      ? resolveTagNames(log.tagIds, tagNameById)
+      : [...log.tagIds];
+
+    if (params.includeCatalogMetadata) {
+      coveredProjectsLower.add(projKeyLower);
+      for (const tagName of resolvedTagNames) {
+        coveredTagsLower.add(`${projKeyLower}::${tagName.trim().toLowerCase()}`);
+      }
+      if (taskLabel.trim()) {
+        coveredTasksLower.add(`${projKeyLower}::${taskLabel.trim().toLowerCase()}`);
+      }
+    }
+
     return {
       User: userName,
       Email: userEmail,
       Client: '',
-      Project: log.projectNameSnapshot,
-      Task: log.taskNameSnapshot ?? '',
+      Project: projName,
+      Task: taskLabel,
       Description: log.description,
       Billable: log.isBillable ? 'Yes' : 'No',
       'Start date': startDate,
@@ -634,9 +740,105 @@ export function serializeTogglCsv(params: {
       'End date': endDate,
       'End time': endTime,
       Duration: formatHMS(log.durationSeconds),
-      Tags: tagNameById ? resolveTagNames(log.tagIds, tagNameById).join(', ') : log.tagIds.join(', '),
+      Tags: resolvedTagNames.join(', '),
     };
   });
+
+  if (params.includeCatalogMetadata) {
+    const projectsList = params.projects ?? [];
+    const tagsList = params.tags ?? [];
+    const seenProjectIds = new Set<string>();
+
+    for (const proj of projectsList) {
+      seenProjectIds.add(proj.id);
+      const isUnassigned = proj.systemKey === 'unassigned' || proj.id === UNASSIGNED_PROJECT_ID;
+      const projKeyLower = isUnassigned ? 'general / unassigned' : proj.name.trim().toLowerCase();
+      const csvProjName = isUnassigned ? '' : proj.name;
+
+      const uncoveredTags: string[] = [];
+      for (const tag of tagsList) {
+        if (tag.projectId !== proj.id) continue;
+        const tagLower = tag.name.trim().toLowerCase();
+        const key = `${projKeyLower}::${tagLower}`;
+        if (!coveredTagsLower.has(key)) {
+          uncoveredTags.push(tag.name);
+          coveredTagsLower.add(key);
+        }
+      }
+
+      if ((!isUnassigned && !coveredProjectsLower.has(projKeyLower)) || uncoveredTags.length > 0) {
+        coveredProjectsLower.add(projKeyLower);
+        rows.push({
+          User: userName,
+          Email: userEmail,
+          Client: '',
+          Project: csvProjName,
+          Task: '',
+          Description: '',
+          Billable: '',
+          'Start date': '',
+          'Start time': '',
+          'End date': '',
+          'End time': '',
+          Duration: '',
+          Tags: uncoveredTags.join(', '),
+        });
+      }
+
+      const flatTasks = flattenTaskTree(buildTaskTree(allTasks, proj.id));
+      for (const node of flatTasks) {
+        const taskPath = node.hierarchicalLabel.trim();
+        if (!taskPath) continue;
+        const key = `${projKeyLower}::${taskPath.toLowerCase()}`;
+        if (!coveredTasksLower.has(key)) {
+          coveredTasksLower.add(key);
+          rows.push({
+            User: userName,
+            Email: userEmail,
+            Client: '',
+            Project: csvProjName,
+            Task: taskPath,
+            Description: '',
+            Billable: '',
+            'Start date': '',
+            'Start time': '',
+            'End date': '',
+            'End time': '',
+            Duration: '',
+            Tags: '',
+          });
+        }
+      }
+    }
+
+    // Handle uncovered tasks for UNASSIGNED_PROJECT_ID if caller omitted projects array
+    if (!seenProjectIds.has(UNASSIGNED_PROJECT_ID) && allTasks.length > 0) {
+      const unassignedTasks = flattenTaskTree(buildTaskTree(allTasks, UNASSIGNED_PROJECT_ID));
+      for (const node of unassignedTasks) {
+        const taskPath = node.hierarchicalLabel.trim();
+        if (!taskPath) continue;
+        const key = `general / unassigned::${taskPath.toLowerCase()}`;
+        if (!coveredTasksLower.has(key)) {
+          coveredTasksLower.add(key);
+          rows.push({
+            User: userName,
+            Email: userEmail,
+            Client: '',
+            Project: '',
+            Task: taskPath,
+            Description: '',
+            Billable: '',
+            'Start date': '',
+            'Start time': '',
+            'End date': '',
+            'End time': '',
+            Duration: '',
+            Tags: '',
+          });
+        }
+      }
+    }
+  }
 
   const csvBody = Papa.unparse(rows, {
     columns: [...TOGGL_CSV_HEADERS],

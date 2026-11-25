@@ -633,6 +633,87 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     }
   }
 
+  /**
+   * Authoritative full fetch of all `timeLogs` (bypassing Stage 2 background streaming)
+   * so pre-wipe backups never miss older unstreamed entries.
+   */
+  async function fetchAllRemoteLogs(uid: string): Promise<TimeLog[]> {
+    const fb = await getFirebaseClient();
+    if (!fb) {
+      return [...sortedLogs.value];
+    }
+
+    const { collection, getDocs, orderBy, query } = await import('firebase/firestore');
+    const colRef = collection(fb.db, 'users', uid, 'timeLogs');
+    const snap = await getDocs(query(colRef, orderBy('startTime', 'desc')));
+    const remoteLogs = snap.docs.map((d) => d.data() as TimeLog);
+
+    logs.value = remoteLogs;
+    activeUid.value = uid;
+    loadedUid.value = uid;
+    loading.value = false;
+    streaming.value = false;
+    streamedCount.value = remoteLogs.length;
+    upsertedDuringStream.clear();
+    deletedDuringStream.clear();
+    persistLocal();
+
+    return remoteLogs;
+  }
+
+  /**
+   * Permanently deletes all `timeLogs` for the active user in 450-op parallel batches.
+   */
+  async function wipeAllLogs(params: {
+    uid: string;
+    isDemo: boolean;
+  }): Promise<{ deletedLogs: number }> {
+    let deletedLogs = logs.value.length;
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { collection, getDocs, writeBatch } = await import('firebase/firestore');
+        const snap = await getDocs(collection(fb.db, 'users', params.uid, 'timeLogs'));
+        deletedLogs = snap.docs.length;
+
+        const BATCH_SIZE = 450;
+        const chunks: Array<typeof snap.docs> = [];
+        for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+          chunks.push(snap.docs.slice(i, i + BATCH_SIZE));
+        }
+
+        const CONCURRENCY = 4;
+        for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+          const slice = chunks.slice(i, i + CONCURRENCY);
+          await Promise.all(
+            slice.map(async (chunk) => {
+              const batch = writeBatch(fb.db);
+              for (const d of chunk) {
+                batch.delete(d.ref);
+              }
+              await batch.commit();
+            })
+          );
+        }
+      }
+    }
+
+    logs.value = [];
+    activeUid.value = params.uid;
+    loadedUid.value = params.uid;
+    loading.value = false;
+    streaming.value = false;
+    streamedCount.value = 0;
+    activeHydratePromise = null;
+    activeHydrateUid = null;
+    upsertedDuringStream.clear();
+    deletedDuringStream.clear();
+    persistLocal();
+
+    return { deletedLogs };
+  }
+
   return {
     logs,
     sortedLogs,
@@ -648,6 +729,8 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     updateTimeLogsBatch,
     deleteTimeLog,
     deleteTimeLogs,
+    fetchAllRemoteLogs,
+    wipeAllLogs,
     persistLocal,
   };
 });

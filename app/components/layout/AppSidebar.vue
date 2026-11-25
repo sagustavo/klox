@@ -30,6 +30,7 @@ import {
 } from 'reka-ui';
 import { useAuthStore } from '~/stores/auth';
 import { useOnboardingStore } from '~/stores/onboarding';
+import { useProfileStore } from '~/stores/profile';
 import { useTimerStore } from '~/stores/timer';
 
 const { t } = useI18n();
@@ -37,6 +38,7 @@ const localePath = useLocalePath();
 const route = useRoute();
 const authStore = useAuthStore();
 const onboardingStore = useOnboardingStore();
+const profileStore = useProfileStore();
 const timerStore = useTimerStore();
 const { sidebarState, syncFromStorage, setSidebarState, cycleSidebar, reopenSidebar } =
   useSidebarState();
@@ -91,14 +93,28 @@ const navItems = computed<NavItem[]>(() => [
   },
 ]);
 
-const accountLabel = computed(
-  () => authStore.user?.email || authStore.user?.displayName || t('brand.name')
+const accountDisplayName = computed(
+  () =>
+    profileStore.profile?.displayName ||
+    authStore.user?.displayName ||
+    authStore.user?.email ||
+    t('brand.name')
 );
 
-const accountInitial = computed(() => {
-  const label = accountLabel.value.trim();
-  return label ? label.charAt(0).toUpperCase() : 'K';
+const accountSecondary = computed(() => {
+  if (profileStore.profile?.username) {
+    return `@${profileStore.profile.username}`;
+  }
+  return authStore.user?.email || '';
 });
+
+const accountAvatarUrl = computed(
+  () => profileStore.effectiveAvatarUrl || authStore.user?.photoURL || null
+);
+
+const accountEmail = computed(
+  () => profileStore.profile?.email || authStore.user?.email || null
+);
 
 const activeLinkClass =
   '!text-text-primary bg-bg-hover border-border-hairline border-l-2 border-l-signal';
@@ -287,17 +303,28 @@ onBeforeUnmount(() => {
             v-if="authStore.user"
             class="flex items-center justify-between gap-2 border-t border-border-hairline pt-2.5"
           >
-            <div class="flex min-w-0 items-center gap-2.5">
-              <span
-                class="tabular-telemetry inline-flex h-8 w-8 shrink-0 items-center justify-center border border-border-hairline bg-bg-primary text-xs font-semibold text-signal"
-                aria-hidden="true"
-              >
-                {{ accountInitial }}
+            <NuxtLink
+              :to="localePath('/app/profile')"
+              :aria-label="$t('nav.profile')"
+              :active-class="activeLinkClass"
+              class="flex min-w-0 flex-1 items-center gap-2.5 border border-transparent px-1.5 py-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+              @click="mobileDrawerOpen = false"
+            >
+              <UiUserAvatar
+                size="sm"
+                :src="accountAvatarUrl"
+                :name="accountDisplayName"
+                :email="accountEmail"
+              />
+              <span class="min-w-0">
+                <span class="block truncate text-ui font-medium text-text-primary">
+                  {{ accountDisplayName }}
+                </span>
+                <span v-if="accountSecondary" class="tabular-telemetry block truncate text-[11px] text-text-muted">
+                  {{ accountSecondary }}
+                </span>
               </span>
-              <span class="truncate text-ui text-text-muted">
-                {{ accountLabel }}
-              </span>
-            </div>
+            </NuxtLink>
 
             <button
               type="button"
@@ -581,19 +608,35 @@ onBeforeUnmount(() => {
         <!-- Account Identity & Icon-Only Sign Out -->
         <div
           v-if="sidebarState === 'expanded'"
-          class="flex items-center justify-between gap-2 border-t border-border-hairline px-1.5 pt-2"
+          class="flex items-center justify-between gap-2 border-t border-border-hairline px-1 pt-2"
         >
-          <div v-if="authStore.user" class="flex min-w-0 items-center gap-2">
-            <span
-              class="tabular-telemetry inline-flex h-8 w-8 shrink-0 items-center justify-center border border-border-hairline bg-bg-primary text-xs font-semibold text-signal"
-              aria-hidden="true"
-            >
-              {{ accountInitial }}
+          <NuxtLink
+            v-if="authStore.user"
+            :to="localePath('/app/profile')"
+            data-tour="nav-profile"
+            :aria-label="$t('nav.profile')"
+            :active-class="activeLinkClass"
+            class="flex min-w-0 flex-1 items-center gap-2 border border-transparent px-1.5 py-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+          >
+            <UiUserAvatar
+              size="sm"
+              :src="accountAvatarUrl"
+              :name="accountDisplayName"
+              :email="accountEmail"
+            />
+            <span class="min-w-0">
+              <span class="block truncate text-xs font-medium text-text-primary" :title="accountDisplayName">
+                {{ accountDisplayName }}
+              </span>
+              <span
+                v-if="accountSecondary"
+                class="tabular-telemetry block truncate text-[11px] text-text-muted"
+                :title="accountSecondary"
+              >
+                {{ accountSecondary }}
+              </span>
             </span>
-            <span class="truncate text-xs text-text-muted" :title="accountLabel">
-              {{ accountLabel }}
-            </span>
-          </div>
+          </NuxtLink>
 
           <TooltipRoot>
             <TooltipTrigger as-child>
@@ -618,7 +661,36 @@ onBeforeUnmount(() => {
           </TooltipRoot>
         </div>
 
-        <div v-else class="flex justify-center border-t border-border-hairline pt-2">
+        <div v-else class="flex flex-col items-center gap-1.5 border-t border-border-hairline pt-2">
+          <TooltipRoot v-if="authStore.user">
+            <TooltipTrigger as-child>
+              <NuxtLink
+                :to="localePath('/app/profile')"
+                data-tour="nav-profile"
+                :aria-label="$t('nav.profile')"
+                :active-class="activeLinkClass"
+                class="inline-flex h-10 w-10 items-center justify-center border border-transparent transition-colors hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+              >
+                <UiUserAvatar
+                  size="sm"
+                  :src="accountAvatarUrl"
+                  :name="accountDisplayName"
+                  :email="accountEmail"
+                />
+              </NuxtLink>
+            </TooltipTrigger>
+            <TooltipPortal>
+              <TooltipContent
+                side="right"
+                :side-offset="10"
+                class="orbital-tooltip z-50 border border-border-hairline bg-bg-elevated px-2.5 py-1.5 text-xs font-medium text-text-primary shadow-xl"
+              >
+                <div>{{ $t('nav.profile') }}</div>
+                <div class="text-[11px] text-text-muted">{{ accountDisplayName }}</div>
+              </TooltipContent>
+            </TooltipPortal>
+          </TooltipRoot>
+
           <TooltipRoot>
             <TooltipTrigger as-child>
               <button

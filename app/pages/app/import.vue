@@ -33,6 +33,7 @@ const previewStatusFilter = ref<'all' | TogglRowImportStatus>('all');
 const commitResult = ref<{
   createdProjects: number;
   createdTags: number;
+  createdTasks: number;
   importedLogs: number;
   skippedDuplicates: number;
 } | null>(null);
@@ -162,7 +163,7 @@ function handleExport() {
         </button>
 
         <button
-          v-if="preview && (preview.newLogsCount > 0 || preview.newProjectNames.length > 0 || preview.newScopedTags.length > 0)"
+          v-if="preview && (preview.newLogsCount > 0 || preview.newProjectNames.length > 0 || preview.newScopedTags.length > 0 || preview.newTasks.length > 0)"
           type="button"
           :disabled="isCommitting"
           class="btn-press inline-flex h-10 items-center gap-2 bg-accent px-5 text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover disabled:opacity-50"
@@ -194,12 +195,20 @@ function handleExport() {
         </div>
         <p class="mt-1 text-text-primary">
           {{
-            t('csv.commitSuccessBody', {
-              logs: commitResult.importedLogs,
-              projects: commitResult.createdProjects,
-              tags: commitResult.createdTags,
-              skipped: commitResult.skippedDuplicates,
-            })
+            commitResult.createdTasks > 0
+              ? t('csv.commitSuccessWithTasks', {
+                  logs: commitResult.importedLogs,
+                  projects: commitResult.createdProjects,
+                  tags: commitResult.createdTags,
+                  tasks: commitResult.createdTasks,
+                  skipped: commitResult.skippedDuplicates,
+                })
+              : t('csv.commitSuccessBody', {
+                  logs: commitResult.importedLogs,
+                  projects: commitResult.createdProjects,
+                  tags: commitResult.createdTags,
+                  skipped: commitResult.skippedDuplicates,
+                })
           }}
         </p>
       </div>
@@ -272,12 +281,15 @@ function handleExport() {
         </div>
       </div>
 
-      <!-- New Projects & Project Tags Preview -->
+      <!-- New Projects, Project Tags & Tasks Preview -->
       <div
-        v-if="preview.newProjectNames.length > 0 || preview.newScopedTags.length > 0"
+        v-if="preview.newProjectNames.length > 0 || preview.newScopedTags.length > 0 || preview.newTasks.length > 0"
         class="grid grid-cols-1 gap-4 md:grid-cols-2"
       >
-        <div class="border border-border-hairline bg-bg-elevated p-4">
+        <div
+          v-if="preview.newProjectNames.length > 0"
+          class="border border-border-hairline bg-bg-elevated p-4"
+        >
           <div class="label-eyebrow text-text-muted mb-2.5">
             {{ $t('csv.summaryNewProjects') }}
           </div>
@@ -292,7 +304,10 @@ function handleExport() {
           </div>
         </div>
 
-        <div class="border border-border-hairline bg-bg-elevated p-4">
+        <div
+          v-if="preview.newScopedTags.length > 0"
+          class="border border-border-hairline bg-bg-elevated p-4"
+        >
           <div class="label-eyebrow text-text-muted mb-2.5">
             {{ $t('csv.summaryNewTags') }}
           </div>
@@ -303,6 +318,24 @@ function handleExport() {
               class="border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-ui font-medium text-amber-500"
             >
               {{ st.projectName }} → {{ st.tagName }}
+            </span>
+          </div>
+        </div>
+
+        <div
+          v-if="preview.newTasks.length > 0"
+          class="border border-border-hairline bg-bg-elevated p-4 md:col-span-2"
+        >
+          <div class="label-eyebrow text-text-muted mb-2.5">
+            {{ $t('csv.summaryNewTasks') }} ({{ preview.newTasks.length }})
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <span
+              v-for="nt in preview.newTasks"
+              :key="`${nt.projectName}::${nt.taskPath}`"
+              class="border border-signal/40 bg-signal-soft px-2.5 py-1 text-ui font-medium text-signal"
+            >
+              {{ nt.projectName }} → {{ nt.taskPath }}
             </span>
           </div>
         </div>

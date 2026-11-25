@@ -20,6 +20,7 @@ export function useDynamicTabTitle() {
     if (normalizedPath.startsWith('/app/catalog')) return t('nav.catalog');
     if (normalizedPath.startsWith('/app/import')) return t('nav.import');
     if (normalizedPath.startsWith('/app/settings')) return t('nav.settings');
+    if (normalizedPath.startsWith('/app/profile')) return t('nav.profile');
     if (normalizedPath.startsWith('/app/welcome')) return t('onboarding.wizard.title');
     return t('app.placeholderTitle');
   });
