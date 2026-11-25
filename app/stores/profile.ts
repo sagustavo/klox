@@ -438,6 +438,17 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
+  function syncGooglePhotoUrl(photoUrl: string | null) {
+    if (!profile.value) return;
+    const sanitized = sanitizeHttpsPhotoUrl(photoUrl);
+    if (profile.value.googlePhotoUrl === sanitized) return;
+    profile.value = {
+      ...profile.value,
+      googlePhotoUrl: sanitized,
+    };
+    persistLocal();
+  }
+
   return {
     profile,
     loading,
@@ -450,6 +461,7 @@ export const useProfileStore = defineStore('profile', () => {
     checkUsernameAvailability,
     saveProfile,
     updateCustomAvatar,
+    syncGooglePhotoUrl,
     reset,
   };
 });

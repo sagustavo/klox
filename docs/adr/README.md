@@ -16,3 +16,4 @@ ADRs are written **on demand** in the same change that introduces a decision —
 | [ADR-0010](./0010-tag-id-references-without-snapshots.md) | Decoupled `ProjectTag` ID References Without `tagNamesSnapshot` | Accepted | Phase 9 / FR-5.3 |
 | [ADR-0011](./0011-customizable-keyboard-shortcuts-and-instant-timer.md) | Customizable Keyboard Shortcuts and Instant-Start Timer Lifecycle | Accepted | Phase 10 / FR-6.1 & FR-6.3 |
 | [ADR-0012](./0012-user-profile-unique-usernames-and-workspace-wipe.md) | User Profile Management, Atomic Unique Usernames, Client-Resized Avatars & Backup-First Workspace Wipe | Accepted | Phase 10 / FR-6.6 (`AB#29`) |
+| [ADR-0013](./0013-multi-provider-auth-linking.md) | Multi-Provider Authentication Linking (Google OAuth & Email/Password) | Accepted | Phase 10 / FR-6.4 (`AB#27`) |

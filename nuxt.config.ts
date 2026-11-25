@@ -11,10 +11,30 @@ export default defineNuxtConfig({
   routeRules: {
     '/': { prerender: true },
     '/pt-br': { prerender: true },
-    '/app': { ssr: false },
-    '/app/**': { ssr: false },
-    '/pt-br/app': { ssr: false },
-    '/pt-br/app/**': { ssr: false },
+    '/app': {
+      ssr: false,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
+    },
+    '/app/**': {
+      ssr: false,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
+    },
+    '/pt-br/app': {
+      ssr: false,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
+    },
+    '/pt-br/app/**': {
+      ssr: false,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
+    },
     '/login': {
       ssr: false,
       headers: {

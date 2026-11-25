@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { mapFirebaseAuthErrorCode, tenantStorageKey } from '../../app/domain/auth';
+import {
+  canUnlinkProvider,
+  doEmailsMatch,
+  extractAuthProviderStatus,
+  mapFirebaseAuthErrorCode,
+  tenantStorageKey,
+  validateLinkPassword,
+} from '../../app/domain/auth';
 import {
   aggregateDailyStacked,
   aggregatePizzaSlices,
@@ -1027,7 +1034,64 @@ describe('domain/auth', () => {
     expect(mapFirebaseAuthErrorCode({ code: 'auth/operation-not-allowed' })).toBe(
       'AUTH_PROVIDER_DISABLED'
     );
+    expect(
+      mapFirebaseAuthErrorCode({ code: 'auth/account-exists-with-different-credential' })
+    ).toBe('AUTH_ACCOUNT_EXISTS_DIFFERENT_CREDENTIAL');
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/credential-already-in-use' })).toBe(
+      'AUTH_CREDENTIAL_ALREADY_IN_USE'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/provider-already-linked' })).toBe(
+      'AUTH_PROVIDER_ALREADY_LINKED'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/requires-recent-login' })).toBe(
+      'AUTH_REQUIRES_RECENT_LOGIN'
+    );
     expect(mapFirebaseAuthErrorCode({ code: 'auth/internal-error' })).toBe('AUTH_GENERIC_ERROR');
+  });
+
+  it('computes connected provider status and prevents unlinking the sole provider (FR-6.4)', () => {
+    const googleOnly = extractAuthProviderStatus(['google.com']);
+    expect(googleOnly).toEqual({
+      hasGoogle: true,
+      hasPassword: false,
+      connectedCount: 1,
+      canUnlinkGoogle: false,
+      canUnlinkPassword: false,
+    });
+    expect(canUnlinkProvider(['google.com'], 'google.com')).toBe(false);
+    expect(canUnlinkProvider(['google.com'], 'password')).toBe(false);
+
+    const passwordOnly = extractAuthProviderStatus(['password']);
+    expect(passwordOnly.connectedCount).toBe(1);
+    expect(canUnlinkProvider(['password'], 'password')).toBe(false);
+
+    const bothLinked = extractAuthProviderStatus(['password', 'google.com', 'password']);
+    expect(bothLinked).toEqual({
+      hasGoogle: true,
+      hasPassword: true,
+      connectedCount: 2,
+      canUnlinkGoogle: true,
+      canUnlinkPassword: true,
+    });
+    expect(canUnlinkProvider(['password', 'google.com'], 'google.com')).toBe(true);
+    expect(canUnlinkProvider(['password', 'google.com'], 'password')).toBe(true);
+  });
+
+  it('validates linking passwords and case-insensitive email matches cleanly (FR-6.4)', () => {
+    expect(validateLinkPassword('12345', '12345')).toEqual({
+      valid: false,
+      error: 'AUTH_PASSWORD_TOO_SHORT',
+    });
+    expect(validateLinkPassword('secret1', 'secret2')).toEqual({
+      valid: false,
+      error: 'AUTH_PASSWORD_MISMATCH',
+    });
+    expect(validateLinkPassword('secret1', 'secret1')).toEqual({ valid: true });
+
+    expect(doEmailsMatch('  Gustavo@Klox.dev ', 'gustavo@klox.dev')).toBe(true);
+    expect(doEmailsMatch('a@klox.dev', 'b@klox.dev')).toBe(false);
+    expect(doEmailsMatch('', 'a@klox.dev')).toBe(false);
+    expect(doEmailsMatch(null, 'a@klox.dev')).toBe(false);
   });
 
   it('scopes localStorage keys cleanly by tenant uid', () => {

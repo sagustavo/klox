@@ -176,11 +176,17 @@ const canSubmit = computed(() => {
   return hasUnsavedChanges.value;
 });
 
-const providerLabel = computed(() => {
-  if (authStore.isDemoMode) return t('profile.providerDemo');
-  const providers = authStore.user?.providers ?? [];
-  if (providers.includes('google.com')) return t('profile.providerGoogle');
-  return t('profile.providerEmail');
+const connectedProviderLabels = computed(() => {
+  if (authStore.isDemoMode) {
+    const labels: string[] = [];
+    if (authStore.providerStatus.hasGoogle) labels.push(t('profile.providerGoogle'));
+    if (authStore.providerStatus.hasPassword) labels.push(t('profile.providerEmail'));
+    return labels.length > 0 ? labels : [t('profile.providerDemo')];
+  }
+  const labels: string[] = [];
+  if (authStore.providerStatus.hasGoogle) labels.push(t('profile.providerGoogle'));
+  if (authStore.providerStatus.hasPassword) labels.push(t('profile.providerEmail'));
+  return labels.length > 0 ? labels : [t('profile.providerEmail')];
 });
 
 const avatarSourceLabel = computed(() => {
@@ -600,13 +606,22 @@ async function handleConfirmWipe() {
                 <div class="label-eyebrow text-text-muted">
                   {{ $t('profile.providerLabel') }}
                 </div>
-                <div class="mt-1">
+                <div class="mt-1 flex flex-wrap items-center gap-1.5">
                   <span
+                    v-for="label in connectedProviderLabels"
+                    :key="label"
                     class="inline-flex border border-border-hairline bg-bg-primary px-2.5 py-0.5 text-xs font-medium text-text-primary"
                   >
-                    {{ providerLabel }}
+                    {{ label }}
                   </span>
                 </div>
+                <NuxtLink
+                  :to="localePath('/app/settings#sign-in-methods')"
+                  class="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-signal hover:underline"
+                >
+                  <span>{{ $t('profile.manageSignInMethods') }}</span>
+                  <ArrowRight class="h-3 w-3" aria-hidden="true" />
+                </NuxtLink>
               </div>
             </div>
 

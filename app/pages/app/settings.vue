@@ -296,6 +296,8 @@ function updateThemePreference(theme: ThemeOption) {
     </div>
     </div>
 
+    <SettingsConnectedAccountsPanel @saved="flashSaved" />
+
     <SettingsKeyboardShortcutsPanel id="shortcuts" @saved="flashSaved" />
   </div>
 </template>

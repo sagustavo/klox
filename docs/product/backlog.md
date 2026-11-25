@@ -92,7 +92,7 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 | **FR-6.1** | Product Backlog Item | Instant-Start Activity on `N` & Discard Empty Timer on Cancel/Stop | Timer & Log Ergonomics | 2 - High | Free | Done |
 | **FR-6.2** | Product Backlog Item | Retroactive AI Auto-Fill on Historical TimeLogs | AI & Recall | 3 - Medium | Free | Next |
 | **FR-6.3** | Product Backlog Item | VS Code-Style Customizable Keyboard Shortcuts & Resume Last Activity | Keyboard & Shortcuts | 2 - High | Free | Done |
-| **FR-6.4** | Product Backlog Item | Multi-Provider Authentication Linking (Google OAuth & Email/Password) | Authentication & Security | 2 - High | Free | Next |
+| **FR-6.4** | Product Backlog Item | Multi-Provider Authentication Linking (Google OAuth & Email/Password) | Authentication & Security | 2 - High | Free | Done |
 | **FR-6.5** | Product Backlog Item | Password Reset Flow with Email Confirmation | Authentication & Security | 2 - High | Free | Next |
 | **FR-6.6** | Product Backlog Item | User Profile Management & Time-Tracking Activity Heatmap | Profile & Telemetry | 3 - Medium | Free | Done |
 | **FR-6.7** | Product Backlog Item | In-App Feedback Submission & My Feedback Management | Feedback & Community | 2 - High | Free | Next |
@@ -405,20 +405,20 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
   - [x] Also expose a quick UI button/action in the recent logs list / Command Timer Bar to trigger `Resume Last Logged Activity` or re-run any historical log.
 
 #### [FR-6.4] Multi-Provider Authentication Linking (Google OAuth & Email/Password)
-- **Work Item Type:** `Product Backlog Item`
+- **Work Item Type:** `Product Backlog Item` (`AB#27`)
 - **Area / Category:** `Authentication & Security`
 - **Phase:** `10`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Approved`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `auth; google-oauth; account-linking; firebase; phase-10`
-- **Description:** Remove the single-provider lock-in during sign-in/sign-up. A user must be able to authenticate with **either Google OAuth OR Email/Password** at any time for the same account—whether they originally registered via Google or via Email/Password.
+- **Description:** Remove the single-provider lock-in during sign-in/sign-up. A user must be able to authenticate with **either Google OAuth OR Email/Password** at any time for the same account—whether they originally registered via Google or via Email/Password. ([ADR-0013](../adr/0013-multi-provider-auth-linking.md))
 - **Acceptance Criteria:**
-  - [ ] Account Settings displays connected sign-in methods (`Google`, `Email/Password`) for the current `uid`.
-  - [ ] A user who originally signed up with Google OAuth can set/link an Email/Password credential (`linkWithCredential` / `EmailAuthProvider`) inside Account Settings without creating a duplicate account.
-  - [ ] A user who originally signed up with Email/Password can link their Google OAuth account (`linkWithPopup` / `GoogleAuthProvider`) under the exact same Firebase `uid` and `users/{uid}` Firestore tree.
-  - [ ] When a user attempts to sign in at `/login` with Google for an email previously created with Password (or vice versa), handle `auth/account-exists-with-different-credential` cleanly and guide seamless credential verification & linking rather than failing cryptically.
-  - [ ] Once both methods are linked, signing in via Google or Email/Password works interchangeably at any time and accesses the same user data.
+  - [x] Account Settings displays connected sign-in methods (`Google`, `Email/Password`) for the current `uid`.
+  - [x] A user who originally signed up with Google OAuth can set/link an Email/Password credential (`linkWithCredential` / `EmailAuthProvider`) inside Account Settings without creating a duplicate account.
+  - [x] A user who originally signed up with Email/Password can link their Google OAuth account (`linkWithPopup` / `GoogleAuthProvider`) under the exact same Firebase `uid` and `users/{uid}` Firestore tree.
+  - [x] When a user attempts to sign in at `/login` with Google for an email previously created with Password (or vice versa), handle `auth/account-exists-with-different-credential` cleanly and guide seamless credential verification & linking rather than failing cryptically.
+  - [x] Once both methods are linked, signing in via Google or Email/Password works interchangeably at any time and accesses the same user data.
 
 #### [FR-6.5] Password Reset Flow with Email Confirmation
 - **Work Item Type:** `Product Backlog Item`

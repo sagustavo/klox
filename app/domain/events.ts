@@ -15,7 +15,9 @@ export type DomainEvent =
   | { type: 'CsvImported'; at: string; rows: number }
   | { type: 'CsvExported'; at: string; rows: number }
   | { type: 'ProfileUpdated'; at: string }
-  | { type: 'WorkspaceWiped'; at: string };
+  | { type: 'WorkspaceWiped'; at: string }
+  | { type: 'AuthProviderLinked'; at: string; providerId: 'google.com' | 'password' }
+  | { type: 'AuthProviderUnlinked'; at: string; providerId: 'google.com' | 'password' };
 
 export type DomainEventHandler = (event: DomainEvent) => void;
 
