@@ -17,3 +17,4 @@ ADRs are written **on demand** in the same change that introduces a decision —
 | [ADR-0011](./0011-customizable-keyboard-shortcuts-and-instant-timer.md) | Customizable Keyboard Shortcuts and Instant-Start Timer Lifecycle | Accepted | Phase 10 / FR-6.1 & FR-6.3 |
 | [ADR-0012](./0012-user-profile-unique-usernames-and-workspace-wipe.md) | User Profile Management, Atomic Unique Usernames, Client-Resized Avatars & Backup-First Workspace Wipe | Accepted | Phase 10 / FR-6.6 (`AB#29`) |
 | [ADR-0013](./0013-multi-provider-auth-linking.md) | Multi-Provider Authentication Linking (Google OAuth & Email/Password) | Accepted | Phase 10 / FR-6.4 (`AB#27`) |
+| [ADR-0014](./0014-password-reset-flow.md) | Self-Service Password Reset Flow with Anti-Enumeration & Locale Sync | Accepted | Phase 10 / FR-6.5 (`AB#28`) |

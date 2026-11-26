@@ -4,8 +4,13 @@ import {
   canUnlinkProvider,
   doEmailsMatch,
   extractAuthProviderStatus,
+  isContinueUriError,
+  isNonEnumeratingResetError,
+  isValidEmailAddress,
   mapFirebaseAuthErrorCode,
+  normalizeEmail,
   tenantStorageKey,
+  toFirebaseAuthLanguageCode,
   validateLinkPassword,
   type AuthErrorCode,
   type LinkableAuthProviderId,
@@ -239,7 +244,7 @@ export const useAuthStore = defineStore('auth', () => {
           }
 
           const { onAuthStateChanged } = await import('firebase/auth');
-          fb.auth.languageCode = prefsStore.preferences.locale === 'pt-br' ? 'pt-BR' : 'en';
+          fb.auth.languageCode = toFirebaseAuthLanguageCode(prefsStore.preferences.locale);
 
           onAuthStateChanged(fb.auth, async (fbUser) => {
             if (fbUser) {
@@ -716,6 +721,135 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function sendPasswordReset(params: {
+    email: string;
+    locale: string;
+    continueUrl?: string;
+  }): Promise<{ ok: boolean; isDemo?: boolean; error?: AuthErrorCode }> {
+    errorCode.value = null;
+    const cleanEmail = normalizeEmail(params.email);
+    if (!isValidEmailAddress(cleanEmail)) {
+      errorCode.value = 'AUTH_INVALID_EMAIL';
+      return { ok: false, error: 'AUTH_INVALID_EMAIL' };
+    }
+
+    loading.value = true;
+    try {
+      const fb = await getFirebaseClient();
+      if (!fb) {
+        publishDomainEvent({
+          type: 'PasswordResetRequested',
+          at: new Date().toISOString(),
+        });
+        return { ok: true, isDemo: true };
+      }
+
+      fb.auth.languageCode = toFirebaseAuthLanguageCode(params.locale);
+      const { sendPasswordResetEmail } = await import('firebase/auth');
+
+      try {
+        if (params.continueUrl) {
+          await sendPasswordResetEmail(fb.auth, cleanEmail, { url: params.continueUrl });
+        } else {
+          await sendPasswordResetEmail(fb.auth, cleanEmail);
+        }
+      } catch (err: unknown) {
+        if (params.continueUrl && isContinueUriError(err)) {
+          await sendPasswordResetEmail(fb.auth, cleanEmail);
+        } else {
+          throw err;
+        }
+      }
+
+      publishDomainEvent({
+        type: 'PasswordResetRequested',
+        at: new Date().toISOString(),
+      });
+      return { ok: true };
+    } catch (err: unknown) {
+      if (isNonEnumeratingResetError(err)) {
+        publishDomainEvent({
+          type: 'PasswordResetRequested',
+          at: new Date().toISOString(),
+        });
+        return { ok: true };
+      }
+      console.error('[Klox Password Reset Error]', err);
+      const mapped = mapFirebaseAuthErrorCode(err);
+      errorCode.value = mapped;
+      return { ok: false, error: mapped };
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function verifyResetCode(
+    oobCode: string
+  ): Promise<{ ok: boolean; email?: string; error?: AuthErrorCode }> {
+    errorCode.value = null;
+    const cleanCode = oobCode.trim();
+    if (!cleanCode) {
+      return { ok: false, error: 'AUTH_INVALID_ACTION_CODE' };
+    }
+
+    try {
+      const fb = await getFirebaseClient();
+      if (!fb) {
+        return { ok: false, error: 'AUTH_INVALID_ACTION_CODE' };
+      }
+      const { verifyPasswordResetCode } = await import('firebase/auth');
+      const verifiedEmail = await verifyPasswordResetCode(fb.auth, cleanCode);
+      return { ok: true, email: verifiedEmail };
+    } catch (err: unknown) {
+      console.error('[Klox Verify Password Reset Code Error]', err);
+      const mapped = mapFirebaseAuthErrorCode(err);
+      errorCode.value = mapped;
+      return { ok: false, error: mapped };
+    }
+  }
+
+  async function confirmResetPassword(params: {
+    oobCode: string;
+    newPassword: string;
+    confirmPassword: string;
+  }): Promise<{ ok: boolean; error?: AuthErrorCode }> {
+    errorCode.value = null;
+    const passCheck = validateLinkPassword(params.newPassword, params.confirmPassword);
+    if (!passCheck.valid) {
+      errorCode.value = passCheck.error ?? 'AUTH_PASSWORD_TOO_SHORT';
+      return { ok: false, error: errorCode.value };
+    }
+
+    const cleanCode = params.oobCode.trim();
+    if (!cleanCode) {
+      errorCode.value = 'AUTH_INVALID_ACTION_CODE';
+      return { ok: false, error: 'AUTH_INVALID_ACTION_CODE' };
+    }
+
+    loading.value = true;
+    try {
+      const fb = await getFirebaseClient();
+      if (!fb) {
+        errorCode.value = 'AUTH_INVALID_ACTION_CODE';
+        return { ok: false, error: 'AUTH_INVALID_ACTION_CODE' };
+      }
+      const { confirmPasswordReset } = await import('firebase/auth');
+      await confirmPasswordReset(fb.auth, cleanCode, params.newPassword);
+      publishDomainEvent({
+        type: 'PasswordResetCompleted',
+        at: new Date().toISOString(),
+      });
+      return { ok: true };
+    } catch (err: unknown) {
+      console.error('[Klox Confirm Password Reset Error]', err);
+      const mapped = mapFirebaseAuthErrorCode(err);
+      errorCode.value = mapped;
+      return { ok: false, error: mapped };
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function signOutUser(): Promise<void> {
     clearPendingLink();
     if (import.meta.client) {
@@ -759,6 +893,9 @@ export const useAuthStore = defineStore('auth', () => {
     linkEmailPassword,
     linkGoogleProvider,
     unlinkProvider,
+    sendPasswordReset,
+    verifyResetCode,
+    confirmResetPassword,
     signOutUser,
     syncProfileIdentity,
     getIdToken,

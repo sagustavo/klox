@@ -17,7 +17,9 @@ export type DomainEvent =
   | { type: 'ProfileUpdated'; at: string }
   | { type: 'WorkspaceWiped'; at: string }
   | { type: 'AuthProviderLinked'; at: string; providerId: 'google.com' | 'password' }
-  | { type: 'AuthProviderUnlinked'; at: string; providerId: 'google.com' | 'password' };
+  | { type: 'AuthProviderUnlinked'; at: string; providerId: 'google.com' | 'password' }
+  | { type: 'PasswordResetRequested'; at: string }
+  | { type: 'PasswordResetCompleted'; at: string };
 
 export type DomainEventHandler = (event: DomainEvent) => void;
 

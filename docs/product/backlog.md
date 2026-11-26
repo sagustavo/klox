@@ -421,19 +421,19 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
   - [x] Once both methods are linked, signing in via Google or Email/Password works interchangeably at any time and accesses the same user data.
 
 #### [FR-6.5] Password Reset Flow with Email Confirmation
-- **Work Item Type:** `Product Backlog Item`
+- **Work Item Type:** `Product Backlog Item` (`AB#28`)
 - **Area / Category:** `Authentication & Security`
 - **Phase:** `10`
-- **Status (ADO State):** `Next` (`Approved`)
+- **Status (ADO State):** `Done` (`Approved`)
 - **Priority:** `2 - High`
 - **Plan Tier:** `Free`
 - **Tags:** `auth; password-reset; email; phase-10`
-- **Description:** Enable self-service password recovery for Email/Password users via Firebase Auth email confirmation links localized in `en` and `pt-BR`.
+- **Description:** Enable self-service password recovery for Email/Password users via Firebase Auth email confirmation links localized in `en` and `pt-BR`. ([ADR-0014](../adr/0014-password-reset-flow.md))
 - **Acceptance Criteria:**
-  - [ ] Add a `"Forgot password?"` link/view on `/login` allowing users to submit their email address and trigger Firebase `sendPasswordResetEmail`.
-  - [ ] Follow Firebase Auth `languageCode` (`en` / `pt-BR`) so confirmation reset emails match the user's selected locale.
-  - [ ] Display non-enumerating confirmation feedback (confirming the reset instructions were sent without leaking whether an email is registered).
-  - [ ] Completing the email confirmation link resets the password cleanly and allows immediate sign-in on `/login`.
+  - [x] Add a `"Forgot password?"` link/view on `/login` allowing users to submit their email address and trigger Firebase `sendPasswordResetEmail`.
+  - [x] Follow Firebase Auth `languageCode` (`en` / `pt-BR`) so confirmation reset emails match the user's selected locale.
+  - [x] Display non-enumerating confirmation feedback (confirming the reset instructions were sent without leaking whether an email is registered).
+  - [x] Completing the email confirmation link resets the password cleanly and allows immediate sign-in on `/login`.
 
 #### [FR-6.6] User Profile Management & Time-Tracking Activity Heatmap
 - **Work Item Type:** `Product Backlog Item` (`AB#29`)

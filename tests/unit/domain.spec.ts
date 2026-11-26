@@ -3,8 +3,13 @@ import {
   canUnlinkProvider,
   doEmailsMatch,
   extractAuthProviderStatus,
+  isContinueUriError,
+  isNonEnumeratingResetError,
+  isValidEmailAddress,
   mapFirebaseAuthErrorCode,
+  normalizeEmail,
   tenantStorageKey,
+  toFirebaseAuthLanguageCode,
   validateLinkPassword,
 } from '../../app/domain/auth';
 import {
@@ -1100,6 +1105,43 @@ describe('domain/auth', () => {
     expect(demoKey).toBe('klox_catalog_projects:demo-user');
     expect(userKey).toBe('klox_catalog_projects:firebase-uid-123');
     expect(demoKey).not.toBe(userKey);
+  });
+
+  it('supports password reset locale mapping, email validation, and anti-enumeration checks (FR-6.5)', () => {
+    expect(toFirebaseAuthLanguageCode('en')).toBe('en');
+    expect(toFirebaseAuthLanguageCode('pt-br')).toBe('pt-BR');
+    expect(toFirebaseAuthLanguageCode('pt-BR')).toBe('pt-BR');
+    expect(toFirebaseAuthLanguageCode('pt')).toBe('pt-BR');
+    expect(toFirebaseAuthLanguageCode(undefined)).toBe('en');
+
+    expect(normalizeEmail('  user@klox.dev  ')).toBe('user@klox.dev');
+    expect(isValidEmailAddress('  ada@klox.dev  ')).toBe(true);
+    expect(isValidEmailAddress('bad')).toBe(false);
+    expect(isValidEmailAddress('a@b')).toBe(false);
+    expect(isValidEmailAddress('a@b.c')).toBe(false);
+    expect(isValidEmailAddress('')).toBe(false);
+
+    expect(isNonEnumeratingResetError({ code: 'auth/user-not-found' })).toBe(true);
+    expect(isNonEnumeratingResetError({ code: 'auth/too-many-requests' })).toBe(false);
+    expect(isNonEnumeratingResetError({ code: 'auth/invalid-email' })).toBe(false);
+
+    expect(isContinueUriError({ code: 'auth/unauthorized-continue-uri' })).toBe(true);
+    expect(isContinueUriError({ code: 'auth/invalid-continue-uri' })).toBe(true);
+    expect(isContinueUriError({ code: 'auth/network-request-failed' })).toBe(false);
+
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/invalid-email' })).toBe('AUTH_INVALID_EMAIL');
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/too-many-requests' })).toBe(
+      'AUTH_TOO_MANY_REQUESTS'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/expired-action-code' })).toBe(
+      'AUTH_EXPIRED_ACTION_CODE'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/invalid-action-code' })).toBe(
+      'AUTH_INVALID_ACTION_CODE'
+    );
+    expect(mapFirebaseAuthErrorCode({ code: 'auth/network-request-failed' })).toBe(
+      'AUTH_NETWORK_ERROR'
+    );
   });
 });
 
