@@ -5,17 +5,28 @@ import {
   UNASSIGNED_PROJECT_ID,
   buildTaskTree,
   collectDescendantTaskIds,
+  compareTasksByPriority,
+  computeTaskSiblingReorder,
   createUnassignedProject,
   flattenTaskTree,
   formatTaskHierarchyLabel,
   isValidHexColor,
+  nextTaskSortOrder,
   tagsForProject,
   validateProjectTagRename,
   validateTaskParent,
   type TagRenameErrorCode,
   type TaskTreeNode,
 } from '~/domain/invariants';
-import type { EntityId, Project, ProjectTag, Task, TaskDepth, TaskStatus } from '~/domain/types';
+import type {
+  EntityId,
+  Project,
+  ProjectAdoConfig,
+  ProjectTag,
+  Task,
+  TaskDepth,
+  TaskStatus,
+} from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
 
 const STORAGE_PROJECTS_KEY = 'klox_catalog_projects';
@@ -56,7 +67,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     if (!projectId) return [];
     return tasks.value
       .filter((t) => t.projectId === projectId)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort(compareTasksByPriority);
   }
 
   function getTaskById(taskId: EntityId | null | undefined): Task | undefined {
@@ -306,6 +317,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     name: string;
     color: string;
     isBillableDefault: boolean;
+    adoConfig?: ProjectAdoConfig | null;
   }): Promise<void> {
     const target = projects.value.find((p) => p.id === params.projectId);
     if (!target) return;
@@ -316,6 +328,22 @@ export const useCatalogStore = defineStore('catalog', () => {
       color: isValidHexColor(params.color) ? params.color.toUpperCase() : target.color,
       isBillableDefault: params.isBillableDefault,
     };
+
+    if (params.adoConfig !== undefined) {
+      if (params.adoConfig) {
+        const cleanCfg: ProjectAdoConfig = {
+          enabled: Boolean(params.adoConfig.enabled),
+        };
+        if (params.adoConfig.orgUrl?.trim()) cleanCfg.orgUrl = params.adoConfig.orgUrl.trim();
+        if (params.adoConfig.project?.trim()) cleanCfg.project = params.adoConfig.project.trim();
+        if (params.adoConfig.defaultWorkItemType?.trim()) {
+          cleanCfg.defaultWorkItemType = params.adoConfig.defaultWorkItemType.trim();
+        }
+        updated.adoConfig = cleanCfg;
+      } else {
+        delete updated.adoConfig;
+      }
+    }
 
     projects.value = projects.value.map((p) => (p.id === updated.id ? updated : p));
     persistLocal();
@@ -526,6 +554,13 @@ export const useCatalogStore = defineStore('catalog', () => {
     description?: string;
     targetHours?: number;
     externalWorkItemId?: string;
+    externalWorkItemTitle?: string;
+    externalWorkItemType?: string;
+    externalWorkItemUrl?: string;
+    externalOrgUrl?: string;
+    externalProject?: string;
+    completedWorkHours?: number;
+    externalSyncedAt?: string;
   }): Promise<Task> {
     const trimmed = params.name.trim();
     if (!trimmed) throw new Error('Task name is required');
@@ -540,23 +575,50 @@ export const useCatalogStore = defineStore('catalog', () => {
     }
 
     const cleanDesc = params.description?.trim().slice(0, 4000);
+    const normalizedParentId = params.parentTaskId ?? null;
+    const siblings = tasks.value.filter(
+      (t) => t.projectId === params.projectId && (t.parentTaskId ?? null) === normalizedParentId
+    );
+    const hasAdoLink = Boolean(params.externalWorkItemId?.trim());
 
     const task: Task = {
       id: generateRandomId(),
       userId: params.uid,
       projectId: params.projectId,
-      ...(params.parentTaskId ? { parentTaskId: params.parentTaskId } : {}),
+      ...(normalizedParentId ? { parentTaskId: normalizedParentId } : {}),
       depth: parentCheck.depth,
+      sortOrder: nextTaskSortOrder(siblings),
       name: trimmed,
       ...(cleanDesc ? { description: cleanDesc } : {}),
       ...(params.targetHours && params.targetHours > 0 ? { targetHours: params.targetHours } : {}),
-      ...(params.externalWorkItemId?.trim()
+      ...(hasAdoLink
         ? {
             externalProvider: 'azure_devops',
-            externalWorkItemId: params.externalWorkItemId.trim(),
+            externalWorkItemId: params.externalWorkItemId!.trim(),
+            ...(params.externalWorkItemTitle?.trim()
+              ? { externalWorkItemTitle: params.externalWorkItemTitle.trim().slice(0, 300) }
+              : {}),
+            ...(params.externalWorkItemType?.trim()
+              ? { externalWorkItemType: params.externalWorkItemType.trim().slice(0, 80) }
+              : {}),
+            ...(params.externalWorkItemUrl?.trim()
+              ? { externalWorkItemUrl: params.externalWorkItemUrl.trim().slice(0, 512) }
+              : {}),
+            ...(params.externalOrgUrl?.trim()
+              ? { externalOrgUrl: params.externalOrgUrl.trim().slice(0, 200) }
+              : {}),
+            ...(params.externalProject?.trim()
+              ? { externalProject: params.externalProject.trim().slice(0, 128) }
+              : {}),
+            ...(params.externalSyncedAt?.trim()
+              ? { externalSyncedAt: params.externalSyncedAt.trim().slice(0, 64) }
+              : {}),
           }
         : {}),
-      completedWorkHours: 0,
+      completedWorkHours:
+        typeof params.completedWorkHours === 'number' && Number.isFinite(params.completedWorkHours)
+          ? Math.max(0, params.completedWorkHours)
+          : 0,
       status: 'todo',
       createdAt: new Date().toISOString(),
     };
@@ -583,6 +645,13 @@ export const useCatalogStore = defineStore('catalog', () => {
     description?: string;
     targetHours?: number | null;
     externalWorkItemId?: string | null;
+    externalWorkItemTitle?: string | null;
+    externalWorkItemType?: string | null;
+    externalWorkItemUrl?: string | null;
+    externalOrgUrl?: string | null;
+    externalProject?: string | null;
+    completedWorkHours?: number;
+    externalSyncedAt?: string | null;
   }): Promise<void> {
     const target = tasks.value.find((t) => t.id === params.taskId);
     if (!target) return;
@@ -614,7 +683,46 @@ export const useCatalogStore = defineStore('catalog', () => {
       } else {
         delete updated.externalProvider;
         delete updated.externalWorkItemId;
+        delete updated.externalWorkItemTitle;
+        delete updated.externalWorkItemType;
+        delete updated.externalWorkItemUrl;
+        delete updated.externalOrgUrl;
+        delete updated.externalProject;
+        delete updated.externalSyncedAt;
       }
+    }
+
+    const assignOptionalString = (
+      field:
+        | 'externalWorkItemTitle'
+        | 'externalWorkItemType'
+        | 'externalWorkItemUrl'
+        | 'externalOrgUrl'
+        | 'externalProject'
+        | 'externalSyncedAt',
+      value: string | null | undefined,
+      maxLen: number
+    ) => {
+      if (value === undefined) return;
+      const trimmed = value?.trim().slice(0, maxLen);
+      if (trimmed) {
+        updated[field] = trimmed;
+      } else {
+        delete updated[field];
+      }
+    };
+
+    if (updated.externalProvider === 'azure_devops') {
+      assignOptionalString('externalWorkItemTitle', params.externalWorkItemTitle, 300);
+      assignOptionalString('externalWorkItemType', params.externalWorkItemType, 80);
+      assignOptionalString('externalWorkItemUrl', params.externalWorkItemUrl, 512);
+      assignOptionalString('externalOrgUrl', params.externalOrgUrl, 200);
+      assignOptionalString('externalProject', params.externalProject, 128);
+      assignOptionalString('externalSyncedAt', params.externalSyncedAt, 64);
+    }
+
+    if (typeof params.completedWorkHours === 'number' && Number.isFinite(params.completedWorkHours)) {
+      updated.completedWorkHours = Math.max(0, params.completedWorkHours);
     }
 
     tasks.value = tasks.value.map((t) => (t.id === updated.id ? updated : t));
@@ -625,6 +733,142 @@ export const useCatalogStore = defineStore('catalog', () => {
       if (fb) {
         const { doc, setDoc } = await import('firebase/firestore');
         await setDoc(doc(fb.db, 'users', params.uid, 'tasks', updated.id), updated);
+      }
+    }
+  }
+
+  /**
+   * Persists sibling drag-and-drop or keyboard priority reordering within the same `(projectId, parentTaskId)`.
+   */
+  async function reorderTaskSiblings(params: {
+    uid: string;
+    isDemo: boolean;
+    taskId: EntityId;
+    targetIndex: number;
+  }): Promise<boolean> {
+    const target = tasks.value.find((t) => t.id === params.taskId);
+    if (!target) return false;
+
+    const parentKey = target.parentTaskId ?? null;
+    const siblings = tasks.value.filter(
+      (t) => t.projectId === target.projectId && (t.parentTaskId ?? null) === parentKey
+    );
+    const changes = computeTaskSiblingReorder({
+      siblings,
+      movedTaskId: target.id,
+      targetIndex: params.targetIndex,
+    });
+    if (changes.length === 0) return false;
+
+    const orderById = new Map(changes.map((c) => [c.taskId, c.sortOrder]));
+    const changedTasks: Task[] = [];
+    tasks.value = tasks.value.map((t) => {
+      const nextOrder = orderById.get(t.id);
+      if (nextOrder === undefined) return t;
+      const updated: Task = { ...t, sortOrder: nextOrder };
+      changedTasks.push(updated);
+      return updated;
+    });
+    persistLocal();
+
+    if (!params.isDemo && changedTasks.length > 0) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        if (changedTasks.length === 1) {
+          const { doc, setDoc } = await import('firebase/firestore');
+          const single = changedTasks[0]!;
+          await setDoc(doc(fb.db, 'users', params.uid, 'tasks', single.id), single);
+        } else {
+          const { doc, writeBatch } = await import('firebase/firestore');
+          const BATCH_SIZE = 450;
+          for (let i = 0; i < changedTasks.length; i += BATCH_SIZE) {
+            const chunk = changedTasks.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(fb.db);
+            for (const item of chunk) {
+              batch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+            }
+            await batch.commit();
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Batch-updates read-only Azure DevOps Title and CompletedWork snapshots on linked Klox Tasks.
+   */
+  async function applyTasksAdoSnapshotBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    patches: ReadonlyArray<{
+      taskId: EntityId;
+      externalWorkItemTitle?: string;
+      externalWorkItemType?: string;
+      externalWorkItemUrl?: string;
+      externalOrgUrl?: string;
+      externalProject?: string;
+      completedWorkHours?: number;
+      externalSyncedAt?: string;
+    }>;
+  }): Promise<void> {
+    if (params.patches.length === 0) return;
+
+    const patchById = new Map(params.patches.map((p) => [p.taskId, p]));
+    const updatedTasks: Task[] = [];
+
+    tasks.value = tasks.value.map((t) => {
+      const p = patchById.get(t.id);
+      if (!p) return t;
+      const next: Task = { ...t };
+      if (p.externalWorkItemTitle !== undefined) {
+        const clean = p.externalWorkItemTitle.trim().slice(0, 300);
+        if (clean) next.externalWorkItemTitle = clean;
+      }
+      if (p.externalWorkItemType !== undefined) {
+        const clean = p.externalWorkItemType.trim().slice(0, 80);
+        if (clean) next.externalWorkItemType = clean;
+      }
+      if (p.externalWorkItemUrl !== undefined) {
+        const clean = p.externalWorkItemUrl.trim().slice(0, 512);
+        if (clean) next.externalWorkItemUrl = clean;
+      }
+      if (p.externalOrgUrl !== undefined) {
+        const clean = p.externalOrgUrl.trim().slice(0, 200);
+        if (clean) next.externalOrgUrl = clean;
+      }
+      if (p.externalProject !== undefined) {
+        const clean = p.externalProject.trim().slice(0, 128);
+        if (clean) next.externalProject = clean;
+      }
+      if (p.externalSyncedAt !== undefined) {
+        const clean = p.externalSyncedAt.trim().slice(0, 64);
+        if (clean) next.externalSyncedAt = clean;
+      }
+      if (typeof p.completedWorkHours === 'number' && Number.isFinite(p.completedWorkHours)) {
+        next.completedWorkHours = Math.max(0, p.completedWorkHours);
+      }
+      updatedTasks.push(next);
+      return next;
+    });
+
+    if (updatedTasks.length === 0) return;
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < updatedTasks.length; i += BATCH_SIZE) {
+          const chunk = updatedTasks.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const item of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+          }
+          await batch.commit();
+        }
       }
     }
   }
@@ -721,6 +965,11 @@ export const useCatalogStore = defineStore('catalog', () => {
           projectId: item.projectId,
           ...(parentId ? { parentTaskId: parentId } : {}),
           depth: depth as TaskDepth,
+          sortOrder: nextTaskSortOrder(
+            [...tasks.value, ...created].filter(
+              (t) => t.projectId === item.projectId && (t.parentTaskId ?? null) === (parentId ?? null)
+            )
+          ),
           name: segmentName,
           completedWorkHours: 0,
           status: 'todo',
@@ -904,6 +1153,8 @@ export const useCatalogStore = defineStore('catalog', () => {
     createTasksBatch,
     updateTask,
     updateTaskStatus,
+    reorderTaskSiblings,
+    applyTasksAdoSnapshotBatch,
     deleteTask,
     fetchAllRemoteCatalog,
     wipeAllData,

@@ -298,6 +298,8 @@ function updateThemePreference(theme: ThemeOption) {
 
     <SettingsConnectedAccountsPanel @saved="flashSaved" />
 
+    <SettingsAdoIntegrationPanel @saved="flashSaved" />
+
     <SettingsKeyboardShortcutsPanel id="shortcuts" @saved="flashSaved" />
   </div>
 </template>

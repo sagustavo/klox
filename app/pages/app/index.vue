@@ -2,6 +2,7 @@
 import {
   ChevronDown,
   CornerDownRight,
+  GitBranch,
   Play,
   Plus,
   Trash2,
@@ -38,7 +39,9 @@ import {
   toggleAllTrackerDayKeys,
   type TrackerLogGroup,
 } from '~/domain/trackerFeed';
+import { buildAdoSyncCandidates } from '~/domain/ado';
 import type { EntityId, Project, TimeLog } from '~/domain/types';
+import { useAdoStore } from '~/stores/ado';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
 import { useOnboardingStore } from '~/stores/onboarding';
@@ -58,7 +61,10 @@ const onboardingStore = useOnboardingStore();
 const prefsStore = usePreferencesStore();
 const timerStore = useTimerStore();
 const timeLogsStore = useTimeLogsStore();
+const adoStore = useAdoStore();
 const { formatDateKey, formatDuration, formatTime } = useFormat(() => prefsStore.preferences);
+
+const adoSyncDialogOpen = ref(false);
 
 // 7-day windowed pagination & day accordion state (NFR-1.1)
 const currentPageIndex = ref(0);
@@ -89,17 +95,23 @@ onMounted(async () => {
     timeLogsStore.hydrate(authStore.user.uid, authStore.isDemoMode),
     timerStore.hydrate(authStore.user.uid, authStore.isDemoMode),
     onboardingStore.hydrate(authStore.user.uid, authStore.isDemoMode),
+    adoStore.hydrate(authStore.user.uid, authStore.isDemoMode),
   ]);
 });
+
+const adoSyncSummary = computed(() =>
+  buildAdoSyncCandidates({
+    projects: catalogStore.projects,
+    tasks: catalogStore.tasks,
+    logs: timeLogsStore.logs,
+    connection: adoStore.connection,
+  })
+);
 
 const activeTimeZone = computed(() => prefsStore.preferences.timeZone || 'UTC');
 
 const manualScopedTags = computed(() =>
   catalogStore.getTagsForProject(manualProjectId.value)
-);
-
-const manualScopedTaskNodes = computed(() =>
-  catalogStore.getFlattenedTasksForProject(manualProjectId.value)
 );
 
 function displayProjectName(project: Project | undefined, fallbackSnapshot?: string): string {
@@ -586,6 +598,32 @@ function goToPage(nextIndex: number, scrollToTop = false) {
     <!-- Dismissible Getting-Started Checklist (FR-2) -->
     <OnboardingGettingStartedChecklist />
 
+    <!-- Pending Azure DevOps Sync Telemetry Strip -->
+    <div
+      v-if="adoStore.isConnected && (adoSyncSummary.readyItems.length > 0 || adoSyncSummary.unplannedTasks.length > 0)"
+      class="flex flex-wrap items-center justify-between gap-3 border border-signal/40 bg-signal-soft/40 px-4 py-2.5 text-ui"
+    >
+      <div class="flex items-center gap-2 text-text-primary">
+        <GitBranch class="h-4 w-4 text-signal shrink-0" aria-hidden="true" />
+        <span class="tabular-telemetry">
+          {{
+            $t('ado.trackerBanner', {
+              count: adoSyncSummary.readyItems.length,
+              hours: adoSyncSummary.totalRecommendedHours.toFixed(2),
+            })
+          }}
+        </span>
+      </div>
+      <button
+        type="button"
+        data-testid="tracker-ado-review-btn"
+        class="btn-press inline-flex h-8 items-center gap-1.5 bg-accent px-3 text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors"
+        @click="adoSyncDialogOpen = true"
+      >
+        <span>{{ $t('ado.trackerReviewAction') }}</span>
+      </button>
+    </div>
+
     <!-- Manual Entry Toggle & Collapsible Form -->
     <div ref="feedTopRef" class="flex items-center justify-between">
       <div class="flex items-center gap-2.5">
@@ -646,19 +684,20 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           class="sm:col-span-3 h-10 border border-border-input bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
         />
 
-        <select
-          :value="manualProjectId"
-          class="sm:col-span-2 h-10 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
-          @change="handleManualProjectChange(($event.target as HTMLSelectElement).value)"
-        >
-          <option
-            v-for="proj in catalogStore.sortedProjects"
-            :key="proj.id"
-            :value="proj.id"
-          >
-            {{ displayProjectName(proj) }}
-          </option>
-        </select>
+        <div class="sm:col-span-2">
+          <TimerProjectTaskPopover
+            :project-id="manualProjectId"
+            :task-id="manualTaskId"
+            variant="field"
+            test-id="manual-log-project-trigger"
+            @select="
+              ({ projectId, taskId }) => {
+                if (projectId !== manualProjectId) handleManualProjectChange(projectId);
+                manualTaskId = taskId || undefined;
+              }
+            "
+          />
+        </div>
 
         <div class="sm:col-span-2">
           <UiDateInput
@@ -712,28 +751,13 @@ function goToPage(nextIndex: number, scrollToTop = false) {
             <UiTagMultiSelect
               v-model="manualTagIds"
               :tags="manualScopedTags"
+              :project-id="manualProjectId"
+              allow-create
               variant="field"
               size="sm"
               test-id="manual-log-tags-trigger"
             />
           </div>
-
-          <select
-            v-if="manualScopedTaskNodes.length > 0"
-            :value="manualTaskId ?? ''"
-            :aria-label="$t('timer.taskSelectorPlaceholder')"
-            class="h-9 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
-            @change="manualTaskId = ($event.target as HTMLSelectElement).value || undefined"
-          >
-            <option value="">{{ $t('timer.taskSelectorPlaceholder') }}</option>
-            <option
-              v-for="node in manualScopedTaskNodes"
-              :key="node.task.id"
-              :value="node.task.id"
-            >
-              {{ node.depth === 1 ? '↳ ' : node.depth === 2 ? '↳↳ ' : '' }}{{ node.task.name }}
-            </option>
-          </select>
 
           <UiBillableToggle
             v-model="manualBillable"
@@ -949,6 +973,8 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   <UiTagMultiSelect
                     :model-value="entryGroup.tagIds"
                     :tags="catalogStore.getTagsForProject(entryGroup.projectId)"
+                    :project-id="entryGroup.projectId"
+                    allow-create
                     variant="row"
                     stop-propagation
                     test-id="tracker-group-tags-trigger"
@@ -1038,12 +1064,21 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                       <UiTagMultiSelect
                         :model-value="log.tagIds"
                         :tags="catalogStore.getTagsForProject(log.projectId)"
+                        :project-id="log.projectId"
+                        allow-create
                         variant="row"
                         @update:model-value="handleSingleTagsSave(log, $event)"
                       />
                     </div>
 
                     <div class="flex items-center gap-2 shrink-0">
+                      <span
+                        v-if="log.adoSync && log.adoSync.syncedSeconds >= log.durationSeconds"
+                        class="tabular-telemetry border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-500"
+                        :title="$t('ado.badges.syncedTooltip', { id: log.adoSync.workItemId })"
+                      >
+                        #{{ log.adoSync.workItemId }} ✓
+                      </span>
                       <UiBillableToggle
                         :model-value="log.isBillable"
                         variant="row-icon"
@@ -1111,12 +1146,21 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                   <UiTagMultiSelect
                     :model-value="entryGroup.items[0]!.tagIds"
                     :tags="catalogStore.getTagsForProject(entryGroup.items[0]!.projectId)"
+                    :project-id="entryGroup.items[0]!.projectId"
+                    allow-create
                     variant="row"
                     @update:model-value="handleSingleTagsSave(entryGroup.items[0]!, $event)"
                   />
                 </div>
 
                 <div class="flex items-center gap-2 shrink-0">
+                  <span
+                    v-if="entryGroup.items[0]!.adoSync && entryGroup.items[0]!.adoSync.syncedSeconds >= entryGroup.items[0]!.durationSeconds"
+                    class="tabular-telemetry border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-500"
+                    :title="$t('ado.badges.syncedTooltip', { id: entryGroup.items[0]!.adoSync.workItemId })"
+                  >
+                    #{{ entryGroup.items[0]!.adoSync.workItemId }} ✓
+                  </span>
                   <UiBillableToggle
                     :model-value="entryGroup.items[0]!.isBillable"
                     variant="row-icon"
@@ -1168,6 +1212,8 @@ function goToPage(nextIndex: number, scrollToTop = false) {
         @navigate="goToPage($event, true)"
       />
     </div>
+
+    <AdoSyncReviewDialog v-model:open="adoSyncDialogOpen" />
 
     <UiConfirmDialog
       :open="Boolean(pendingDeleteTarget)"

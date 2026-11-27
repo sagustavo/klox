@@ -19,7 +19,11 @@ export type DomainEvent =
   | { type: 'AuthProviderLinked'; at: string; providerId: 'google.com' | 'password' }
   | { type: 'AuthProviderUnlinked'; at: string; providerId: 'google.com' | 'password' }
   | { type: 'PasswordResetRequested'; at: string }
-  | { type: 'PasswordResetCompleted'; at: string };
+  | { type: 'PasswordResetCompleted'; at: string }
+  | { type: 'AdoConnected'; at: string }
+  | { type: 'AdoDisconnected'; at: string }
+  | { type: 'AdoWorkItemLinked'; at: string; workItemId: number; createdNew: boolean }
+  | { type: 'AdoHoursSynced'; at: string; workItemCount: number; totalHours: number };
 
 export type DomainEventHandler = (event: DomainEvent) => void;
 

@@ -16,3 +16,7 @@ env:
     secret: GEMINI_API_KEY
     availability:
       - RUNTIME
+  - variable: NUXT_ADO_ENCRYPTION_KEY
+    secret: ADO_ENCRYPTION_KEY
+    availability:
+      - RUNTIME

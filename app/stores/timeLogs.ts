@@ -8,7 +8,7 @@ import {
   TRACKER_STREAM_CHUNK_SIZE,
   mergeStreamedTimeLogsChunk,
 } from '~/domain/trackerFeed';
-import type { EntityId, TimeLog } from '~/domain/types';
+import type { EntityId, TimeLog, TimeLogAdoSync } from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
 import { useCatalogStore } from './catalog';
 import { usePreferencesStore } from './preferences';
@@ -194,6 +194,7 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     startTimeUTC: string;
     endTimeUTC: string;
     durationSeconds?: number;
+    adoSync?: TimeLogAdoSync | null;
   }): TimeLog {
     const catalogStore = useCatalogStore();
     const prefsStore = usePreferencesStore();
@@ -235,6 +236,7 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
       durationSeconds: duration,
       timeZone: tz,
       dateKey: toDateKey(params.startTimeUTC, tz),
+      ...(params.adoSync ? { adoSync: params.adoSync } : {}),
     };
   }
 
@@ -451,6 +453,7 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
       startTimeUTC: params.startTimeUTC,
       endTimeUTC: params.endTimeUTC,
       durationSeconds: params.durationSeconds,
+      adoSync: existing.adoSync,
     });
 
     if (streaming.value) {
@@ -526,6 +529,7 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
             : hasTimeBoundPatch
               ? undefined
               : existing.durationSeconds,
+        adoSync: existing.adoSync,
       });
 
       updatedById.set(rebuilt.id, rebuilt);
@@ -567,6 +571,54 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     }
 
     return updatedList;
+  }
+
+  /**
+   * Stamps `adoSync` checkpoints onto synced Activities (`TimeLog`) in single reactive + writeBatch commits.
+   */
+  async function markLogsAdoSyncedBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    items: ReadonlyArray<{ logId: EntityId; adoSync: TimeLogAdoSync }>;
+  }): Promise<void> {
+    if (params.items.length === 0) return;
+
+    const syncByLogId = new Map(params.items.map((item) => [item.logId, item.adoSync]));
+    const updatedList: TimeLog[] = [];
+
+    logs.value = logs.value.map((l) => {
+      const syncMeta = syncByLogId.get(l.id);
+      if (!syncMeta) return l;
+      const updated: TimeLog = { ...l, adoSync: syncMeta };
+      updatedList.push(updated);
+      return updated;
+    });
+
+    if (updatedList.length === 0) return;
+
+    if (streaming.value) {
+      for (const updated of updatedList) {
+        deletedDuringStream.delete(updated.id);
+        upsertedDuringStream.set(updated.id, updated);
+      }
+    }
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < updatedList.length; i += BATCH_SIZE) {
+          const chunk = updatedList.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const entity of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'timeLogs', entity.id), entity);
+          }
+          await batch.commit();
+        }
+      }
+    }
   }
 
   async function deleteTimeLog(params: {
@@ -727,6 +779,7 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
     createTimeLogsBatch,
     updateTimeLog,
     updateTimeLogsBatch,
+    markLogsAdoSyncedBatch,
     deleteTimeLog,
     deleteTimeLogs,
     fetchAllRemoteLogs,

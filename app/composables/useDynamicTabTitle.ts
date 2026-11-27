@@ -16,8 +16,11 @@ export function useDynamicTabTitle() {
   const idleSectionLabel = computed(() => {
     const normalizedPath = route.path.replace(/^\/pt-br(?=\/|$)/, '') || '/';
     if (normalizedPath === '/app' || normalizedPath === '/app/') return t('nav.tracker');
+    if (normalizedPath.startsWith('/app/tasks')) return t('nav.tasks');
+    if (normalizedPath.startsWith('/app/projects') || normalizedPath.startsWith('/app/catalog')) {
+      return t('nav.projects');
+    }
     if (normalizedPath.startsWith('/app/dashboard')) return t('nav.dashboard');
-    if (normalizedPath.startsWith('/app/catalog')) return t('nav.catalog');
     if (normalizedPath.startsWith('/app/import')) return t('nav.import');
     if (normalizedPath.startsWith('/app/settings')) return t('nav.settings');
     if (normalizedPath.startsWith('/app/profile')) return t('nav.profile');

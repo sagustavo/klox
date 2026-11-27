@@ -22,6 +22,7 @@ import { useCatalogStore } from '~/stores/catalog';
 import { usePreferencesStore } from '~/stores/preferences';
 import { useTimeLogsStore } from '~/stores/timeLogs';
 import { useTimerStore } from '~/stores/timer';
+import { fetchAuthedApi } from '~/utils/apiAuth';
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -237,10 +238,8 @@ async function triggerAiAutofill() {
 
   aiLoading.value = true;
   try {
-    const token = await authStore.getIdToken();
-    const res = await $fetch<AiAutofillPrediction>('/api/ai/autofill', {
+    const res = await fetchAuthedApi<AiAutofillPrediction>('/api/ai/autofill', {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       body: {
         description: timerStore.description,
         projects: catalogStore.projects,
@@ -472,6 +471,8 @@ onUnmounted(() => {
           <UiTagMultiSelect
             v-model="timerStore.tagIds"
             :tags="scopedTags"
+            :project-id="timerStore.projectId"
+            allow-create
             variant="command-icon"
             data-tour="timer-tags"
             test-id="command-timer-tags-trigger"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   BarChart3,
+  CheckSquare,
   ChevronsLeft,
   ChevronsRight,
   Clock,
@@ -64,18 +65,25 @@ const navItems = computed<NavItem[]>(() => [
     exact: true,
   },
   {
+    key: 'tasks',
+    to: localePath('/app/tasks'),
+    label: t('nav.tasks'),
+    icon: CheckSquare,
+    dataTour: 'nav-tasks',
+  },
+  {
+    key: 'projects',
+    to: localePath('/app/projects'),
+    label: t('nav.projects'),
+    icon: FolderKanban,
+    dataTour: 'nav-projects',
+  },
+  {
     key: 'dashboard',
     to: localePath('/app/dashboard'),
     label: t('nav.dashboard'),
     icon: BarChart3,
     dataTour: 'nav-dashboard',
-  },
-  {
-    key: 'catalog',
-    to: localePath('/app/catalog'),
-    label: t('nav.catalog'),
-    icon: FolderKanban,
-    dataTour: 'nav-catalog',
   },
   {
     key: 'import',

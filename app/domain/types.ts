@@ -7,6 +7,35 @@ export type EntityId = string;
 
 export type SystemProjectKey = 'unassigned';
 
+export type AdoAuthType = 'pat' | 'entra_oauth';
+
+export interface AdoConnectionSummary {
+  connected: boolean;
+  authType: AdoAuthType;
+  orgUrl: string; // Canonical "https://dev.azure.com/{org}"
+  organization: string;
+  defaultProject: string;
+  defaultWorkItemType: string;
+  tokenHint: string;
+  connectedAt: string; // UTC ISO
+  lastVerifiedAt: string; // UTC ISO
+}
+
+export interface ProjectAdoConfig {
+  enabled: boolean;
+  orgUrl?: string;
+  project?: string;
+  defaultWorkItemType?: string;
+}
+
+export interface TimeLogAdoSync {
+  workItemId: number;
+  orgUrl: string;
+  project: string;
+  syncedSeconds: number;
+  syncedAt: string; // UTC ISO
+}
+
 export interface Project {
   id: EntityId;
   userId: string;
@@ -14,6 +43,7 @@ export interface Project {
   color: string; // Hex color e.g. "#3B82F6"
   isBillableDefault: boolean;
   systemKey?: SystemProjectKey;
+  adoConfig?: ProjectAdoConfig | null;
   createdAt: string; // UTC ISO
 }
 
@@ -35,11 +65,18 @@ export interface Task {
   projectId: EntityId;
   parentTaskId?: EntityId | null; // Optional parent Task/Subtask within the same Project
   depth?: TaskDepth; // 0 = Task, 1 = Subtask, 2 = Sub-subtask
+  sortOrder?: number; // Sparse priority rank among siblings sharing (projectId, parentTaskId)
   name: string;
   description?: string; // Basic Markdown description (<= 4000 chars)
   targetHours?: number;
   externalProvider?: ExternalWorkItemProvider;
   externalWorkItemId?: string;
+  externalWorkItemTitle?: string;
+  externalWorkItemType?: string;
+  externalWorkItemUrl?: string;
+  externalOrgUrl?: string;
+  externalProject?: string;
+  externalSyncedAt?: string;
   completedWorkHours: number;
   status: TaskStatus;
   createdAt: string; // UTC ISO
@@ -79,6 +116,7 @@ export interface TimeLog {
   durationSeconds: number;
   timeZone: string; // IANA timezone snapshot at write time, e.g. "America/Sao_Paulo"
   dateKey: string; // "YYYY-MM-DD" computed in UserPreferences.timeZone
+  adoSync?: TimeLogAdoSync | null;
 }
 
 export type SupportedLocale = 'en' | 'pt-br';

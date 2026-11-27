@@ -17,6 +17,7 @@ import {
 } from '~/domain/auth';
 import { publishDomainEvent } from '~/domain/events';
 import { getFirebaseClient, hasFirebaseConfig } from '~/utils/firebaseClient';
+import { useAdoStore } from './ado';
 import { useCatalogStore } from './catalog';
 import { useOnboardingStore } from './onboarding';
 import { usePreferencesStore } from './preferences';
@@ -135,6 +136,7 @@ export const useAuthStore = defineStore('auth', () => {
     useTimerStore().reset();
     useOnboardingStore().reset();
     useProfileStore().reset();
+    useAdoStore().reset();
   }
 
   function toAuthUser(
@@ -865,11 +867,11 @@ export const useAuthStore = defineStore('auth', () => {
     resetTenantStores();
   }
 
-  async function getIdToken(): Promise<string | null> {
+  async function getIdToken(forceRefresh = false): Promise<string | null> {
     if (!user.value || user.value.isDemo) return null;
     const fb = await getFirebaseClient();
     if (!fb?.auth.currentUser) return null;
-    return fb.auth.currentUser.getIdToken();
+    return fb.auth.currentUser.getIdToken(forceRefresh);
   }
 
   return {

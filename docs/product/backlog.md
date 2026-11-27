@@ -101,7 +101,7 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 
 | ID | Work Item Type | Title | Area | Priority | Plan | Status |
 |---|---|---|---|---|---|---|
-| **FR-V1** | Product Backlog Item | Azure DevOps Work Item Sync (`CompletedWork`) | Integrations | 2 - High | Pro | Later |
+| **FR-V1** | Product Backlog Item | Azure DevOps Work Item Sync (`CompletedWork`) (`AB#31`) | Integrations | 2 - High | Pro (Early Access) | Done |
 | **FR-V2** | Product Backlog Item | Personal Mastery Goals (`targetHours` Progress Tracking) | Execution & Goals | 3 - Medium | Pro | Later |
 | **FR-V3** | Product Backlog Item | Pro Plan Billing & Subscription Management | Monetization | 2 - High | Pro | Later |
 | **FR-V4** | Product Backlog Item | Pause & Resume Activity with Distraction Telemetry & Shortcuts | Timer & Telemetry | 2 - High | Pro | Later |
@@ -472,20 +472,21 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 
 ### 4.4 Post-POC, Pro Plan & Vision
 
-#### [FR-V1] Azure DevOps Work Item Sync (`CompletedWork`)
+#### [FR-V1] Azure DevOps Work Item Sync (`CompletedWork`) (`AB#31`)
 - **Work Item Type:** `Product Backlog Item`
 - **Area / Category:** `Integrations`
-- **Phase:** `Future (Phase 2 Vision)`
-- **Status (ADO State):** `Later` (`New`)
+- **Phase:** `Sprint 4 / FR-V1`
+- **Status (ADO State):** `Done` (`Committed` in ADO)
 - **Priority:** `2 - High`
-- **Plan Tier:** `Pro`
-- **Tags:** `azure-devops; sync; human-in-the-loop; ai; pro`
-- **Description:** Deliver Klox's flagship engineering integration: link Klox `Task` / `Subtask` entities to Azure DevOps Work Items, review AI-consolidated accumulated hours with Human-in-the-Loop approval, and push updates to `Microsoft.VSTS.Scheduling.CompletedWork` (or create new ADO Work Items for unplanned tasks).
+- **Plan Tier:** `Pro (Early Access)`
+- **Tags:** `azure-devops; sync; human-in-the-loop; pro; tasks; projects`
+- **Description:** Deliver Klox's flagship engineering integration ([ADR-0015](../adr/0015-azure-devops-completed-work-sync-and-tasks-workspace.md)): split Catalog into dedicated **Tasks** (`/app/tasks` with sibling drag-and-drop prioritization) and **Projects** (`/app/projects`), unify UI terminology around **Activity / Activities**, enable Toggl-style inline Project & Tag creation, store encrypted ADO PAT credentials strictly on the server, fetch strictly `(Id, Title, CompletedWork)` from ADO, and push **only** `Microsoft.VSTS.Scheduling.CompletedWork` (or create minimal unplanned ADO Work Items) after Human-in-the-Loop approval.
 - **Acceptance Criteria:**
-  - [ ] OAuth / PAT connection setup to an Azure DevOps organization and project stored securely on the backend.
-  - [ ] Two-way linking of `Task.externalWorkItemId` with live ADO Work Item search and title/state sync.
-  - [ ] Human-in-the-Loop review modal calculating incremental hours from unsynced `TimeLog`s before writing `CompletedWork` to Azure DevOps.
-  - [ ] Option to create a new Azure DevOps Work Item directly from an unplanned Klox `Task` and link its resulting ID.
+  - [x] Encrypted PAT connection to Azure DevOps organization and project stored strictly server-side in `users/{uid}/secrets/azureDevOps` with SSRF allowlist and Entra-ready schema (`authType`).
+  - [x] Dedicated `/app/tasks` and `/app/projects` pages (redirecting `/app/catalog`), sibling drag-and-drop & `Alt+ArrowUp/Down` task priority ordering (`sortOrder`), Toggl-style inline Project & Tag creation, and unified Activity copy across `en` and `pt-BR`.
+  - [x] Two-way read-only Work Item linking fetching strictly `Title` and `CompletedWork` via search by `#ID` or title plus manual linking/unlinking.
+  - [x] Human-in-the-Loop review modal calculating incremental unsynced hours per Activity (with nearest-ancestor Task roll-up), warning gracefully if a Work Item Type lacks `CompletedWork`, and updating **only** `Microsoft.VSTS.Scheduling.CompletedWork`.
+  - [x] Option to create a new minimal ADO Work Item (`Title` + optional initial `CompletedWork`) directly from an unplanned Klox `Task` and link its resulting ID.
 
 #### [FR-V2] Personal Mastery Goals (`targetHours` Progress Tracking)
 - **Work Item Type:** `Product Backlog Item`

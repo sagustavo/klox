@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { Check, CheckSquare, Search, X } from 'lucide-vue-next';
+import { Check, CheckSquare, ChevronDown, Plus, Search, X } from 'lucide-vue-next';
 import {
   PopoverContent,
   PopoverPortal,
   PopoverRoot,
   PopoverTrigger,
 } from 'reka-ui';
-import type { TaskTreeNode } from '~/domain/invariants';
+import { PROJECT_COLOR_PALETTE, type TaskTreeNode } from '~/domain/invariants';
 import type { EntityId, Project } from '~/domain/types';
+import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
 
 const props = withDefaults(
@@ -17,7 +18,8 @@ const props = withDefaults(
     projectColorSnapshot?: string;
     taskId?: EntityId;
     taskNameSnapshot?: string;
-    variant?: 'row' | 'command';
+    variant?: 'row' | 'command' | 'field';
+    allowCreateProject?: boolean;
     dataTour?: string;
     stopPropagation?: boolean;
     testId?: string;
@@ -28,6 +30,7 @@ const props = withDefaults(
     taskId: undefined,
     taskNameSnapshot: undefined,
     variant: 'row',
+    allowCreateProject: true,
     dataTour: undefined,
     stopPropagation: false,
     testId: undefined,
@@ -39,10 +42,12 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 
 const open = ref(false);
 const searchQuery = ref('');
+const creatingProject = ref(false);
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
 const activeProject = computed(() => catalogStore.getProjectById(props.projectId));
@@ -95,6 +100,53 @@ const activeProjectTasks = computed<TaskTreeNode[]>(() => {
   if (!q) return nodes;
   return nodes.filter((node) => node.hierarchicalLabel.toLowerCase().includes(q));
 });
+
+const creatableProjectName = computed(() => {
+  if (!props.allowCreateProject || !authStore.user) return '';
+  const trimmed = searchQuery.value.trim();
+  if (!trimmed || trimmed.length > 120) return '';
+  const lower = trimmed.toLowerCase();
+  const exists = catalogStore.sortedProjects.some(
+    (proj) =>
+      proj.name.trim().toLowerCase() === lower ||
+      displayProjectName(proj).trim().toLowerCase() === lower
+  );
+  return exists ? '' : trimmed;
+});
+
+const nextProjectColorPreview = computed(
+  () => PROJECT_COLOR_PALETTE[catalogStore.projects.length % PROJECT_COLOR_PALETTE.length] ?? '#3B82F6'
+);
+
+async function handleCreateProjectInline() {
+  const name = creatableProjectName.value;
+  if (!name || !authStore.user || creatingProject.value) return;
+
+  creatingProject.value = true;
+  try {
+    const created = await catalogStore.createProject({
+      uid: authStore.user.uid,
+      isDemo: authStore.isDemoMode,
+      name,
+      color: nextProjectColorPreview.value,
+      isBillableDefault: true,
+    });
+    emit('select', { projectId: created.id, taskId: null });
+    searchQuery.value = '';
+    open.value = false;
+  } finally {
+    creatingProject.value = false;
+  }
+}
+
+function handleSearchKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter' && creatableProjectName.value) {
+    if (filteredProjects.value.length === 0 || event.metaKey || event.ctrlKey) {
+      event.preventDefault();
+      void handleCreateProjectInline();
+    }
+  }
+}
 
 watch(open, (isOpen) => {
   if (isOpen) {
@@ -159,6 +211,38 @@ function handleSelectTask(nextTaskId: EntityId | null) {
       </button>
 
       <button
+        v-else-if="variant === 'field'"
+        type="button"
+        :data-tour="dataTour"
+        :data-testid="testId ?? 'field-project-trigger'"
+        :aria-label="commandAriaLabel"
+        :title="commandAriaLabel"
+        class="inline-flex h-10 w-full items-center justify-between gap-2 border border-border-input bg-bg-primary px-3 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover focus:border-signal focus:outline-none data-[state=open]:border-signal"
+        @click="handleTriggerClick"
+      >
+        <span class="inline-flex items-center gap-2 min-w-0 truncate">
+          <span
+            class="h-2.5 w-2.5 shrink-0"
+            :style="{ backgroundColor: resolvedColor }"
+            aria-hidden="true"
+          />
+          <span
+            class="truncate font-medium"
+            :class="isUnassignedProject ? 'text-text-muted' : 'text-text-primary'"
+          >
+            {{ resolvedProjectLabel }}
+          </span>
+          <span
+            v-if="resolvedTaskLabel"
+            class="truncate text-xs font-normal text-text-muted"
+          >
+            · {{ resolvedTaskLabel }}
+          </span>
+        </span>
+        <ChevronDown class="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden="true" />
+      </button>
+
+      <button
         v-else
         type="button"
         :data-tour="dataTour"
@@ -206,6 +290,7 @@ function handleSelectTask(nextTaskId: EntityId | null) {
             data-testid="tracker-project-search"
             :placeholder="$t('timer.projectSelect.searchPlaceholder')"
             class="w-full bg-transparent text-ui text-text-primary placeholder:text-text-faint focus:outline-none"
+            @keydown="handleSearchKeydown"
           />
           <button
             v-if="searchQuery"
@@ -222,13 +307,38 @@ function handleSelectTask(nextTaskId: EntityId | null) {
           {{ $t('timer.projectSelect.projectsSection') }}
         </div>
 
+        <!-- Inline Toggl-Style Create Project Action -->
+        <button
+          v-if="creatableProjectName"
+          type="button"
+          data-testid="tracker-project-create"
+          :disabled="creatingProject"
+          class="flex w-full items-center justify-between gap-2 border-b border-border-hairline bg-signal-soft/60 px-3 py-2.5 text-left text-ui font-medium text-signal transition-colors hover:bg-signal-soft disabled:opacity-50"
+          @click="handleCreateProjectInline"
+        >
+          <span class="inline-flex items-center gap-2 min-w-0 truncate">
+            <Plus class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span
+              class="h-2.5 w-2.5 shrink-0"
+              :style="{ backgroundColor: nextProjectColorPreview }"
+              aria-hidden="true"
+            />
+            <span class="truncate">{{ $t('timer.projectSelect.createInline', { name: creatableProjectName }) }}</span>
+          </span>
+          <BrandKeycapBadge
+            v-if="filteredProjects.length === 0"
+            keys="Enter"
+            size="sm"
+          />
+        </button>
+
         <div
-          v-if="filteredProjects.length === 0"
+          v-if="filteredProjects.length === 0 && !creatableProjectName"
           class="px-3 py-4 text-center text-ui text-text-muted"
         >
           {{ $t('timer.projectSelect.noMatches') }}
         </div>
-        <ul v-else class="max-h-48 overflow-y-auto divide-y divide-border-subtle">
+        <ul v-else-if="filteredProjects.length > 0" class="max-h-48 overflow-y-auto divide-y divide-border-subtle">
           <li v-for="proj in filteredProjects" :key="proj.id">
             <button
               type="button"

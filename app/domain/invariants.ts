@@ -4,6 +4,7 @@ export const UNASSIGNED_PROJECT_ID: EntityId = 'system_unassigned';
 
 export const MAX_TASK_DEPTH: TaskDepth = 2; // 0 = Task, 1 = Subtask, 2 = Sub-subtask
 export const MAX_TAG_NAME_LENGTH = 80;
+export const TASK_SORT_ORDER_STEP = 1024;
 
 export const PROJECT_COLOR_PALETTE: readonly string[] = [
   '#3B82F6', // Electric Cobalt (Default Telemetry Accent)
@@ -228,6 +229,92 @@ export function formatTaskHierarchyLabel(task: Task, allTasks: readonly Task[]):
 }
 
 /**
+ * Priority comparator for sibling tasks sharing `(projectId, parentTaskId)`.
+ */
+export function compareTasksByPriority(a: Task, b: Task): number {
+  const orderA =
+    typeof a.sortOrder === 'number' && Number.isFinite(a.sortOrder)
+      ? a.sortOrder
+      : Number.MAX_SAFE_INTEGER;
+  const orderB =
+    typeof b.sortOrder === 'number' && Number.isFinite(b.sortOrder)
+      ? b.sortOrder
+      : Number.MAX_SAFE_INTEGER;
+  if (orderA !== orderB) return orderA - orderB;
+  return a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name);
+}
+
+/**
+ * Computes the next sparse sortOrder for appending a newly created task to its sibling list.
+ */
+export function nextTaskSortOrder(siblings: readonly Pick<Task, 'sortOrder'>[]): number {
+  let maxOrder = 0;
+  for (const s of siblings) {
+    if (typeof s.sortOrder === 'number' && Number.isFinite(s.sortOrder) && s.sortOrder > maxOrder) {
+      maxOrder = s.sortOrder;
+    }
+  }
+  return maxOrder + TASK_SORT_ORDER_STEP;
+}
+
+/**
+ * Reorders `movedTaskId` among its same-parent siblings using sparse midpoint stack ranking.
+ * Falls back to full sibling normalization when uninitialized or when float gap narrows below 0.002.
+ */
+export function computeTaskSiblingReorder(params: {
+  siblings: readonly Task[];
+  movedTaskId: EntityId;
+  targetIndex: number;
+}): Array<{ taskId: EntityId; sortOrder: number }> {
+  const ordered = [...params.siblings].sort(compareTasksByPriority);
+  const fromIdx = ordered.findIndex((t) => t.id === params.movedTaskId);
+  if (fromIdx === -1 || ordered.length <= 1) return [];
+
+  const clampedTarget = Math.max(0, Math.min(params.targetIndex, ordered.length - 1));
+  if (clampedTarget === fromIdx) return [];
+
+  const [moved] = ordered.splice(fromIdx, 1);
+  if (!moved) return [];
+  ordered.splice(clampedTarget, 0, moved);
+
+  const allInitialized = ordered.every(
+    (t) => typeof t.sortOrder === 'number' && Number.isFinite(t.sortOrder)
+  );
+
+  if (allInitialized) {
+    const prev = clampedTarget > 0 ? ordered[clampedTarget - 1]?.sortOrder : undefined;
+    const next =
+      clampedTarget < ordered.length - 1 ? ordered[clampedTarget + 1]?.sortOrder : undefined;
+
+    let candidate: number | null = null;
+    if (prev !== undefined && next !== undefined) {
+      if (next - prev >= 0.002) {
+        candidate = (prev + next) / 2;
+      }
+    } else if (prev !== undefined) {
+      candidate = prev + TASK_SORT_ORDER_STEP;
+    } else if (next !== undefined) {
+      candidate = next - TASK_SORT_ORDER_STEP;
+    }
+
+    if (candidate !== null && Number.isFinite(candidate)) {
+      if (moved.sortOrder === candidate) return [];
+      return [{ taskId: moved.id, sortOrder: candidate }];
+    }
+  }
+
+  const updates: Array<{ taskId: EntityId; sortOrder: number }> = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const t = ordered[i]!;
+    const nextOrder = (i + 1) * TASK_SORT_ORDER_STEP;
+    if (t.sortOrder !== nextOrder) {
+      updates.push({ taskId: t.id, sortOrder: nextOrder });
+    }
+  }
+  return updates;
+}
+
+/**
  * Builds a 3-level sorted tree of Tasks -> Subtasks -> Sub-subtasks for a Project.
  */
 export function buildTaskTree(
@@ -237,7 +324,7 @@ export function buildTaskTree(
   if (!projectId) return [];
   const projectTasks = allTasks
     .filter((t) => t.projectId === projectId)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name));
+    .sort(compareTasksByPriority);
 
   const nodeById = new Map<EntityId, TaskTreeNode>();
   for (const t of projectTasks) {
@@ -261,6 +348,14 @@ export function buildTaskTree(
       roots.push(node);
     }
   }
+
+  const sortChildren = (nodes: TaskTreeNode[]) => {
+    nodes.sort((a, b) => compareTasksByPriority(a.task, b.task));
+    for (const n of nodes) {
+      if (n.children.length > 0) sortChildren(n.children);
+    }
+  };
+  sortChildren(roots);
 
   return roots;
 }

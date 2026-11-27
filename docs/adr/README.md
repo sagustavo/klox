@@ -18,3 +18,4 @@ ADRs are written **on demand** in the same change that introduces a decision —
 | [ADR-0012](./0012-user-profile-unique-usernames-and-workspace-wipe.md) | User Profile Management, Atomic Unique Usernames, Client-Resized Avatars & Backup-First Workspace Wipe | Accepted | Phase 10 / FR-6.6 (`AB#29`) |
 | [ADR-0013](./0013-multi-provider-auth-linking.md) | Multi-Provider Authentication Linking (Google OAuth & Email/Password) | Accepted | Phase 10 / FR-6.4 (`AB#27`) |
 | [ADR-0014](./0014-password-reset-flow.md) | Self-Service Password Reset Flow with Anti-Enumeration & Locale Sync | Accepted | Phase 10 / FR-6.5 (`AB#28`) |
+| [ADR-0015](./0015-azure-devops-completed-work-sync-and-tasks-workspace.md) | Azure DevOps `CompletedWork` Sync, Server-Side PAT Vault, Split Projects/Tasks Workspaces & Drag-and-Drop Prioritization | Accepted | Sprint 4 / FR-V1 (`AB#31`) |

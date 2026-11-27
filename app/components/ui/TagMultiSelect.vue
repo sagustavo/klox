@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { Check, ChevronDown, Search, Tag, X } from 'lucide-vue-next';
+import { Check, ChevronDown, Plus, Search, Tag, X } from 'lucide-vue-next';
 import {
   PopoverContent,
   PopoverPortal,
   PopoverRoot,
   PopoverTrigger,
 } from 'reka-ui';
+import { MAX_TAG_NAME_LENGTH } from '~/domain/invariants';
 import type { EntityId, ProjectTag } from '~/domain/types';
+import { useAuthStore } from '~/stores/auth';
+import { useCatalogStore } from '~/stores/catalog';
 
 const props = withDefaults(
   defineProps<{
     modelValue: readonly EntityId[];
     tags: readonly ProjectTag[];
+    projectId?: EntityId;
+    allowCreate?: boolean;
     variant?: 'field' | 'row' | 'command-icon';
     size?: 'sm' | 'md';
     stopPropagation?: boolean;
@@ -19,6 +24,8 @@ const props = withDefaults(
     testId?: string;
   }>(),
   {
+    projectId: undefined,
+    allowCreate: false,
     variant: 'field',
     size: 'md',
     stopPropagation: false,
@@ -32,10 +39,13 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const authStore = useAuthStore();
+const catalogStore = useCatalogStore();
 const open = ref(false);
 const openedByHover = ref(false);
 const searchQuery = ref('');
 const highlightedIdx = ref(0);
+const creatingTag = ref(false);
 const searchInputRef = ref<HTMLInputElement | null>(null);
 let hoverOpenTimer: ReturnType<typeof setTimeout> | null = null;
 let hoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -46,6 +56,15 @@ const filteredTags = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   if (!q) return props.tags;
   return props.tags.filter((tag) => tag.name.toLowerCase().includes(q));
+});
+
+const creatableTagName = computed(() => {
+  if (!props.allowCreate || !props.projectId || !authStore.user) return '';
+  const trimmed = searchQuery.value.trim();
+  if (!trimmed || trimmed.length > MAX_TAG_NAME_LENGTH) return '';
+  const lower = trimmed.toLowerCase();
+  if (props.tags.some((tag) => tag.name.trim().toLowerCase() === lower)) return '';
+  return trimmed;
 });
 
 const allFilteredSelected = computed(() => {
@@ -198,18 +217,50 @@ function clearAll() {
   }
 }
 
+async function handleCreateTagInline() {
+  const name = creatableTagName.value;
+  if (!name || !props.projectId || !authStore.user || creatingTag.value) return;
+
+  creatingTag.value = true;
+  try {
+    const created = await catalogStore.createTag({
+      uid: authStore.user.uid,
+      isDemo: authStore.isDemoMode,
+      projectId: props.projectId,
+      name,
+    });
+    if (!selectedSet.value.has(created.id)) {
+      emit('update:modelValue', [...props.modelValue, created.id]);
+    }
+    searchQuery.value = '';
+    highlightedIdx.value = 0;
+    nextTick(() => {
+      searchInputRef.value?.focus();
+    });
+  } finally {
+    creatingTag.value = false;
+  }
+}
+
 function handleKeydown(event: KeyboardEvent) {
   const list = filteredTags.value;
-  if (list.length === 0) return;
 
   if (event.key === 'ArrowDown') {
+    if (list.length === 0) return;
     event.preventDefault();
     highlightedIdx.value = (highlightedIdx.value + 1) % list.length;
   } else if (event.key === 'ArrowUp') {
+    if (list.length === 0) return;
     event.preventDefault();
     highlightedIdx.value =
       highlightedIdx.value <= 0 ? list.length - 1 : highlightedIdx.value - 1;
   } else if (event.key === 'Enter') {
+    if (creatableTagName.value && (list.length === 0 || event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void handleCreateTagInline();
+      return;
+    }
+    if (list.length === 0) return;
     event.preventDefault();
     const target = list[highlightedIdx.value];
     if (target) toggleTag(target.id);
@@ -390,18 +441,41 @@ function handleTriggerClick(event: MouseEvent) {
           </div>
         </div>
 
+        <!-- Inline Toggl-Style Create Tag Action -->
+        <button
+          v-if="creatableTagName"
+          type="button"
+          data-testid="tag-multiselect-create"
+          :disabled="creatingTag"
+          class="flex w-full items-center justify-between gap-2 border-b border-border-hairline bg-signal-soft/60 px-3 py-2.5 text-left text-ui font-medium text-signal transition-colors hover:bg-signal-soft disabled:opacity-50"
+          @click="handleCreateTagInline"
+        >
+          <span class="inline-flex items-center gap-2 min-w-0 truncate">
+            <Plus class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span class="truncate">{{ $t('timer.tagSelect.createInline', { name: creatableTagName }) }}</span>
+          </span>
+          <BrandKeycapBadge
+            v-if="filteredTags.length === 0"
+            keys="Enter"
+            size="sm"
+          />
+        </button>
+
         <!-- Scoped Tag Option List -->
-        <div v-if="tags.length === 0" class="px-3 py-4 text-center text-ui text-text-muted">
-          {{ $t('timer.noScopedTags') }}
+        <div
+          v-if="tags.length === 0 && !creatableTagName"
+          class="px-3 py-4 text-center text-ui text-text-muted"
+        >
+          {{ allowCreate && projectId ? $t('timer.tagSelect.emptyHintCreatable') : $t('timer.noScopedTags') }}
         </div>
         <div
-          v-else-if="filteredTags.length === 0"
+          v-else-if="filteredTags.length === 0 && !creatableTagName"
           class="px-3 py-4 text-center text-ui text-text-muted"
         >
           {{ $t('timer.tagSelect.noMatches', { query: searchQuery }) }}
         </div>
         <ul
-          v-else
+          v-else-if="filteredTags.length > 0"
           role="listbox"
           aria-multiselectable="true"
           class="max-h-56 overflow-y-auto divide-y divide-border-subtle py-0.5"

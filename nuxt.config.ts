@@ -116,6 +116,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     geminiApiKey: '',
     geminiModel: 'gemini-3.8-flash',
+    adoEncryptionKey: '',
     public: {
       firebaseApiKey: '',
       firebaseAuthDomain: '',

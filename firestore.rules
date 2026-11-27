@@ -23,6 +23,7 @@ rules_version = '2';
 //   - activeTimer: map | null (optional, singleton live stopwatch state)
 //   - preferences: map (optional, regional settings: locale, timeZone, weekStartsOn, dateFormat, hourCycle; optional keyboardShortcuts map <= 20 entries)
 //   - onboarding: map (optional, wizardStatus, version, profile, checklist, timestamps)
+//   - adoConnection: map | null (optional, non-secret Azure DevOps connection summary)
 //   - updatedAt: string (optional, UTC ISO timestamp <= 64 chars)
 //
 // Collection: usernames/{username}
@@ -41,6 +42,7 @@ rules_version = '2';
 //   - isBillableDefault: bool (required)
 //   - createdAt: string (required, immutable, UTC ISO string 10..64 chars)
 //   - systemKey: string | null (optional, allowed value: 'unassigned')
+//   - adoConfig: map | null (optional, per-project Azure DevOps override: enabled, orgUrl?, project?, defaultWorkItemType?)
 //
 // Collection: users/{userId}/tags/{tagId}
 // Document ID: {tagId}
@@ -59,6 +61,7 @@ rules_version = '2';
 //   - projectId: string (required, 1..128 chars)
 //   - parentTaskId: string | null (optional, <= 128 chars, must not equal taskId)
 //   - depth: int | null (optional, in [0, 1, 2])
+//   - sortOrder: number | null (optional, sparse sibling priority rank -1000000000..1000000000)
 //   - name: string (required, 1..200 chars)
 //   - description: string | null (optional, <= 4000 chars, Markdown)
 //   - completedWorkHours: number (required, >= 0 and <= 100000)
@@ -67,6 +70,12 @@ rules_version = '2';
 //   - targetHours: number | null (optional, >= 0 and <= 100000)
 //   - externalProvider: string | null (optional, 'azure_devops' or null)
 //   - externalWorkItemId: string | null (optional, <= 128 chars)
+//   - externalWorkItemTitle: string | null (optional, <= 300 chars)
+//   - externalWorkItemType: string | null (optional, <= 80 chars)
+//   - externalWorkItemUrl: string | null (optional, <= 512 chars, https:// URL)
+//   - externalOrgUrl: string | null (optional, <= 200 chars)
+//   - externalProject: string | null (optional, <= 128 chars)
+//   - externalSyncedAt: string | null (optional, UTC ISO string <= 64 chars)
 //
 // Collection: users/{userId}/timeLogs/{logId}
 // Document ID: {logId}
@@ -88,6 +97,21 @@ rules_version = '2';
 //   - durationSeconds: number (required, >= 0 and <= 31536000)
 //   - timeZone: string (required, IANA timezone 1..100 chars)
 //   - dateKey: string (required, 10 chars YYYY-MM-DD)
+//   - adoSync: map | null (optional, Azure DevOps sync ledger: workItemId, orgUrl, project, syncedSeconds, syncedAt)
+//
+// Collection: users/{userId}/secrets/{secretId}
+// Document ID: {secretId} (only 'azureDevOps' is allowed)
+// Access: Owner-only ciphertext envelope access via verified Firebase ID token
+//         (`secretId == 'azureDevOps'`, `allow list: if false`). Payloads are encrypted/decrypted
+//         strictly server-side (AES-256-GCM via `NUXT_ADO_ENCRYPTION_KEY`); plaintext tokens are never stored.
+// Fields:
+//   - v: int (required, == 1)
+//   - authType: string (required, in ['pat', 'entra_oauth'])
+//   - salt: string (required, base64 1..128 chars)
+//   - iv: string (required, base64 1..64 chars)
+//   - tag: string (required, base64 1..64 chars)
+//   - ciphertext: string (required, base64 1..4096 chars)
+//   - updatedAt: string (required, UTC ISO string 1..64 chars)
 //
 // ===============================================================
 
@@ -216,6 +240,43 @@ service cloud.firestore {
       );
     }
 
+    function isValidAdoConnection(conn) {
+      return conn is map &&
+        conn.keys().hasAll([
+          'connected',
+          'authType',
+          'orgUrl',
+          'organization',
+          'defaultProject',
+          'defaultWorkItemType',
+          'tokenHint',
+          'connectedAt',
+          'lastVerifiedAt'
+        ]) &&
+        conn.keys().hasOnly([
+          'connected',
+          'authType',
+          'orgUrl',
+          'organization',
+          'defaultProject',
+          'defaultWorkItemType',
+          'tokenHint',
+          'connectedAt',
+          'lastVerifiedAt'
+        ]) &&
+        conn.connected is bool &&
+        conn.authType in ['pat', 'entra_oauth'] &&
+        conn.orgUrl is string &&
+        conn.orgUrl.size() <= 200 &&
+        conn.orgUrl.matches('^https://dev\\.azure\\.com/[A-Za-z0-9][A-Za-z0-9-]{0,62}$') &&
+        isNonEmptyString(conn.organization, 80) &&
+        isNonEmptyString(conn.defaultProject, 128) &&
+        isNonEmptyString(conn.defaultWorkItemType, 80) &&
+        isNonEmptyString(conn.tokenHint, 32) &&
+        isNonEmptyString(conn.connectedAt, 64) &&
+        isNonEmptyString(conn.lastVerifiedAt, 64);
+    }
+
     function isValidUserProfile(data) {
       return hasOnlyAllowedFields([
           'displayName',
@@ -226,6 +287,7 @@ service cloud.firestore {
           'activeTimer',
           'preferences',
           'onboarding',
+          'adoConnection',
           'updatedAt'
         ]) &&
         isOptionalBoundedString(data, 'displayName', 120) &&
@@ -236,7 +298,8 @@ service cloud.firestore {
         isOptionalBoundedString(data, 'updatedAt', 64) &&
         (!('activeTimer' in data) || isValidActiveTimer(data.activeTimer)) &&
         (!('preferences' in data) || isValidPreferences(data.preferences)) &&
-        (!('onboarding' in data) || isValidOnboarding(data.onboarding));
+        (!('onboarding' in data) || isValidOnboarding(data.onboarding)) &&
+        (!('adoConnection' in data) || data.adoConnection == null || isValidAdoConnection(data.adoConnection));
     }
 
     function hasClaimedUsernameAfter(userId, handle) {
@@ -264,16 +327,27 @@ service cloud.firestore {
         );
     }
 
+    function isValidProjectAdoConfig(cfg) {
+      return cfg is map &&
+        cfg.keys().hasAll(['enabled']) &&
+        cfg.keys().hasOnly(['enabled', 'orgUrl', 'project', 'defaultWorkItemType']) &&
+        cfg.enabled is bool &&
+        isOptionalBoundedString(cfg, 'orgUrl', 200) &&
+        isOptionalBoundedString(cfg, 'project', 128) &&
+        isOptionalBoundedString(cfg, 'defaultWorkItemType', 80);
+    }
+
     function isValidProject(data, userId, projectId) {
       return hasRequiredFields(['id', 'userId', 'name', 'color', 'isBillableDefault', 'createdAt']) &&
-        hasOnlyAllowedFields(['id', 'userId', 'name', 'color', 'isBillableDefault', 'createdAt', 'systemKey']) &&
+        hasOnlyAllowedFields(['id', 'userId', 'name', 'color', 'isBillableDefault', 'createdAt', 'systemKey', 'adoConfig']) &&
         data.id is string && data.id == projectId && data.id.size() >= 1 && data.id.size() <= 128 &&
         data.userId is string && data.userId == userId &&
         isNonEmptyString(data.name, 120) &&
         isValidHexColor(data.color) &&
         data.isBillableDefault is bool &&
         isNonEmptyString(data.createdAt, 64) &&
-        (!('systemKey' in data) || data.systemKey == null || data.systemKey == 'unassigned');
+        (!('systemKey' in data) || data.systemKey == null || data.systemKey == 'unassigned') &&
+        (!('adoConfig' in data) || data.adoConfig == null || isValidProjectAdoConfig(data.adoConfig));
     }
 
     function isValidTag(data, userId, tagId) {
@@ -294,6 +368,7 @@ service cloud.firestore {
           'projectId',
           'parentTaskId',
           'depth',
+          'sortOrder',
           'name',
           'description',
           'completedWorkHours',
@@ -301,7 +376,13 @@ service cloud.firestore {
           'createdAt',
           'targetHours',
           'externalProvider',
-          'externalWorkItemId'
+          'externalWorkItemId',
+          'externalWorkItemTitle',
+          'externalWorkItemType',
+          'externalWorkItemUrl',
+          'externalOrgUrl',
+          'externalProject',
+          'externalSyncedAt'
         ]) &&
         data.id is string && data.id == taskId && data.id.size() >= 1 && data.id.size() <= 128 &&
         data.userId is string && data.userId == userId &&
@@ -309,6 +390,7 @@ service cloud.firestore {
         isOptionalBoundedString(data, 'parentTaskId', 128) &&
         (!('parentTaskId' in data) || data.parentTaskId == null || data.parentTaskId != taskId) &&
         (!('depth' in data) || data.depth == null || (data.depth is int && data.depth in [0, 1, 2])) &&
+        (!('sortOrder' in data) || data.sortOrder == null || (data.sortOrder is number && data.sortOrder >= -1000000000 && data.sortOrder <= 1000000000)) &&
         isNonEmptyString(data.name, 200) &&
         isOptionalBoundedString(data, 'description', 4000) &&
         data.completedWorkHours is number && data.completedWorkHours >= 0 && data.completedWorkHours <= 100000 &&
@@ -316,7 +398,27 @@ service cloud.firestore {
         isNonEmptyString(data.createdAt, 64) &&
         (!('targetHours' in data) || data.targetHours == null || (data.targetHours is number && data.targetHours >= 0 && data.targetHours <= 100000)) &&
         (!('externalProvider' in data) || data.externalProvider == null || data.externalProvider == 'azure_devops') &&
-        isOptionalBoundedString(data, 'externalWorkItemId', 128);
+        isOptionalBoundedString(data, 'externalWorkItemId', 128) &&
+        isOptionalBoundedString(data, 'externalWorkItemTitle', 300) &&
+        isOptionalBoundedString(data, 'externalWorkItemType', 80) &&
+        (!('externalWorkItemUrl' in data) || data.externalWorkItemUrl == null || (data.externalWorkItemUrl is string && data.externalWorkItemUrl.size() <= 512 && data.externalWorkItemUrl.matches('^https://.+'))) &&
+        isOptionalBoundedString(data, 'externalOrgUrl', 200) &&
+        isOptionalBoundedString(data, 'externalProject', 128) &&
+        isOptionalBoundedString(data, 'externalSyncedAt', 64);
+    }
+
+    function isValidTimeLogAdoSync(sync) {
+      return sync is map &&
+        sync.keys().hasAll(['workItemId', 'orgUrl', 'project', 'syncedSeconds', 'syncedAt']) &&
+        sync.keys().hasOnly(['workItemId', 'orgUrl', 'project', 'syncedSeconds', 'syncedAt']) &&
+        sync.workItemId is int &&
+        sync.workItemId >= 1 &&
+        isNonEmptyString(sync.orgUrl, 200) &&
+        isNonEmptyString(sync.project, 128) &&
+        sync.syncedSeconds is number &&
+        sync.syncedSeconds >= 0 &&
+        sync.syncedSeconds <= 31536000 &&
+        isNonEmptyString(sync.syncedAt, 64);
     }
 
     function isValidTimeLog(data, userId, logId) {
@@ -353,7 +455,8 @@ service cloud.firestore {
           'endTime',
           'durationSeconds',
           'timeZone',
-          'dateKey'
+          'dateKey',
+          'adoSync'
         ]) &&
         data.id is string && data.id == logId && data.id.size() >= 1 && data.id.size() <= 128 &&
         data.userId is string && data.userId == userId &&
@@ -371,7 +474,25 @@ service cloud.firestore {
         isNonEmptyString(data.endTime, 64) &&
         data.durationSeconds is number && data.durationSeconds >= 0 && data.durationSeconds <= 31536000 &&
         isNonEmptyString(data.timeZone, 100) &&
-        isValidDateKey(data.dateKey);
+        isValidDateKey(data.dateKey) &&
+        (!('adoSync' in data) || data.adoSync == null || isValidTimeLogAdoSync(data.adoSync));
+    }
+
+    function isValidEncryptedAdoSecret(data) {
+      return hasRequiredFields(['v', 'authType', 'salt', 'iv', 'tag', 'ciphertext', 'updatedAt']) &&
+        hasOnlyAllowedFields(['v', 'authType', 'salt', 'iv', 'tag', 'ciphertext', 'updatedAt']) &&
+        data.v is int &&
+        data.v == 1 &&
+        data.authType in ['pat', 'entra_oauth'] &&
+        isNonEmptyString(data.salt, 128) &&
+        data.salt.matches('^[A-Za-z0-9+/]+=*$') &&
+        isNonEmptyString(data.iv, 64) &&
+        data.iv.matches('^[A-Za-z0-9+/]+=*$') &&
+        isNonEmptyString(data.tag, 64) &&
+        data.tag.matches('^[A-Za-z0-9+/]+=*$') &&
+        isNonEmptyString(data.ciphertext, 4096) &&
+        data.ciphertext.matches('^[A-Za-z0-9+/]+=*$') &&
+        isNonEmptyString(data.updatedAt, 64);
     }
 
     // ===============================================================
@@ -426,6 +547,16 @@ service cloud.firestore {
           isValidTimeLog(request.resource.data, userId, logId) &&
           areImmutableFieldsUnchanged(['id', 'userId']);
         allow delete: if isOwner(userId) && isDocOwner();
+      }
+
+      // Owner-only server-encrypted integration secret envelope (users/{userId}/secrets/azureDevOps)
+      match /secrets/{secretId} {
+        allow get: if isOwner(userId) && secretId == 'azureDevOps';
+        allow list: if false;
+        allow create, update: if isOwner(userId) &&
+          secretId == 'azureDevOps' &&
+          isValidEncryptedAdoSecret(request.resource.data);
+        allow delete: if isOwner(userId) && secretId == 'azureDevOps';
       }
     }
 
