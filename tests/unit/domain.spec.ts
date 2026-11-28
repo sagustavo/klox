@@ -60,6 +60,7 @@ import {
   createDefaultOnboardingState,
   getStarterProjectTemplates,
 } from '../../app/domain/onboarding';
+import { detectBrowserPreferences } from '../../app/domain/preferences';
 import { buildRecallTemplates, validateAiPrediction } from '../../app/domain/recall';
 import {
   captureShortcutFromEvent,
@@ -1450,6 +1451,18 @@ describe('domain/shortcuts (FR-6.3 Customizable Keyboard Shortcuts & Conflict De
         ],
       })
     ).toBe('month');
+  });
+});
+
+describe('domain/preferences', () => {
+  it('defaults locale to en independently of navigator language or timezone while still detecting timeZone', () => {
+    const prefs = detectBrowserPreferences({
+      language: 'pt-BR',
+      languages: ['pt-BR', 'pt'],
+    });
+    expect(prefs.locale).toBe('en');
+    expect(typeof prefs.timeZone).toBe('string');
+    expect(prefs.timeZone.length).toBeGreaterThan(0);
   });
 });
 

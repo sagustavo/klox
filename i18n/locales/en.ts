@@ -19,7 +19,7 @@ const en = {
     help: 'Help & Shortcuts',
     signIn: 'Sign in',
     signOut: 'Sign out',
-    getStarted: 'Start tracking free',
+    getStarted: 'Start for free',
     tryDemo: 'Try live demo',
     openApp: 'Open app',
     switchLanguage: 'Switch language',
@@ -34,6 +34,23 @@ const en = {
     sidebarShow: 'Show sidebar',
   },
   landing: {
+    seo: {
+      title: "Klox — Keyboard-First Time Tracker & Analytics {'|'} klox.dev",
+      description:
+        'Klox (klox.dev) is a keyboard-first time tracker for developers with <2ms recall, AI auto-tagging, clear analytics, Toggl CSV import & Azure DevOps.',
+      ogTitle: 'Klox (klox.dev) — Keyboard-First Time Tracker for Developers',
+      ogImageAlt:
+        'Klox (klox.dev) — Keyboard-first time tracker with sub-2ms recall, AI auto-tagging, analytics, Toggl CSV import, and Azure DevOps sync',
+      homeAria: 'Klox — Home',
+      schemaFeatures: [
+        'Keyboard-first time tracking shortcuts (N, Tab, Enter, S, Cmd/Ctrl+I)',
+        'Sub-2ms fuzzy lexical activity recall powered by Fuse.js',
+        'AI auto-fill for project, project-scoped tags, and billable status',
+        'Interactive multi-dimensional analytics with donut charts, daily stacked bars, and grouped tables',
+        'Bi-directional Toggl Track CSV import with deduplication and Excel-ready export',
+        'Native Azure DevOps sprint import and one-click Completed Work hours sync',
+      ],
+    },
     heroTitle: 'Time, at orbital velocity.',
     heroSubtitle:
       'Klox is a keyboard-first time tracker with instant suggestions, smart AI auto-fill, crystal-clear analytics, and native Azure DevOps hours sync. Built for people who value every minute.',
@@ -43,7 +60,7 @@ const en = {
       headlineLine1: 'Time,',
       headlineLine2: 'at orbital',
       headlineLine3: 'velocity.',
-      ctaPrimary: 'Start tracking free',
+      ctaPrimary: 'Start for free',
       ctaDemo: 'Try live demo',
       ctaSpecs: 'Explore features',
       stats: {
@@ -163,7 +180,7 @@ const en = {
         f3: 'Instant activity recall and [⌘I] AI auto-fill',
         f4: 'Toggl Track CSV import & Excel-ready export',
         f5: 'Azure DevOps sprint import & one-click hours sync',
-        cta: 'Start tracking free',
+        cta: 'Start for free',
       },
       proTier: {
         name: 'Pro',
@@ -203,7 +220,7 @@ const en = {
     },
     closing: {
       title: 'Every second, accounted for.',
-      cta: 'Start tracking free',
+      cta: 'Start for free',
     },
     footer: {
       copyright: '© 2026 Klox · Time tracking at orbital velocity',

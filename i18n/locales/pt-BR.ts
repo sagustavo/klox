@@ -36,6 +36,23 @@ const ptBR: LocaleMessages = {
     sidebarShow: 'Mostrar barra lateral',
   },
   landing: {
+    seo: {
+      title: "Klox — Rastreador de Tempo por Teclado e IA {'|'} klox.dev",
+      description:
+        'Klox (klox.dev) é o rastreador de tempo por teclado para devs com busca em <2ms, tags por IA, analytics, importação CSV do Toggl e Azure DevOps.',
+      ogTitle: 'Klox (klox.dev) — Rastreador de Tempo por Teclado para Devs',
+      ogImageAlt:
+        'Klox (klox.dev) — Rastreador de tempo por teclado com busca em <2ms, tags por IA, analytics, CSV do Toggl e Azure DevOps',
+      homeAria: 'Klox — Início',
+      schemaFeatures: [
+        'Atalhos de teclado de alta velocidade (N, Tab, Enter, S, Cmd/Ctrl+I)',
+        'Busca instantânea de atividades recorrentes em menos de 2ms',
+        'Preenchimento automático com IA de projeto, tags do projeto e status faturável',
+        'Análises interativas por projeto, tarefa, tag ou descrição com gráficos e tabelas agrupadas',
+        'Importação e exportação CSV compatível com Toggl Track com remoção automática de duplicatas',
+        'Sincronização nativa de horas concluídas com work items do Azure DevOps',
+      ],
+    },
     heroTitle: 'Seu tempo, em velocidade orbital.',
     heroSubtitle:
       'O Klox é um rastreador de tempo feito para teclado, com sugestões instantâneas, preenchimento com IA, análises claras e sincronização nativa com o Azure DevOps. Criado para quem valoriza cada minuto.',

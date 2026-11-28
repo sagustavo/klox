@@ -74,16 +74,15 @@ export function defaultWeekStartForLocale(locale: SupportedLocale): WeekStartDay
 }
 
 export function detectBrowserPreferences(
-  nav?: Pick<Navigator, 'languages' | 'language'>
+  _nav?: Pick<Navigator, 'languages' | 'language'>
 ): UserPreferences {
-  const langs = nav?.languages?.length ? nav.languages : nav?.language ? [nav.language] : ['en'];
-  const locale = matchSupportedLocale(langs);
+  const locale: SupportedLocale = 'en';
 
   let timeZone = 'UTC';
-  let hourCycle: 'h12' | 'h23' = locale === 'pt-br' ? 'h23' : 'h12';
+  let hourCycle: 'h12' | 'h23' = 'h12';
 
   try {
-    const resolved = new Intl.DateTimeFormat(locale === 'pt-br' ? 'pt-BR' : 'en-US', {
+    const resolved = new Intl.DateTimeFormat('en-US', {
       hour: 'numeric',
     }).resolvedOptions();
     if (resolved.timeZone) timeZone = resolved.timeZone;

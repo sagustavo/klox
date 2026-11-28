@@ -3,6 +3,7 @@
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://klox.dev/</loc>
+    <lastmod>2026-11-28</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://klox.dev/" />
     <xhtml:link rel="alternate" hreflang="pt-BR" href="https://klox.dev/pt-br" />
     <xhtml:link rel="alternate" hreflang="x-default" href="https://klox.dev/" />
@@ -11,6 +12,7 @@
   </url>
   <url>
     <loc>https://klox.dev/pt-br</loc>
+    <lastmod>2026-11-28</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://klox.dev/" />
     <xhtml:link rel="alternate" hreflang="pt-BR" href="https://klox.dev/pt-br" />
     <xhtml:link rel="alternate" hreflang="x-default" href="https://klox.dev/" />

@@ -63,20 +63,23 @@ export default defineNuxtConfig({
   app: {
     pageTransition: { name: 'orbital-page', mode: 'out-in' },
     head: {
-      title: 'Klox — Keyboard-First Time Tracking & Analytics',
+      title: 'Klox — Keyboard-First Time Tracker & Analytics | klox.dev',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'color-scheme', content: 'dark light' },
+        { name: 'theme-color', content: '#050505', media: '(prefers-color-scheme: dark)' },
+        { name: 'theme-color', content: '#FAFAFA', media: '(prefers-color-scheme: light)' },
         {
           name: 'description',
           content:
-            'Fast, keyboard-first time tracking with instant suggestions, AI auto-fill, clear analytics, and Toggl Track CSV support.',
+            'Klox (klox.dev) is a keyboard-first time tracker for developers with <2ms recall, AI auto-tagging, clear analytics, Toggl CSV import & Azure DevOps.',
         },
       ],
       link: [
         { rel: 'icon', type: 'image/png', href: '/images/klox-favicon.png' },
         { rel: 'apple-touch-icon', href: '/images/klox-favicon.png' },
+        { rel: 'manifest', href: '/site.webmanifest' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         {
@@ -95,6 +98,7 @@ export default defineNuxtConfig({
   },
 
   i18n: {
+    baseUrl: 'https://klox.dev',
     strategy: 'prefix_except_default',
     defaultLocale: 'en',
     lazy: true,
@@ -106,11 +110,7 @@ export default defineNuxtConfig({
     bundle: {
       optimizeTranslationDirective: false,
     },
-    detectBrowserLanguage: {
-      useCookie: true,
-      cookieKey: 'klox_locale',
-      redirectOn: 'root',
-    },
+    detectBrowserLanguage: false,
   },
 
   runtimeConfig: {

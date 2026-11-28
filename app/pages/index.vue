@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowRight, Check, ChevronDown, GitBranch, Pause, Play } from 'lucide-vue-next';
+import { buildLandingJsonLd, OG_IMAGE_URL } from '~/utils/seoSchema';
 
 definePageMeta({
   layout: 'marketing',
@@ -8,20 +9,52 @@ definePageMeta({
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
 
-// Per-locale SEO, canonical, hreflang, and LCP hero preload (FR-1)
+// Per-locale SEO, canonical, hreflang, JSON-LD, and LCP hero preload (FR-1)
 const canonicalUrl = computed(() =>
   locale.value === 'pt-br' ? 'https://klox.dev/pt-br' : 'https://klox.dev/'
 );
 
 useSeoMeta({
-  title: () => `Klox — ${t('brand.tagline')}`,
-  description: () => t('landing.heroSubtitle'),
-  ogTitle: () => `Klox — ${t('landing.heroTitle')}`,
-  ogDescription: () => t('landing.heroSubtitle'),
+  title: () => t('landing.seo.title'),
+  description: () => t('landing.seo.description'),
+  robots: 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1',
+  ogSiteName: 'Klox',
+  ogTitle: () => t('landing.seo.ogTitle'),
+  ogDescription: () => t('landing.seo.description'),
   ogType: 'website',
   ogUrl: () => canonicalUrl.value,
+  ogLocale: () => (locale.value === 'pt-br' ? 'pt_BR' : 'en_US'),
+  ogLocaleAlternate: () => (locale.value === 'pt-br' ? 'en_US' : 'pt_BR'),
+  ogImage: OG_IMAGE_URL,
+  ogImageWidth: 1200,
+  ogImageHeight: 630,
+  ogImageType: 'image/jpeg',
+  ogImageAlt: () => t('landing.seo.ogImageAlt'),
   twitterCard: 'summary_large_image',
+  twitterTitle: () => t('landing.seo.ogTitle'),
+  twitterDescription: () => t('landing.seo.description'),
+  twitterImage: OG_IMAGE_URL,
+  twitterImageAlt: () => t('landing.seo.ogImageAlt'),
 });
+
+const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
+
+const landingJsonLd = computed(() =>
+  buildLandingJsonLd({
+    locale: locale.value === 'pt-br' ? 'pt-br' : 'en',
+    canonicalUrl: canonicalUrl.value,
+    description: t('landing.seo.description'),
+    features: [0, 1, 2, 3, 4, 5].map((idx) => t(`landing.seo.schemaFeatures.${idx}`)),
+    faqs: faqKeys.map((k) => ({
+      question: t(`landing.faq.${k}.q`),
+      answer: t(`landing.faq.${k}.a`),
+    })),
+    freeOfferName: t('landing.pricing.freeTier.name'),
+    freeOfferDescription: t('landing.pricing.freeTier.desc'),
+    proOfferName: t('landing.pricing.proTier.name'),
+    proOfferDescription: t('landing.pricing.proTier.desc'),
+  })
+);
 
 useHead({
   link: [
@@ -34,6 +67,13 @@ useHead({
       as: 'image',
       href: '/images/klox-orbit.jpg',
       fetchpriority: 'high',
+    },
+  ],
+  script: [
+    {
+      key: 'klox-jsonld',
+      type: 'application/ld+json',
+      innerHTML: () => JSON.stringify(landingJsonLd.value),
     },
   ],
 });
@@ -93,8 +133,6 @@ const advantages = [
   { id: 'analytics', index: '03 / 04', key: 'analytics' },
   { id: 'toggl', index: '04 / 04', key: 'toggl' },
 ] as const;
-
-const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 </script>
 
 <template>
@@ -162,11 +200,11 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         >
           <NuxtLink :to="localePath('/login?mode=signup')" class="btn-launch h-12 px-8">
             <span>{{ $t('landing.hero.ctaPrimary') }}</span>
-            <ArrowRight class="h-4 w-4" />
+            <ArrowRight class="h-4 w-4" aria-hidden="true" />
           </NuxtLink>
 
           <NuxtLink :to="localePath('/app?demo=1')" class="btn-orbit h-12 px-8">
-            <Play class="h-3.5 w-3.5 text-signal" />
+            <Play class="h-3.5 w-3.5 text-signal" aria-hidden="true" />
             <span>{{ $t('landing.hero.ctaDemo') }}</span>
           </NuxtLink>
 
@@ -181,30 +219,31 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
       <!-- Bottom 4-Column Telemetry Strip -->
       <div class="relative border-t border-border-hairline bg-bg-primary/65 backdrop-blur-sm">
-        <div class="mx-auto grid max-w-7xl grid-cols-2 px-4 sm:px-6 md:grid-cols-4">
+        <dl class="mx-auto grid max-w-7xl grid-cols-2 px-4 sm:px-6 md:grid-cols-4">
           <div
             v-for="(stat, idx) in heroStats"
             :key="stat.labelKey"
-            class="py-6"
+            class="flex flex-col-reverse py-6"
             :class="[
               idx > 0 && 'md:border-l md:border-border-hairline md:pl-6',
               idx % 2 === 1 && 'border-l border-border-hairline pl-6',
             ]"
           >
-            <div class="display-wide tabular-telemetry text-xl text-text-primary sm:text-2xl">
-              {{ $t(stat.valueKey) }}
-            </div>
-            <div class="label-eyebrow mt-2 text-text-muted">
+            <dt class="label-eyebrow mt-2 text-text-muted">
               {{ $t(stat.labelKey) }}
-            </div>
+            </dt>
+            <dd class="display-wide tabular-telemetry text-xl text-text-primary sm:text-2xl">
+              {{ $t(stat.valueKey) }}
+            </dd>
           </div>
-        </div>
+        </dl>
       </div>
     </section>
 
     <!-- Section 2: 4 Editorial Advantage Instrument Panels (#features) -->
     <section
       id="features"
+      aria-labelledby="features-heading"
       class="relative scroll-mt-16 border-t border-border-hairline bg-bg-primary"
     >
       <div class="mx-auto max-w-7xl px-4 py-24 sm:px-6 sm:py-28">
@@ -214,7 +253,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         >
           <div>
             <p class="label-eyebrow text-signal">{{ $t('landing.advantages.eyebrow') }}</p>
-            <h2 class="display-wide mt-4 max-w-2xl text-3xl text-text-primary sm:text-5xl">
+            <h2 id="features-heading" class="display-wide mt-4 max-w-2xl text-3xl text-text-primary sm:text-5xl">
               {{ $t('landing.advantages.title') }}
             </h2>
           </div>
@@ -228,8 +267,8 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
               class="btn-press inline-flex h-9 items-center gap-2 border border-border-hairline bg-bg-elevated px-3 text-xs font-medium text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
               @click="motionPaused = !motionPaused"
             >
-              <Play v-if="motionPaused" class="h-3.5 w-3.5 text-signal" />
-              <Pause v-else class="h-3.5 w-3.5 text-signal" />
+              <Play v-if="motionPaused" class="h-3.5 w-3.5 text-signal" aria-hidden="true" />
+              <Pause v-else class="h-3.5 w-3.5 text-signal" aria-hidden="true" />
               <span>
                 {{
                   motionPaused
@@ -270,16 +309,16 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
     </section>
 
     <!-- Section 3: Live Azure DevOps Integration -->
-    <section class="mx-auto max-w-7xl px-4 pb-24 sm:px-6 sm:pb-28">
+    <section aria-labelledby="ado-heading" class="mx-auto max-w-7xl px-4 pb-24 sm:px-6 sm:pb-28">
       <div data-scroll-reveal>
         <UiInstrumentPanel signal-line class="p-6 sm:p-10">
           <div class="label-eyebrow inline-flex items-center gap-2 text-signal">
             <span class="h-1.5 w-1.5 rounded-full bg-signal motion-safe:animate-pulse" aria-hidden="true" />
-            <GitBranch class="h-4 w-4 shrink-0" />
+            <GitBranch class="h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{{ $t('landing.adoTeaser.badge') }}</span>
           </div>
 
-          <h2 class="display-wide mt-4 text-2xl text-text-primary sm:text-3xl">
+          <h2 id="ado-heading" class="display-wide mt-4 text-2xl text-text-primary sm:text-3xl">
             {{ $t('landing.adoTeaser.title') }}
           </h2>
 
@@ -287,28 +326,28 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
             {{ $t('landing.adoTeaser.body') }}
           </p>
 
-          <div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
-              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
+          <ul class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <li class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
+              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
               <span>{{ $t('landing.adoTeaser.bullet1') }}</span>
-            </div>
-            <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
-              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
+            </li>
+            <li class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
+              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
               <span>{{ $t('landing.adoTeaser.bullet2') }}</span>
-            </div>
-            <div class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
-              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
+            </li>
+            <li class="flex items-start gap-2.5 border border-border-hairline bg-bg-primary p-4 text-sm text-text-primary">
+              <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
               <span>{{ $t('landing.adoTeaser.bullet3') }}</span>
-            </div>
-          </div>
+            </li>
+          </ul>
 
           <div class="mt-8 flex flex-wrap items-center gap-3">
             <NuxtLink :to="localePath('/login?mode=signup')" class="btn-launch h-10 px-6">
               <span>{{ $t('landing.adoTeaser.ctaPrimary') }}</span>
-              <ArrowRight class="h-4 w-4" />
+              <ArrowRight class="h-4 w-4" aria-hidden="true" />
             </NuxtLink>
             <NuxtLink :to="localePath('/app?demo=1')" class="btn-orbit h-10 px-6">
-              <Play class="h-3.5 w-3.5 text-signal" />
+              <Play class="h-3.5 w-3.5 text-signal" aria-hidden="true" />
               <span>{{ $t('landing.adoTeaser.ctaDemo') }}</span>
             </NuxtLink>
           </div>
@@ -319,6 +358,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
     <!-- Section 4: Pricing Matrix (#pricing) -->
     <section
       id="pricing"
+      aria-labelledby="pricing-heading"
       class="relative scroll-mt-16 overflow-hidden border-t border-border-hairline bg-bg-primary"
     >
       <div
@@ -328,7 +368,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
       <div class="relative mx-auto max-w-7xl px-4 py-24 sm:px-6 sm:py-28">
         <div data-scroll-reveal class="text-center">
           <p class="label-eyebrow text-signal">{{ $t('landing.pricing.badge') }}</p>
-          <h2 class="display-wide mt-4 text-3xl text-text-primary sm:text-5xl">
+          <h2 id="pricing-heading" class="display-wide mt-4 text-3xl text-text-primary sm:text-5xl">
             {{ $t('landing.pricing.title') }}
           </h2>
           <p class="mx-auto mt-5 max-w-md text-base text-text-muted">
@@ -338,7 +378,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
         <div class="mx-auto mt-16 grid max-w-4xl gap-px border border-border-hairline bg-border-hairline md:grid-cols-2">
           <!-- Free Plan (Highlighted) -->
-          <div
+          <article
             data-scroll-reveal
             class="glow-signal relative flex flex-col bg-bg-primary p-8 sm:p-10"
           >
@@ -371,7 +411,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
                 :key="fKey"
                 class="flex items-start gap-3"
               >
-                <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
+                <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
                 <BrandWithKeys :text="$t(`landing.pricing.freeTier.${fKey}`)" />
               </li>
             </ul>
@@ -381,12 +421,12 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
               class="btn-launch mt-10 h-12 w-full"
             >
               <span>{{ $t('landing.pricing.freeTier.cta') }}</span>
-              <ArrowRight class="h-4 w-4" />
+              <ArrowRight class="h-4 w-4" aria-hidden="true" />
             </NuxtLink>
-          </div>
+          </article>
 
           <!-- Pro Plan (Roadmap Placeholder) -->
-          <div
+          <article
             data-scroll-reveal
             class="relative flex flex-col bg-bg-primary p-8 sm:p-10"
           >
@@ -415,7 +455,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
                 :key="fKey"
                 class="flex items-start gap-3"
               >
-                <Check class="mt-0.5 h-4 w-4 shrink-0 text-text-faint" />
+                <Check class="mt-0.5 h-4 w-4 shrink-0 text-text-faint" aria-hidden="true" />
                 <BrandWithKeys :text="$t(`landing.pricing.proTier.${fKey}`)" />
               </li>
             </ul>
@@ -423,7 +463,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
             <span class="label-eyebrow mt-10 inline-flex h-12 w-full items-center justify-center border border-border-hairline bg-bg-elevated px-6 text-text-muted">
               {{ $t('landing.pricing.proTier.cta') }}
             </span>
-          </div>
+          </article>
         </div>
       </div>
     </section>
@@ -431,10 +471,11 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
     <!-- Section 5: FAQ (#faq) -->
     <section
       id="faq"
+      aria-labelledby="faq-heading"
       class="scroll-mt-16 border-t border-border-hairline bg-bg-primary"
     >
       <div data-scroll-reveal class="mx-auto max-w-4xl px-4 py-24 sm:px-6">
-        <h2 class="display-wide mb-10 text-2xl text-text-primary sm:text-4xl">
+        <h2 id="faq-heading" class="display-wide mb-10 text-2xl text-text-primary sm:text-4xl">
           {{ $t('landing.faq.title') }}
         </h2>
 
@@ -446,7 +487,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
           >
             <summary class="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal">
               <span>{{ $t(`landing.faq.${itemKey}.q`) }}</span>
-              <ChevronDown class="h-4 w-4 shrink-0 text-text-muted motion-safe:transition-transform motion-safe:duration-200 group-open:rotate-180" />
+              <ChevronDown class="h-4 w-4 shrink-0 text-text-muted motion-safe:transition-transform motion-safe:duration-200 group-open:rotate-180" aria-hidden="true" />
             </summary>
             <div class="mt-4 space-y-2 text-sm leading-relaxed text-text-muted">
               <p>{{ $t(`landing.faq.${itemKey}.a`) }}</p>

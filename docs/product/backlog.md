@@ -291,7 +291,7 @@ Focused on zero-friction activity capture, customizable keyboard ergonomics, sea
 - **Acceptance Criteria:**
   - [x] Implement atmospheric orbit hero with earth horizon background, live ticking mission clock (`T+ HH:MM:SS.ms`), and telemetry statistics strip.
   - [x] Build the 4 interactive advantage instrument panels (Keyboard-First velocity sequence, Two-Tier Recall with scanline, Telemetry Donut/Bars, and Toggl CSV import/export preview).
-  - [x] Render Free vs Pro pricing cards with feature comparisons and clean CTA links (`Start tracking free → /login?mode=signup`).
+  - [x] Render Free vs Pro pricing cards with feature comparisons and clean CTA links (`Start for free → /login?mode=signup`).
   - [x] Update `/login` with clean centered `AuthPanel`, official multi-color Google `"G"` button, and seamless mode toggle between Sign In and Sign Up.
   - [x] Prominently surface `contact@klox.dev` in the footer, FAQ, auth panel, and in-app help sheet.
   - [x] Align in-app layout and telemetry design tokens so future sprint components follow the exact same visual hierarchy and palette.
