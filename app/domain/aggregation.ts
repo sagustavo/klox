@@ -144,6 +144,56 @@ export function resolveDateKeyBounds(params: {
 }
 
 /**
+ * Computes smart default bar chart time granularity from the active date window:
+ * - Today / This Week / Last 7 Days (< 28d) -> `'day'`
+ * - This Month or 28–179 day custom span -> `'week'`
+ * - Semester or longer (`>= 180` days) -> `'month'`
+ */
+export function resolveDefaultTimeGranularity(params: {
+  preset: DateRangePreset;
+  bounds: DateKeyBounds;
+  logs?: readonly TimeLog[];
+  timeZone?: string;
+}): TimeGranularity {
+  const { preset, bounds, logs = [], timeZone = 'UTC' } = params;
+  if (preset === 'today' || preset === 'this_week' || preset === 'last_7_days') {
+    return 'day';
+  }
+  if (preset === 'this_month') {
+    return 'week';
+  }
+
+  let startKey = bounds.startDateKey;
+  let endKey = bounds.endDateKey;
+
+  if (preset === 'all_time') {
+    if (logs.length === 0) return 'month';
+    for (const log of logs) {
+      const dk = resolveLogDateKey(log, timeZone);
+      if (!startKey || dk < startKey) startKey = dk;
+      if (!endKey || dk > endKey) endKey = dk;
+    }
+    const todayKey = toDateKey(new Date(), timeZone);
+    if (!endKey || todayKey > endKey) {
+      endKey = todayKey;
+    }
+  }
+
+  if (startKey && endKey) {
+    const startDt = parseLocalCalendarDate(startKey);
+    const endDt = parseLocalCalendarDate(endKey);
+    if (startDt && endDt) {
+      const spanDays = Math.floor((endDt.getTime() - startDt.getTime()) / 86_400_000) + 1;
+      if (spanDays >= 180) return 'month';
+      if (spanDays >= 28) return 'week';
+      return 'day';
+    }
+  }
+
+  return 'month';
+}
+
+/**
  * Filters historical TimeLogs reactively across all dimensions (FR-5.5).
  */
 export function filterTimeLogs(params: {

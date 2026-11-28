@@ -44,6 +44,7 @@ export default defineEventHandler(async (event) => {
       pat,
       project: target.project,
       ids: group.ids,
+      completedWorkFieldRef: connection.completedWorkFieldRef,
     });
     for (const item of items) {
       allItems.push({

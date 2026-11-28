@@ -8,6 +8,7 @@ import {
   Clock,
   X,
 } from 'lucide-vue-next';
+import type { UiSelectOption } from '~/components/ui/Select.vue';
 import { paginateItems } from '~/domain/aggregation';
 import { formatHMS } from '~/domain/duration';
 import {
@@ -38,6 +39,10 @@ const { t } = useI18n();
 
 const filters = reactive<TogglPreviewColumnFilters>(createEmptyTogglPreviewFilters());
 const pageSizeOptions = [25, 50, 100, 250] as const;
+const pageSizeSelectOptions: UiSelectOption<number>[] = pageSizeOptions.map((sz) => ({
+  value: sz,
+  label: String(sz),
+}));
 const pageSize = ref<number>(50);
 const pageIndex = ref(0);
 
@@ -138,18 +143,21 @@ function resetFilters() {
         </button>
       </div>
 
-      <label class="inline-flex items-center gap-2 text-xs text-text-muted">
+      <div class="inline-flex items-center gap-2 text-xs text-text-muted">
         <span>{{ $t('dashboard.pagination.rowsPerPage') }}</span>
-        <select
-          v-model.number="pageSize"
-          data-testid="csv-table-page-size"
-          class="tabular-telemetry h-8 border border-border-input bg-bg-primary px-2 text-xs text-text-primary focus:border-signal focus:outline-none"
-        >
-          <option v-for="sz in pageSizeOptions" :key="sz" :value="sz">
-            {{ sz }}
-          </option>
-        </select>
-      </label>
+        <div class="w-20">
+          <UiSelect
+            size="sm"
+            tabular
+            align="end"
+            test-id="csv-table-page-size"
+            :model-value="pageSize"
+            :options="pageSizeSelectOptions"
+            :aria-label="$t('dashboard.pagination.rowsPerPage')"
+            @update:model-value="pageSize = Number($event)"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- Keyboard-Scrollable Table Region with Sticky Header & Minimalist Column Filter Popovers -->

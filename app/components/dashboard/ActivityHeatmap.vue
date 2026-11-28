@@ -1,16 +1,32 @@
 <script setup lang="ts">
 import { Activity, Calendar, Flame, Trophy } from 'lucide-vue-next';
+import type { DateKeyBounds } from '~/domain/aggregation';
 import {
   buildActivityHeatmap,
   extractAvailableHeatmapYears,
 } from '~/domain/heatmap';
 import type {
+  DateRangePreset,
   HeatmapDayCell,
   HeatmapIntensityLevel,
   HeatmapRangeSelection,
+  TimeLog,
 } from '~/domain/types';
 import { usePreferencesStore } from '~/stores/preferences';
 import { useTimeLogsStore } from '~/stores/timeLogs';
+
+const props = withDefaults(
+  defineProps<{
+    filteredLogs: readonly TimeLog[];
+    dimensionFilteredLogs: readonly TimeLog[];
+    bounds: DateKeyBounds;
+    preset: DateRangePreset;
+    hasDimensionFilters?: boolean;
+  }>(),
+  {
+    hasDimensionFilters: false,
+  }
+);
 
 const { t } = useI18n();
 const prefsStore = usePreferencesStore();
@@ -23,7 +39,10 @@ const selectedRange = ref<HeatmapRangeSelection>('rolling_365');
 const tooltipId = useId();
 
 const availableYears = computed(() =>
-  extractAvailableHeatmapYears(timeLogsStore.logs, prefsStore.preferences.timeZone)
+  extractAvailableHeatmapYears(
+    props.dimensionFilteredLogs,
+    prefsStore.preferences.timeZone
+  )
 );
 
 watch(availableYears, (years) => {
@@ -32,12 +51,36 @@ watch(availableYears, (years) => {
   }
 });
 
+// Preserve Last 12 months on initial load/hydration; switch to Filtered Range when the user changes dashboard date filters
+watch(
+  () => props.preset,
+  (next, prev) => {
+    if (prev && next !== prev) {
+      selectedRange.value = 'filtered';
+    }
+  }
+);
+
+watch(
+  [() => props.bounds.startDateKey, () => props.bounds.endDateKey],
+  () => {
+    if (props.preset === 'custom') {
+      selectedRange.value = 'filtered';
+    }
+  }
+);
+
+const activeLogsSource = computed(() =>
+  selectedRange.value === 'filtered' ? props.filteredLogs : props.dimensionFilteredLogs
+);
+
 const heatmap = computed(() =>
   buildActivityHeatmap({
-    logs: timeLogsStore.logs,
+    logs: activeLogsSource.value,
     timeZone: prefsStore.preferences.timeZone,
     weekStartsOn: prefsStore.preferences.weekStartsOn,
     range: selectedRange.value,
+    customBounds: props.bounds,
   })
 );
 
@@ -312,28 +355,35 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <UiInstrumentPanel signal-line>
-    <!-- Header + Range Switcher -->
+  <UiInstrumentPanel signal-line data-testid="dashboard-activity-heatmap">
+    <!-- Header + Reactive Range Switcher -->
     <div class="flex flex-wrap items-start justify-between gap-4 border-b border-border-hairline pb-4">
       <div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <Activity class="h-4 w-4 text-signal" aria-hidden="true" />
           <h2 class="display-wide text-base sm:text-lg text-text-primary">
             {{ $t('heatmap.title') }}
           </h2>
           <span
+            v-if="hasDimensionFilters"
+            data-testid="heatmap-filtered-badge"
+            class="border border-signal/40 bg-signal-soft px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-signal"
+          >
+            {{ $t('heatmap.filteredBadge') }}
+          </span>
+          <span
             v-if="timeLogsStore.streaming"
-            class="tabular-telemetry border border-signal/40 bg-signal-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-signal"
+            class="tabular-telemetry border border-signal/40 bg-signal-soft px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-signal"
           >
             {{ $t('heatmap.syncing') }}
           </span>
         </div>
         <p class="mt-1 text-sm text-text-muted">
-          {{ $t('heatmap.subtitle') }}
+          {{ $t('heatmap.dashboardSubtitle') }}
         </p>
       </div>
 
-      <!-- Year & Rolling 12m Selector Pills -->
+      <!-- Rolling 12m (default) + Filtered Range + Year Selector Pills -->
       <div
         role="group"
         :aria-label="$t('heatmap.rangeSelectorAria')"
@@ -341,6 +391,7 @@ onBeforeUnmount(() => {
       >
         <button
           type="button"
+          data-testid="heatmap-range-rolling"
           class="btn-press h-8 border px-3 text-xs font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
           :class="
             selectedRange === 'rolling_365'
@@ -351,6 +402,21 @@ onBeforeUnmount(() => {
           @click="selectedRange = 'rolling_365'"
         >
           {{ $t('heatmap.rolling12m') }}
+        </button>
+
+        <button
+          type="button"
+          data-testid="heatmap-range-filtered"
+          class="btn-press h-8 border px-3 text-xs font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+          :class="
+            selectedRange === 'filtered'
+              ? 'border-signal bg-signal-soft text-signal'
+              : 'border-border-hairline bg-bg-primary text-text-muted hover:bg-bg-hover hover:text-text-primary'
+          "
+          :aria-pressed="selectedRange === 'filtered'"
+          @click="selectedRange = 'filtered'"
+        >
+          {{ $t('heatmap.filteredRange') }}
         </button>
 
         <button
@@ -444,11 +510,11 @@ onBeforeUnmount(() => {
     >
       <div class="inline-block min-w-max">
         <!-- Month Header Row -->
-        <div class="relative mb-1.5 ml-9 h-4" :style="{ width: `${heatmap.weeks.length * 15}px` }">
+        <div class="relative mb-1.5 ml-10 h-4" :style="{ width: `${heatmap.weeks.length * 15}px` }">
           <span
             v-for="label in heatmap.monthLabels"
             :key="`${label.year}-${label.monthIndex}-${label.weekIndex}`"
-            class="tabular-telemetry absolute top-0 text-[11px] font-medium text-text-muted whitespace-nowrap"
+            class="tabular-telemetry absolute top-0 text-xs font-medium text-text-muted whitespace-nowrap"
             :style="{ left: `${label.weekIndex * 15}px` }"
           >
             {{ formatMonthLabel(label.year, label.monthIndex) }}
@@ -457,11 +523,11 @@ onBeforeUnmount(() => {
 
         <!-- Weekday Labels + Week Columns -->
         <div class="flex items-start">
-          <div class="mr-2 grid w-7 shrink-0 grid-rows-7 gap-[3px]">
+          <div class="mr-2 grid w-8 shrink-0 grid-rows-7 gap-[3px]">
             <span
               v-for="(label, idx) in weekdayRowLabels"
               :key="idx"
-              class="flex h-3 items-center justify-end pr-0.5 text-[10px] font-medium uppercase text-text-faint select-none"
+              class="flex h-3 items-center justify-end pr-0.5 text-xs font-medium uppercase text-text-faint select-none"
               aria-hidden="true"
             >
               {{ label }}

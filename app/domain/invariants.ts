@@ -529,6 +529,69 @@ export function sanitizeTaskTagIds(
   return out;
 }
 
+export type BulkTagUpdateMode = 'add' | 'remove' | 'replace';
+
+/**
+ * Computes the next sanitized project-scoped `tagIds` for a single task during a bulk tag operation.
+ */
+export function computeBulkTaskTagIds(params: {
+  currentTagIds?: readonly EntityId[] | null;
+  targetTagIds: readonly EntityId[];
+  mode: BulkTagUpdateMode;
+  projectId: EntityId;
+  allTags: readonly ProjectTag[];
+}): EntityId[] {
+  const current = sanitizeTaskTagIds(params.currentTagIds, params.projectId, params.allTags);
+  const target = sanitizeTaskTagIds(params.targetTagIds, params.projectId, params.allTags);
+
+  if (params.mode === 'replace') {
+    return target;
+  }
+
+  if (params.mode === 'add') {
+    if (target.length === 0) return current;
+    return sanitizeTaskTagIds([...current, ...target], params.projectId, params.allTags);
+  }
+
+  // 'remove'
+  if (target.length === 0) return current;
+  const removeSet = new Set(target);
+  return current.filter((id) => !removeSet.has(id));
+}
+
+/**
+ * Summarizes which tags are shared across ALL selected tasks vs SOME selected tasks.
+ */
+export function summarizeSelectedTaskTags(tasks: readonly Task[]): {
+  commonTagIds: EntityId[];
+  partialTagIds: EntityId[];
+} {
+  if (tasks.length === 0) {
+    return { commonTagIds: [], partialTagIds: [] };
+  }
+
+  const counts = new Map<EntityId, number>();
+  const orderedIds: EntityId[] = [];
+  for (const task of tasks) {
+    const uniqueForTask = new Set(task.tagIds ?? []);
+    for (const id of uniqueForTask) {
+      if (!counts.has(id)) orderedIds.push(id);
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+
+  const commonTagIds: EntityId[] = [];
+  const partialTagIds: EntityId[] = [];
+  for (const id of orderedIds) {
+    if ((counts.get(id) ?? 0) === tasks.length) {
+      commonTagIds.push(id);
+    } else {
+      partialTagIds.push(id);
+    }
+  }
+  return { commonTagIds, partialTagIds };
+}
+
 const ISO_DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**

@@ -22,6 +22,7 @@ import {
   groupLogsByTag,
   groupLogsTwoLevel,
   paginateItems,
+  resolveDefaultTimeGranularity,
 } from '../../app/domain/aggregation';
 import {
   doTimeRangesOverlap,
@@ -1392,6 +1393,63 @@ describe('domain/shortcuts (FR-6.3 Customizable Keyboard Shortcuts & Conflict De
     expect(conflicts['timer.new']).toEqual(['timer.resumeLast']);
     expect(conflicts['timer.resumeLast']).toEqual(['timer.new']);
     expect(conflicts['timer.stop']).toBeUndefined();
+  });
+
+  it('resolves smart default bar chart granularity from dashboard range length', () => {
+    expect(
+      resolveDefaultTimeGranularity({
+        preset: 'this_week',
+        bounds: { startDateKey: '2026-11-22', endDateKey: '2026-11-28' },
+      })
+    ).toBe('day');
+
+    expect(
+      resolveDefaultTimeGranularity({
+        preset: 'this_month',
+        bounds: { startDateKey: '2026-11-01', endDateKey: '2026-11-30' },
+      })
+    ).toBe('week');
+
+    expect(
+      resolveDefaultTimeGranularity({
+        preset: 'custom',
+        bounds: { startDateKey: '2026-09-01', endDateKey: '2026-11-28' },
+      })
+    ).toBe('week');
+
+    // Semester (>= 180 days) switches default grouping to per-month
+    expect(
+      resolveDefaultTimeGranularity({
+        preset: 'custom',
+        bounds: { startDateKey: '2026-05-01', endDateKey: '2026-11-28' },
+      })
+    ).toBe('month');
+
+    expect(
+      resolveDefaultTimeGranularity({
+        preset: 'all_time',
+        bounds: { startDateKey: null, endDateKey: null },
+        timeZone: 'UTC',
+        logs: [
+          {
+            id: 'old-log',
+            userId: 'u1',
+            description: 'Early architecture',
+            normalizedDescription: 'early architecture',
+            projectId: 'p1',
+            projectNameSnapshot: 'Klox',
+            projectColorSnapshot: '#3B82F6',
+            tagIds: [],
+            isBillable: true,
+            startTime: '2025-01-15T10:00:00.000Z',
+            endTime: '2025-01-15T11:00:00.000Z',
+            durationSeconds: 3600,
+            timeZone: 'UTC',
+            dateKey: '2025-01-15',
+          },
+        ],
+      })
+    ).toBe('month');
   });
 });
 

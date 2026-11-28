@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import {
   ChevronLeft,
   ChevronRight,
@@ -7,6 +8,7 @@ import {
   ChevronsRight,
   ChevronsUpDown,
 } from 'lucide-vue-next';
+import type { UiSelectOption } from '~/components/ui/Select.vue';
 import {
   TASK_PAGE_SIZE_OPTIONS,
   type TaskPaginationWindow,
@@ -32,8 +34,15 @@ const emit = defineEmits<{
   toggleAllExpanded: [];
 }>();
 
-function handlePageSizeChange(event: Event) {
-  const raw = Number((event.target as HTMLSelectElement).value);
+const pageSizeOptions = computed<UiSelectOption<number>[]>(() =>
+  TASK_PAGE_SIZE_OPTIONS.map((opt) => ({
+    value: opt,
+    label: String(opt),
+  }))
+);
+
+function handlePageSizeChange(value: string | number) {
+  const raw = Number(value);
   if (Number.isFinite(raw) && raw > 0) {
     emit('update:pageSize', raw);
   }
@@ -58,23 +67,22 @@ function handlePageSizeChange(event: Event) {
         }}
       </span>
 
-      <label
+      <div
         v-if="!compact"
         class="inline-flex items-center gap-1.5 text-text-muted"
       >
         <span>{{ $t('tasks.pagination.perPageLabel') }}</span>
-        <select
-          :value="window.pageSize"
-          data-testid="tasks-page-size-select"
+        <UiSelect
+          :model-value="window.pageSize"
+          :options="pageSizeOptions"
+          size="sm"
+          tabular
+          test-id="tasks-page-size-select"
           :aria-label="$t('tasks.pagination.perPageAria')"
-          class="tabular-telemetry h-8 border border-border-input bg-bg-elevated px-2 text-xs font-medium text-text-primary focus:border-signal focus:outline-none"
-          @change="handlePageSizeChange"
-        >
-          <option v-for="opt in TASK_PAGE_SIZE_OPTIONS" :key="opt" :value="opt">
-            {{ opt }}
-          </option>
-        </select>
-      </label>
+          class="w-[4.75rem]"
+          @update:model-value="handlePageSizeChange"
+        />
+      </div>
     </div>
 
     <div class="flex flex-wrap items-center gap-1.5">

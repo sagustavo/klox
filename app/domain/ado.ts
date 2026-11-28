@@ -2,16 +2,35 @@
  * Pure domain helpers for Azure DevOps Work Item Sync (AB#31 / FR-V1 / ADR-0015).
  * Zero Vue or Firebase imports allowed.
  */
-import { MAX_TASK_DEPTH, UNASSIGNED_PROJECT_ID, formatTaskHierarchyLabel } from './invariants';
+import {
+  MAX_TASK_DEPTH,
+  UNASSIGNED_PROJECT_ID,
+  compareTasksByPriority,
+  formatTaskHierarchyLabel,
+  type TaskTreeNode,
+} from './invariants';
+import { normalizeTaskTrackingPolicy } from './preferences';
 import type {
   AdoConnectionSummary,
   EntityId,
   Project,
   Task,
+  TaskTrackingPolicy,
   TimeLog,
 } from './types';
 
 export const LEGACY_ADO_CONNECTION_ID = 'legacy_default';
+export const DEFAULT_ADO_COMPLETED_WORK_FIELD = 'Microsoft.VSTS.Scheduling.CompletedWork';
+const ADO_FIELD_REF_REGEX = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/;
+const NON_COMPLETED_WORK_CONTAINER_TYPES = new Set([
+  'product backlog item',
+  'user story',
+  'feature',
+  'epic',
+  'issue',
+  'impediment',
+  'test case',
+]);
 
 export type AdoErrorCode =
   | 'AUTH_INVALID'
@@ -85,6 +104,19 @@ export interface AdoWorkItemTypeCapability {
   supportsCompletedWork: boolean;
 }
 
+export interface AdoFieldOption {
+  referenceName: string;
+  name: string;
+  type: 'double' | 'integer';
+}
+
+export type TaskTimerBlockReason = 'PARENT_HAS_SUBTASKS' | 'ADO_COMPLETED_WORK_UNSUPPORTED';
+
+export interface TaskTimerEligibility {
+  allowed: boolean;
+  reason: TaskTimerBlockReason | null;
+}
+
 export interface EffectiveProjectAdoTarget {
   connectionId: EntityId;
   enabled: boolean;
@@ -92,6 +124,7 @@ export interface EffectiveProjectAdoTarget {
   organization: string;
   project: string;
   defaultWorkItemType: string;
+  completedWorkFieldRef: string;
 }
 
 export interface AdoSyncLogContribution {
@@ -143,6 +176,19 @@ export interface AdoSyncCandidatesResult {
 
 const ORG_SLUG_REGEX = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/;
 const IPV4_REGEX = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+export function normalizeAdoFieldRef(
+  raw?: string | null
+): { valid: true; fieldRef: string } | { valid: false; error: 'ADO_INVALID_INPUT' } {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) {
+    return { valid: true, fieldRef: DEFAULT_ADO_COMPLETED_WORK_FIELD };
+  }
+  if (trimmed.length > 128 || !ADO_FIELD_REF_REGEX.test(trimmed)) {
+    return { valid: false, error: 'ADO_INVALID_INPUT' };
+  }
+  return { valid: true, fieldRef: trimmed };
+}
 
 export function roundHours2(hours: number): number {
   if (!Number.isFinite(hours) || hours <= 0) return 0;
@@ -391,24 +437,37 @@ export function normalizeStoredAdoConnections(
     const normalized = raw.adoConnections
       .filter((item): item is Partial<AdoConnectionSummary> => Boolean(item && typeof item === 'object'))
       .filter((item) => Boolean(item.connected && item.orgUrl && item.defaultProject))
-      .map((item, idx) => ({
-        id: String(item.id || `ado_${idx}`),
-        kloxProjectId: String(item.kloxProjectId || ''),
-        connected: Boolean(item.connected),
-        authType: item.authType === 'entra_oauth' ? 'entra_oauth' : 'pat',
-        orgUrl: String(item.orgUrl || ''),
-        organization: String(item.organization || ''),
-        defaultProject: String(item.defaultProject || ''),
-        defaultWorkItemType: String(item.defaultWorkItemType || 'Task'),
-        tokenHint: String(item.tokenHint || '••••'),
-        connectedAt: String(item.connectedAt || ''),
-        lastVerifiedAt: String(item.lastVerifiedAt || ''),
-      })) satisfies AdoConnectionSummary[];
+      .map((item, idx) => {
+        const fieldCheck = normalizeAdoFieldRef(item.completedWorkFieldRef);
+        const completedWorkFieldRef = fieldCheck.valid
+          ? fieldCheck.fieldRef
+          : DEFAULT_ADO_COMPLETED_WORK_FIELD;
+        return {
+          id: String(item.id || `ado_${idx}`),
+          kloxProjectId: String(item.kloxProjectId || ''),
+          connected: Boolean(item.connected),
+          authType: item.authType === 'entra_oauth' ? 'entra_oauth' : 'pat',
+          orgUrl: String(item.orgUrl || ''),
+          organization: String(item.organization || ''),
+          defaultProject: String(item.defaultProject || ''),
+          defaultWorkItemType: String(item.defaultWorkItemType || 'Task'),
+          ...(completedWorkFieldRef !== DEFAULT_ADO_COMPLETED_WORK_FIELD
+            ? { completedWorkFieldRef }
+            : {}),
+          tokenHint: String(item.tokenHint || '••••'),
+          connectedAt: String(item.connectedAt || ''),
+          lastVerifiedAt: String(item.lastVerifiedAt || ''),
+        };
+      }) satisfies AdoConnectionSummary[];
     if (normalized.length > 0) return normalized;
   }
 
   const legacy = raw.adoConnection as Partial<AdoConnectionSummary> | null | undefined;
   if (legacy && typeof legacy === 'object' && legacy.connected && legacy.orgUrl) {
+    const fieldCheck = normalizeAdoFieldRef(legacy.completedWorkFieldRef);
+    const completedWorkFieldRef = fieldCheck.valid
+      ? fieldCheck.fieldRef
+      : DEFAULT_ADO_COMPLETED_WORK_FIELD;
     return [
       {
         id: String(legacy.id || LEGACY_ADO_CONNECTION_ID),
@@ -419,6 +478,9 @@ export function normalizeStoredAdoConnections(
         organization: String(legacy.organization || ''),
         defaultProject: String(legacy.defaultProject || ''),
         defaultWorkItemType: String(legacy.defaultWorkItemType || 'Task'),
+        ...(completedWorkFieldRef !== DEFAULT_ADO_COMPLETED_WORK_FIELD
+          ? { completedWorkFieldRef }
+          : {}),
         tokenHint: String(legacy.tokenHint || '••••'),
         connectedAt: String(legacy.connectedAt || ''),
         lastVerifiedAt: String(legacy.lastVerifiedAt || ''),
@@ -466,6 +528,10 @@ export function resolveEffectiveProjectAdoTarget(
   const organization = norm.valid ? norm.organization : bound.organization;
   const targetProject = cfg?.project?.trim() || bound.defaultProject;
   const defaultWorkItemType = cfg?.defaultWorkItemType?.trim() || bound.defaultWorkItemType || 'Task';
+  const fieldCheck = normalizeAdoFieldRef(bound.completedWorkFieldRef);
+  const completedWorkFieldRef = fieldCheck.valid
+    ? fieldCheck.fieldRef
+    : DEFAULT_ADO_COMPLETED_WORK_FIELD;
 
   if (!targetProject) return null;
 
@@ -476,7 +542,167 @@ export function resolveEffectiveProjectAdoTarget(
     organization,
     project: targetProject,
     defaultWorkItemType,
+    completedWorkFieldRef,
   };
+}
+
+/**
+ * Resolves whether an ADO-linked Task's work item type supports the configured hours field.
+ * Always returns `true` for unlinked local tasks.
+ */
+export function resolveTaskSupportsCompletedWork(
+  task: Task,
+  workItemTypes?: readonly AdoWorkItemTypeCapability[],
+  completedWorkFieldRef?: string
+): boolean {
+  if (
+    task.externalProvider !== 'azure_devops' ||
+    parseWorkItemIdInput(task.externalWorkItemId) === null
+  ) {
+    return true;
+  }
+
+  if (task.externalWorkItemType && workItemTypes && workItemTypes.length > 0) {
+    const typeLower = task.externalWorkItemType.trim().toLowerCase();
+    const liveMatch = workItemTypes.find((wt) => wt.name.toLowerCase() === typeLower);
+    if (liveMatch) return liveMatch.supportsCompletedWork;
+  }
+
+  if (typeof task.externalSupportsCompletedWork === 'boolean') {
+    return task.externalSupportsCompletedWork;
+  }
+
+  const fieldCheck = normalizeAdoFieldRef(completedWorkFieldRef);
+  const activeField = fieldCheck.valid ? fieldCheck.fieldRef : DEFAULT_ADO_COMPLETED_WORK_FIELD;
+  if (activeField.toLowerCase() === DEFAULT_ADO_COMPLETED_WORK_FIELD.toLowerCase()) {
+    const wt = (task.externalWorkItemType ?? '').trim().toLowerCase();
+    if (wt && NON_COMPLETED_WORK_CONTAINER_TYPES.has(wt)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Evaluates whether a live Timer can be started against `task` under current `TaskTrackingPolicy`.
+ */
+export function evaluateTaskTimerEligibility(params: {
+  task: Task;
+  allTasks: readonly Task[];
+  policy?: Partial<TaskTrackingPolicy> | null;
+  workItemTypes?: readonly AdoWorkItemTypeCapability[];
+  completedWorkFieldRef?: string;
+}): TaskTimerEligibility {
+  const policy = normalizeTaskTrackingPolicy(params.policy);
+  const hasChildren = params.allTasks.some(
+    (t) => t.projectId === params.task.projectId && t.parentTaskId === params.task.id
+  );
+
+  if (hasChildren && !policy.allowParentTaskTracking) {
+    return { allowed: false, reason: 'PARENT_HAS_SUBTASKS' };
+  }
+
+  const isAdoLinked =
+    params.task.externalProvider === 'azure_devops' &&
+    parseWorkItemIdInput(params.task.externalWorkItemId) !== null;
+
+  if (
+    isAdoLinked &&
+    !resolveTaskSupportsCompletedWork(
+      params.task,
+      params.workItemTypes,
+      params.completedWorkFieldRef
+    ) &&
+    !policy.allowNonCompletedWorkTracking
+  ) {
+    return { allowed: false, reason: 'ADO_COMPLETED_WORK_UNSUPPORTED' };
+  }
+
+  return { allowed: true, reason: null };
+}
+
+function hasAnyAdoDescendant(children: readonly TaskTreeNode[]): boolean {
+  for (const child of children) {
+    if (
+      child.task.externalProvider === 'azure_devops' &&
+      parseWorkItemIdInput(child.task.externalWorkItemId) !== null
+    ) {
+      return true;
+    }
+    if (hasAnyAdoDescendant(child.children)) return true;
+  }
+  return false;
+}
+
+/**
+ * Computes effective `CompletedWork` hours for a task node:
+ * parent containers sum their children's hours, while Level-1 ADO Tasks whose only children
+ * are manual local Level-2 sub-subtasks retain their authoritative ADO `CompletedWork` hours.
+ */
+export function computeEffectiveTaskCompletedWorkHours(
+  node: TaskTreeNode,
+  workItemTypes?: readonly AdoWorkItemTypeCapability[],
+  completedWorkFieldRef?: string
+): number {
+  if (node.children.length === 0) {
+    return roundHours2(node.task.completedWorkHours || 0);
+  }
+
+  let childrenSum = 0;
+  for (const child of node.children) {
+    childrenSum += computeEffectiveTaskCompletedWorkHours(
+      child,
+      workItemTypes,
+      completedWorkFieldRef
+    );
+  }
+  const roundedChildrenSum = roundHours2(childrenSum);
+
+  const isSelfAdoHoursTarget =
+    node.task.externalProvider === 'azure_devops' &&
+    parseWorkItemIdInput(node.task.externalWorkItemId) !== null &&
+    resolveTaskSupportsCompletedWork(node.task, workItemTypes, completedWorkFieldRef);
+
+  if (isSelfAdoHoursTarget && !hasAnyAdoDescendant(node.children)) {
+    return roundHours2(node.task.completedWorkHours || 0);
+  }
+
+  return roundedChildrenSum;
+}
+
+export function buildEffectiveCompletedWorkMap(
+  roots: readonly TaskTreeNode[],
+  workItemTypes?: readonly AdoWorkItemTypeCapability[],
+  completedWorkFieldRef?: string
+): Map<EntityId, number> {
+  const map = new Map<EntityId, number>();
+  const walk = (node: TaskTreeNode): number => {
+    let val: number;
+    if (node.children.length === 0) {
+      val = roundHours2(node.task.completedWorkHours || 0);
+    } else {
+      let childrenSum = 0;
+      for (const child of node.children) {
+        childrenSum += walk(child);
+      }
+      const roundedChildrenSum = roundHours2(childrenSum);
+      const isSelfAdoHoursTarget =
+        node.task.externalProvider === 'azure_devops' &&
+        parseWorkItemIdInput(node.task.externalWorkItemId) !== null &&
+        resolveTaskSupportsCompletedWork(node.task, workItemTypes, completedWorkFieldRef);
+      val =
+        isSelfAdoHoursTarget && !hasAnyAdoDescendant(node.children)
+          ? roundHours2(node.task.completedWorkHours || 0)
+          : roundedChildrenSum;
+    }
+    map.set(node.task.id, val);
+    return val;
+  };
+  for (const root of roots) {
+    walk(root);
+  }
+  return map;
 }
 
 /**
@@ -545,8 +771,19 @@ export function buildAdoSyncCandidates(params: {
   connections?: readonly AdoConnectionSummary[];
   connection?: AdoConnectionSummary | null;
   filterProjectId?: EntityId;
+  workItemTypesByConn?:
+    | ReadonlyMap<EntityId, readonly AdoWorkItemTypeCapability[]>
+    | Partial<Record<EntityId, readonly AdoWorkItemTypeCapability[]>>;
 }): AdoSyncCandidatesResult {
-  const { projects, tasks, logs, connections, connection, filterProjectId } = params;
+  const {
+    projects,
+    tasks,
+    logs,
+    connections,
+    connection,
+    filterProjectId,
+    workItemTypesByConn,
+  } = params;
   const activeConnections = connections ?? (connection ? [connection] : []);
   if (!activeConnections.some((c) => c?.connected)) {
     return {
@@ -579,6 +816,25 @@ export function buildAdoSyncCandidates(params: {
     if (controllingTask) {
       const workItemId = parseWorkItemIdInput(controllingTask.externalWorkItemId);
       if (!workItemId) continue;
+
+      const connTypes =
+        workItemTypesByConn instanceof Map
+          ? workItemTypesByConn.get(target.connectionId)
+          : (
+              workItemTypesByConn as
+                | Partial<Record<EntityId, readonly AdoWorkItemTypeCapability[]>>
+                | undefined
+            )?.[target.connectionId];
+      if (
+        !resolveTaskSupportsCompletedWork(
+          controllingTask,
+          connTypes,
+          target.completedWorkFieldRef
+        )
+      ) {
+        // Non-CompletedWork items (e.g. PBI, User Story) can never be pushed to Azure DevOps
+        continue;
+      }
 
       const orgUrl = controllingTask.externalOrgUrl?.trim() || target.orgUrl;
       const adoProject = controllingTask.externalProject?.trim() || target.project;
@@ -676,4 +932,76 @@ export function buildAdoSyncCandidates(params: {
     totalUnsyncedSeconds,
     totalRecommendedHours: secondsToHours2(totalUnsyncedSeconds),
   };
+}
+
+export interface AdoSyncParentGroup {
+  key: string;
+  isParentContainer: boolean;
+  parentTask: Task | null;
+  projectName: string;
+  projectColor: string;
+  items: AdoSyncCandidate[];
+  totalCachedCompletedWork: number;
+  totalUnsyncedSeconds: number;
+  totalRecommendedDeltaHours: number;
+}
+
+/**
+ * Organizes flat pushable `AdoSyncCandidate` items into a 2-level hierarchy keyed by each
+ * item's root ancestor `Task` (e.g., PBI -> child Tasks), keeping root items without parents standalone.
+ */
+export function groupAdoSyncCandidatesByParent(
+  readyItems: readonly AdoSyncCandidate[],
+  allTasks: readonly Task[]
+): AdoSyncParentGroup[] {
+  const taskById = new Map(allTasks.map((t) => [t.id, t]));
+  const groups = new Map<string, AdoSyncParentGroup>();
+
+  const findRootAncestor = (task: Task): Task | null => {
+    let current = task;
+    const seen = new Set<EntityId>([task.id]);
+    while (current.parentTaskId && !seen.has(current.parentTaskId)) {
+      seen.add(current.parentTaskId);
+      const parent = taskById.get(current.parentTaskId);
+      if (!parent || parent.projectId !== task.projectId) break;
+      current = parent;
+    }
+    return current.id !== task.id ? current : null;
+  };
+
+  for (const item of readyItems) {
+    const rootAncestor = findRootAncestor(item.primaryTask);
+    const key = rootAncestor ? `parent:${rootAncestor.id}` : item.key;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        isParentContainer: Boolean(rootAncestor),
+        parentTask: rootAncestor,
+        projectName: item.projectName,
+        projectColor: item.projectColor,
+        items: [],
+        totalCachedCompletedWork: 0,
+        totalUnsyncedSeconds: 0,
+        totalRecommendedDeltaHours: 0,
+      };
+      groups.set(key, group);
+    }
+    group.items.push(item);
+    group.totalCachedCompletedWork = roundHours2(
+      group.totalCachedCompletedWork + (item.cachedCompletedWork || 0)
+    );
+    group.totalUnsyncedSeconds += item.unsyncedSeconds;
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      items: [...group.items].sort(
+        (a, b) =>
+          compareTasksByPriority(a.primaryTask, b.primaryTask) || a.workItemId - b.workItemId
+      ),
+      totalRecommendedDeltaHours: secondsToHours2(group.totalUnsyncedSeconds),
+    }))
+    .sort((a, b) => b.totalUnsyncedSeconds - a.totalUnsyncedSeconds);
 }

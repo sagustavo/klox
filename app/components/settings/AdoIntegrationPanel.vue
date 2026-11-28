@@ -10,16 +10,28 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  SlidersHorizontal,
   Unlink,
 } from 'lucide-vue-next';
-import { normalizeAdoOrgUrl, type AdoErrorCode } from '~/domain/ado';
+import { SwitchRoot, SwitchThumb } from 'reka-ui';
+import type { UiSelectOption } from '~/components/ui/Select.vue';
+import {
+  DEFAULT_ADO_COMPLETED_WORK_FIELD,
+  normalizeAdoFieldRef,
+  normalizeAdoOrgUrl,
+  type AdoErrorCode,
+  type AdoFieldOption,
+} from '~/domain/ado';
 import { PROJECT_COLOR_PALETTE } from '~/domain/invariants';
+import { normalizeTaskTrackingPolicy } from '~/domain/preferences';
 import type { AdoConnectionSummary, EntityId, Project } from '~/domain/types';
 import { useAdoStore, type AdoProjectOption } from '~/stores/ado';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
+import { usePreferencesStore } from '~/stores/preferences';
 
 const CREATE_NEW_PROJECT_VALUE = '__create_klox_project__';
+const CUSTOM_FIELD_SENTINEL = '__custom_field_ref__';
 
 const emit = defineEmits<{
   saved: [];
@@ -30,6 +42,28 @@ const route = useRoute();
 const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 const adoStore = useAdoStore();
+const prefsStore = usePreferencesStore();
+
+const taskTrackingPolicy = computed(() =>
+  normalizeTaskTrackingPolicy(prefsStore.preferences.taskTrackingPolicy)
+);
+
+async function updateTaskPolicyField(
+  field: 'allowNonCompletedWorkTracking' | 'allowParentTaskTracking',
+  checked: boolean
+) {
+  await prefsStore.updatePreferences(
+    {
+      taskTrackingPolicy: {
+        ...taskTrackingPolicy.value,
+        [field]: checked,
+      },
+    },
+    authStore.user?.uid,
+    authStore.isDemoMode
+  );
+  emit('saved');
+}
 
 // Form visibility & active editing target (`null` = new connection, `string` = editing ID)
 const formOpen = ref(false);
@@ -44,9 +78,12 @@ const patInput = ref('');
 const showPat = ref(false);
 const projectInput = ref('');
 const workItemTypeInput = ref('Task');
+const selectedFieldPreset = ref<string>(DEFAULT_ADO_COMPLETED_WORK_FIELD);
+const customFieldRefInput = ref('');
 
 const loadedProjects = ref<AdoProjectOption[]>([]);
 const loadedTypes = ref(adoStore.workItemTypes);
+const loadedNumericFields = ref<AdoFieldOption[]>([]);
 const manualProjectEntry = ref(false);
 const loadingPreview = ref(false);
 
@@ -77,6 +114,30 @@ function getKloxProject(projectId?: EntityId | null): Project | undefined {
   return catalogStore.getProjectById(projectId);
 }
 
+const activeCompletedWorkFieldRef = computed(() =>
+  selectedFieldPreset.value === CUSTOM_FIELD_SENTINEL
+    ? customFieldRefInput.value.trim()
+    : selectedFieldPreset.value
+);
+
+const completedWorkFieldValid = computed(() =>
+  normalizeAdoFieldRef(activeCompletedWorkFieldRef.value).valid
+);
+
+function syncFieldInputsFromRef(rawFieldRef?: string) {
+  const clean = (rawFieldRef ?? '').trim() || DEFAULT_ADO_COMPLETED_WORK_FIELD;
+  if (
+    clean.toLowerCase() === DEFAULT_ADO_COMPLETED_WORK_FIELD.toLowerCase() ||
+    loadedNumericFields.value.some((f) => f.referenceName === clean)
+  ) {
+    selectedFieldPreset.value = clean;
+    customFieldRefInput.value = '';
+  } else {
+    selectedFieldPreset.value = CUSTOM_FIELD_SENTINEL;
+    customFieldRefInput.value = clean;
+  }
+}
+
 function resetFormDefaults(preferredKloxProjectId?: string) {
   editingConnectionId.value = null;
   const candidate =
@@ -93,8 +154,11 @@ function resetFormDefaults(preferredKloxProjectId?: string) {
   showPat.value = false;
   projectInput.value = '';
   workItemTypeInput.value = 'Task';
+  selectedFieldPreset.value = DEFAULT_ADO_COMPLETED_WORK_FIELD;
+  customFieldRefInput.value = '';
   loadedProjects.value = [];
   loadedTypes.value = [];
+  loadedNumericFields.value = [];
   manualProjectEntry.value = false;
   actionError.value = null;
 }
@@ -122,6 +186,8 @@ function openEditForm(conn: AdoConnectionSummary) {
   workItemTypeInput.value = conn.defaultWorkItemType || 'Task';
   loadedProjects.value = [];
   loadedTypes.value = [];
+  loadedNumericFields.value = adoStore.numericFieldsByConn[conn.id] ?? [];
+  syncFieldInputsFromRef(conn.completedWorkFieldRef);
   manualProjectEntry.value = false;
   actionError.value = null;
   formOpen.value = true;
@@ -204,6 +270,61 @@ const selectedTypeSupportsCompletedWork = computed(() => {
   return match ? match.supportsCompletedWork : true;
 });
 
+const kloxProjectSelectOptions = computed<UiSelectOption<string>[]>(() => [
+  ...availableKloxProjects.value.map((proj) => ({
+    value: proj.id,
+    label: proj.name,
+    color: proj.color,
+  })),
+  {
+    value: CREATE_NEW_PROJECT_VALUE,
+    label: `+ ${t('ado.settings.createKloxProjectOption')}`,
+  },
+]);
+
+const adoProjectSelectOptions = computed<UiSelectOption<string>[]>(() =>
+  loadedProjects.value.map((proj) => ({
+    value: proj.name,
+    label: proj.name,
+  }))
+);
+
+const workItemTypeSelectOptions = computed<UiSelectOption<string>[]>(() =>
+  availableWorkItemTypes.value.map((wt) => ({
+    value: wt.name,
+    label: wt.name,
+    badge: wt.supportsCompletedWork ? undefined : t('ado.scrumNotice.typeShortBadge'),
+  }))
+);
+
+const completedWorkFieldSelectOptions = computed<UiSelectOption<string>[]>(() => {
+  const seen = new Set<string>();
+  const opts: UiSelectOption<string>[] = [
+    {
+      value: DEFAULT_ADO_COMPLETED_WORK_FIELD,
+      label: `Completed Work (${DEFAULT_ADO_COMPLETED_WORK_FIELD})`,
+    },
+  ];
+  seen.add(DEFAULT_ADO_COMPLETED_WORK_FIELD.toLowerCase());
+
+  for (const field of loadedNumericFields.value) {
+    const key = field.referenceName.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    opts.push({
+      value: field.referenceName,
+      label: `${field.name} (${field.referenceName})`,
+      badge: field.type,
+    });
+  }
+
+  opts.push({
+    value: CUSTOM_FIELD_SENTINEL,
+    label: t('ado.settings.completedWorkFieldCustomOption'),
+  });
+  return opts;
+});
+
 async function handleLoadAdoProjects(showErrors = true) {
   const norm = normalizeAdoOrgUrl(orgInput.value);
   if (!norm.valid) {
@@ -215,6 +336,7 @@ async function handleLoadAdoProjects(showErrors = true) {
     return;
   }
 
+  const fieldCheck = normalizeAdoFieldRef(activeCompletedWorkFieldRef.value);
   loadingPreview.value = true;
   if (showErrors) actionError.value = null;
   try {
@@ -223,6 +345,7 @@ async function handleLoadAdoProjects(showErrors = true) {
       connectionId: editingConnectionId.value || undefined,
       orgUrl: norm.orgUrl,
       defaultProject: projectInput.value.trim() || undefined,
+      completedWorkFieldRef: fieldCheck.valid ? fieldCheck.fieldRef : undefined,
       pat: patInput.value.trim() || undefined,
     });
     if (!res.ok) {
@@ -231,6 +354,10 @@ async function handleLoadAdoProjects(showErrors = true) {
     }
     loadedProjects.value = res.projects;
     loadedTypes.value = res.workItemTypes;
+    if (res.numericFields.length > 0) {
+      loadedNumericFields.value = res.numericFields;
+      syncFieldInputsFromRef(activeCompletedWorkFieldRef.value);
+    }
     manualProjectEntry.value = false;
     if (
       res.projects.length > 0 &&
@@ -254,6 +381,11 @@ async function handleSaveConnection() {
     return;
   }
   if (!projectInput.value.trim()) {
+    actionError.value = 'ADO_INVALID_INPUT';
+    return;
+  }
+  const fieldCheck = normalizeAdoFieldRef(activeCompletedWorkFieldRef.value);
+  if (!fieldCheck.valid) {
     actionError.value = 'ADO_INVALID_INPUT';
     return;
   }
@@ -291,6 +423,7 @@ async function handleSaveConnection() {
     orgUrl: norm.orgUrl,
     defaultProject: projectInput.value.trim(),
     defaultWorkItemType: workItemTypeInput.value.trim() || 'Task',
+    completedWorkFieldRef: fieldCheck.fieldRef,
     pat: patInput.value.trim() || undefined,
   });
 
@@ -467,6 +600,12 @@ async function confirmDisconnect() {
             <span>{{ $t('ado.settings.tokenLabel') }}: {{ conn.tokenHint }}</span>
             <span>·</span>
             <span>{{ $t('ado.settings.defaultTypeLabel') }}: {{ conn.defaultWorkItemType }}</span>
+            <template v-if="conn.completedWorkFieldRef">
+              <span>·</span>
+              <span class="border border-signal/35 bg-signal-soft px-1.5 py-0.5 text-signal">
+                {{ $t('ado.settings.completedWorkFieldBadge', { field: conn.completedWorkFieldRef }) }}
+              </span>
+            </template>
           </div>
         </div>
 
@@ -520,20 +659,15 @@ async function confirmDisconnect() {
           <label for="ado-klox-project" class="label-eyebrow block text-text-muted">
             {{ $t('ado.settings.kloxProjectLabel') }} <span aria-hidden="true">*</span>
           </label>
-          <select
+          <UiSelect
             id="ado-klox-project"
-            v-model="selectedKloxProjectId"
-            required
-            data-testid="ado-klox-project-select"
-            class="mt-1.5 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-          >
-            <option v-for="proj in availableKloxProjects" :key="proj.id" :value="proj.id">
-              {{ proj.name }}
-            </option>
-            <option :value="CREATE_NEW_PROJECT_VALUE">
-              + {{ $t('ado.settings.createKloxProjectOption') }}
-            </option>
-          </select>
+            class="mt-1.5"
+            test-id="ado-klox-project-select"
+            :model-value="selectedKloxProjectId"
+            :options="kloxProjectSelectOptions"
+            :aria-label="$t('ado.settings.kloxProjectLabel')"
+            @update:model-value="selectedKloxProjectId = String($event)"
+          />
           <p class="mt-1 text-xs text-text-muted">
             {{ $t('ado.settings.kloxProjectHint') }}
           </p>
@@ -649,18 +783,16 @@ async function confirmDisconnect() {
               <span>{{ $t('ado.settings.loadProjectsButton') }}</span>
             </button>
           </div>
-          <select
+          <UiSelect
             v-if="loadedProjects.length > 0 && !manualProjectEntry"
             id="ado-default-project"
-            v-model="projectInput"
-            data-testid="ado-project-select"
-            class="mt-1.5 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-            @change="handleLoadAdoProjects(false)"
-          >
-            <option v-for="proj in loadedProjects" :key="proj.id" :value="proj.name">
-              {{ proj.name }}
-            </option>
-          </select>
+            class="mt-1.5"
+            test-id="ado-project-select"
+            :model-value="projectInput"
+            :options="adoProjectSelectOptions"
+            :aria-label="$t('ado.settings.projectLabel')"
+            @update:model-value="projectInput = String($event); handleLoadAdoProjects(false)"
+          />
           <input
             v-else
             id="ado-default-project"
@@ -678,18 +810,58 @@ async function confirmDisconnect() {
           <label for="ado-default-type" class="label-eyebrow block text-text-muted">
             {{ $t('ado.settings.defaultTypeLabel') }}
           </label>
-          <select
+          <UiSelect
             id="ado-default-type"
-            v-model="workItemTypeInput"
-            data-testid="ado-workitem-type-select"
-            class="mt-1.5 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-          >
-            <option v-for="wt in availableWorkItemTypes" :key="wt.name" :value="wt.name">
-              {{ wt.name }}{{ wt.supportsCompletedWork ? '' : ` — ${$t('ado.scrumNotice.typeShortBadge')}` }}
-            </option>
-          </select>
+            class="mt-1.5"
+            test-id="ado-workitem-type-select"
+            :model-value="workItemTypeInput"
+            :options="workItemTypeSelectOptions"
+            :aria-label="$t('ado.settings.defaultTypeLabel')"
+            @update:model-value="workItemTypeInput = String($event)"
+          />
           <p v-if="!selectedTypeSupportsCompletedWork" class="mt-1 text-xs text-amber-500">
             {{ $t('ado.scrumNotice.typeMissingField', { type: workItemTypeInput }) }}
+          </p>
+        </div>
+
+        <!-- Configurable Hours Field Reference (Custom or CompletedWork) -->
+        <div class="sm:col-span-2">
+          <label for="ado-completed-work-field" class="label-eyebrow block text-text-muted">
+            {{ $t('ado.settings.completedWorkFieldLabel') }}
+          </label>
+          <div class="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <UiSelect
+              id="ado-completed-work-field"
+              tabular
+              test-id="ado-completed-work-field-select"
+              :model-value="selectedFieldPreset"
+              :options="completedWorkFieldSelectOptions"
+              :aria-label="$t('ado.settings.completedWorkFieldLabel')"
+              @update:model-value="selectedFieldPreset = String($event); handleLoadAdoProjects(false)"
+            />
+            <input
+              v-if="selectedFieldPreset === CUSTOM_FIELD_SENTINEL"
+              v-model="customFieldRefInput"
+              type="text"
+              data-testid="ado-custom-field-ref-input"
+              :placeholder="$t('ado.settings.completedWorkFieldPlaceholder')"
+              class="tabular-telemetry h-10 w-full border bg-bg-primary px-3 text-sm text-text-primary placeholder:text-text-faint focus:outline-none"
+              :class="
+                completedWorkFieldValid
+                  ? 'border-border-input focus:border-signal'
+                  : 'border-destructive focus:border-destructive'
+              "
+              @change="completedWorkFieldValid && handleLoadAdoProjects(false)"
+            />
+          </div>
+          <p
+            v-if="!completedWorkFieldValid"
+            class="mt-1 text-xs text-destructive"
+          >
+            {{ $t('ado.settings.completedWorkFieldInvalid') }}
+          </p>
+          <p v-else class="mt-1 text-xs text-text-muted">
+            {{ $t('ado.settings.completedWorkFieldHint') }}
           </p>
         </div>
       </div>
@@ -727,6 +899,63 @@ async function confirmDisconnect() {
         </div>
       </div>
     </form>
+
+    <!-- Task & Timer Execution Rules (part of Azure DevOps Sync) -->
+    <div id="task-tracking-rules" class="mt-6 border-t border-border-hairline pt-6">
+      <div class="pb-4">
+        <div class="flex items-center gap-2">
+          <SlidersHorizontal class="h-4 w-4 text-signal" aria-hidden="true" />
+          <h3 class="display-wide text-sm sm:text-base text-text-primary">
+            {{ $t('settings.taskPolicy.title') }}
+          </h3>
+        </div>
+        <p class="mt-1 text-xs sm:text-sm text-text-muted">
+          {{ $t('settings.taskPolicy.subtitle') }}
+        </p>
+      </div>
+
+      <div class="divide-y divide-border-hairline border border-border-hairline bg-bg-primary p-4">
+        <div class="flex items-start justify-between gap-4 pb-4">
+          <div class="space-y-1">
+            <label for="policy-allow-non-cw" class="block text-sm font-medium text-text-primary">
+              {{ $t('settings.taskPolicy.allowNonCompletedWorkTitle') }}
+            </label>
+            <p class="text-xs leading-relaxed text-text-muted">
+              {{ $t('settings.taskPolicy.allowNonCompletedWorkDesc') }}
+            </p>
+          </div>
+          <SwitchRoot
+            id="policy-allow-non-cw"
+            data-testid="policy-allow-non-cw-switch"
+            :checked="taskTrackingPolicy.allowNonCompletedWorkTracking"
+            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center border border-border-input bg-bg-elevated transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal data-[state=checked]:border-signal data-[state=checked]:bg-signal"
+            @update:checked="updateTaskPolicyField('allowNonCompletedWorkTracking', $event)"
+          >
+            <SwitchThumb class="pointer-events-none block h-4 w-4 translate-x-0.5 bg-text-muted transition-transform data-[state=checked]:translate-x-5 data-[state=checked]:bg-white" />
+          </SwitchRoot>
+        </div>
+
+        <div class="flex items-start justify-between gap-4 pt-4">
+          <div class="space-y-1">
+            <label for="policy-allow-parent" class="block text-sm font-medium text-text-primary">
+              {{ $t('settings.taskPolicy.allowParentTrackingTitle') }}
+            </label>
+            <p class="text-xs leading-relaxed text-text-muted">
+              {{ $t('settings.taskPolicy.allowParentTrackingDesc') }}
+            </p>
+          </div>
+          <SwitchRoot
+            id="policy-allow-parent"
+            data-testid="policy-allow-parent-switch"
+            :checked="taskTrackingPolicy.allowParentTaskTracking"
+            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center border border-border-input bg-bg-elevated transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal data-[state=checked]:border-signal data-[state=checked]:bg-signal"
+            @update:checked="updateTaskPolicyField('allowParentTaskTracking', $event)"
+          >
+            <SwitchThumb class="pointer-events-none block h-4 w-4 translate-x-0.5 bg-text-muted transition-transform data-[state=checked]:translate-x-5 data-[state=checked]:bg-white" />
+          </SwitchRoot>
+        </div>
+      </div>
+    </div>
 
     <UiConfirmDialog
       :open="Boolean(pendingDisconnect)"

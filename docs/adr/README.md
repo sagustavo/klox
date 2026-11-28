@@ -19,4 +19,5 @@ ADRs are written **on demand** in the same change that introduces a decision —
 | [ADR-0013](./0013-multi-provider-auth-linking.md) | Multi-Provider Authentication Linking (Google OAuth & Email/Password) | Accepted | Phase 10 / FR-6.4 (`AB#27`) |
 | [ADR-0014](./0014-password-reset-flow.md) | Self-Service Password Reset Flow with Anti-Enumeration & Locale Sync | Accepted | Phase 10 / FR-6.5 (`AB#28`) |
 | [ADR-0015](./0015-azure-devops-completed-work-sync-and-tasks-workspace.md) | Azure DevOps `CompletedWork` Sync, Server-Side PAT Vault, Split Projects/Tasks Workspaces & Drag-and-Drop Prioritization | Accepted | Sprint 4 / FR-V1 (`AB#31`) |
+| [ADR-0016](./0016-orbital-custom-controls-and-no-native-select.md) | Orbital Custom Controls & Prohibition of Browser-Native `<select>` Elements | Accepted | Sprint 5 / `UX-3.1` |
 | [ADR-0016](./0016-dual-engine-progressive-webgl-landing-hero.md) | Dual-Engine Progressive WebGL Landing Hero | Accepted | Sprint 4 / UX-3.1 (`AB#90`) |

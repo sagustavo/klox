@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Compass, Check, ArrowRight, Briefcase, Target, Layers } from 'lucide-vue-next';
+import type { UiSelectOption } from '~/components/ui/Select.vue';
 import { COMMON_IANA_TIMEZONES } from '~/domain/preferences';
 import type {
   HourCyclePreference,
@@ -48,8 +49,16 @@ const timeZoneOptions = computed(() => {
   return [current, ...COMMON_IANA_TIMEZONES];
 });
 
-async function onChangeLocale(event: Event) {
-  const value = (event.target as HTMLSelectElement).value as SupportedLocale;
+const localeSelectOptions: UiSelectOption<SupportedLocale>[] = [
+  { value: 'en', label: 'English (EN)' },
+  { value: 'pt-br', label: 'Português — Brasil (PT-BR)' },
+];
+
+const timeZoneSelectOptions = computed<UiSelectOption<string>[]>(() =>
+  timeZoneOptions.value.map((tz) => ({ value: tz, label: tz }))
+);
+
+async function setWelcomeLocale(value: SupportedLocale) {
   await setLocale(value);
   await prefsStore.updatePreferences(
     { locale: value },
@@ -58,8 +67,7 @@ async function onChangeLocale(event: Event) {
   );
 }
 
-async function onChangeTimeZone(event: Event) {
-  const value = (event.target as HTMLSelectElement).value;
+async function setWelcomeTimeZone(value: string) {
   await prefsStore.updatePreferences(
     { timeZone: value },
     authStore.user?.uid,
@@ -186,29 +194,25 @@ async function handleFinish(startTourAfter: boolean) {
         <label class="label-eyebrow block text-text-muted mb-2">
           {{ $t('settings.languageLabel') }}
         </label>
-        <select
-          :value="prefsStore.preferences.locale"
-          class="h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-          @change="onChangeLocale"
-        >
-          <option value="en">English (EN)</option>
-          <option value="pt-br">Português — Brasil (PT-BR)</option>
-        </select>
+        <UiSelect
+          :model-value="prefsStore.preferences.locale"
+          :options="localeSelectOptions"
+          :aria-label="$t('settings.languageLabel')"
+          @update:model-value="setWelcomeLocale($event as SupportedLocale)"
+        />
       </div>
 
       <div>
         <label class="label-eyebrow block text-text-muted mb-2">
           {{ $t('settings.timeZoneLabel') }}
         </label>
-        <select
-          :value="prefsStore.preferences.timeZone"
-          class="tabular-telemetry h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-          @change="onChangeTimeZone"
-        >
-          <option v-for="tz in timeZoneOptions" :key="tz" :value="tz">
-            {{ tz }}
-          </option>
-        </select>
+        <UiSelect
+          tabular
+          :model-value="prefsStore.preferences.timeZone"
+          :options="timeZoneSelectOptions"
+          :aria-label="$t('settings.timeZoneLabel')"
+          @update:model-value="setWelcomeTimeZone(String($event))"
+        />
       </div>
 
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

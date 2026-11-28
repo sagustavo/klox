@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Check, Monitor, Moon, Sun } from 'lucide-vue-next';
+import type { UiSelectOption } from '~/components/ui/Select.vue';
 import { toDateKey } from '~/domain/duration';
 import type {
   DateFormatPreset,
@@ -16,7 +17,7 @@ definePageMeta({
 });
 
 const colorMode = useColorMode();
-const { setLocale } = useI18n();
+const { setLocale, t } = useI18n();
 const authStore = useAuthStore();
 const prefsStore = usePreferencesStore();
 const { formatDuration, formatDate, formatTime, formatDecimalHours } = useFormat(
@@ -67,6 +68,33 @@ const commonTimeZones = computed(() => {
   const current = prefsStore.preferences.timeZone;
   return base.includes(current) ? base : [current, ...base];
 });
+
+const localeSelectOptions: UiSelectOption<SupportedLocale>[] = [
+  { value: 'en', label: 'English (EN)' },
+  { value: 'pt-br', label: 'Português — Brasil (PT-BR)' },
+];
+
+const timeZoneSelectOptions = computed<UiSelectOption<string>[]>(() =>
+  commonTimeZones.value.map((tz) => ({ value: tz, label: tz }))
+);
+
+const weekStartSelectOptions = computed<UiSelectOption<WeekStartDay>[]>(() => [
+  { value: 0, label: t('settings.weekSunday') },
+  { value: 1, label: t('settings.weekMonday') },
+  { value: 6, label: t('settings.weekSaturday') },
+]);
+
+const dateFormatSelectOptions = computed<UiSelectOption<DateFormatPreset>[]>(() => [
+  { value: 'locale', label: t('settings.dateFormatLocale') },
+  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' },
+  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' },
+  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY' },
+]);
+
+const hourCycleSelectOptions = computed<UiSelectOption<HourCyclePreference>[]>(() => [
+  { value: 'h23', label: t('settings.hourCycle24') },
+  { value: 'h12', label: t('settings.hourCycle12') },
+]);
 
 const sampleInstant = new Date('2026-11-09T01:30:00.000Z');
 const sampleDateKey = computed(() =>
@@ -171,14 +199,14 @@ function updateThemePreference(theme: ThemeOption) {
           <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.languageLabel') }}
           </label>
-          <select
-            :value="prefsStore.preferences.locale"
-            class="mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-            @change="updateField('locale', ($event.target as HTMLSelectElement).value as SupportedLocale)"
-          >
-            <option value="en">English (EN)</option>
-            <option value="pt-br">Português — Brasil (PT-BR)</option>
-          </select>
+          <UiSelect
+            class="mt-2"
+            :model-value="prefsStore.preferences.locale"
+            :options="localeSelectOptions"
+            :aria-label="$t('settings.languageLabel')"
+            test-id="settings-locale-select"
+            @update:model-value="updateField('locale', $event as SupportedLocale)"
+          />
         </div>
 
         <!-- Timezone -->
@@ -186,15 +214,15 @@ function updateThemePreference(theme: ThemeOption) {
           <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.timeZoneLabel') }}
           </label>
-          <select
-            :value="prefsStore.preferences.timeZone"
-            class="tabular-telemetry mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-            @change="updateField('timeZone', ($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="tz in commonTimeZones" :key="tz" :value="tz">
-              {{ tz }}
-            </option>
-          </select>
+          <UiSelect
+            class="mt-2"
+            tabular
+            :model-value="prefsStore.preferences.timeZone"
+            :options="timeZoneSelectOptions"
+            :aria-label="$t('settings.timeZoneLabel')"
+            test-id="settings-timezone-select"
+            @update:model-value="updateField('timeZone', String($event))"
+          />
           <p class="mt-1.5 text-ui text-text-muted">
             {{ $t('settings.timeZoneHelp') }}
           </p>
@@ -205,15 +233,14 @@ function updateThemePreference(theme: ThemeOption) {
           <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.weekStartsOnLabel') }}
           </label>
-          <select
-            :value="prefsStore.preferences.weekStartsOn"
-            class="mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-            @change="updateField('weekStartsOn', Number(($event.target as HTMLSelectElement).value) as WeekStartDay)"
-          >
-            <option :value="0">{{ $t('settings.weekSunday') }}</option>
-            <option :value="1">{{ $t('settings.weekMonday') }}</option>
-            <option :value="6">{{ $t('settings.weekSaturday') }}</option>
-          </select>
+          <UiSelect
+            class="mt-2"
+            :model-value="prefsStore.preferences.weekStartsOn"
+            :options="weekStartSelectOptions"
+            :aria-label="$t('settings.weekStartsOnLabel')"
+            test-id="settings-week-start-select"
+            @update:model-value="updateField('weekStartsOn', Number($event) as WeekStartDay)"
+          />
         </div>
 
         <!-- Date Format -->
@@ -221,16 +248,15 @@ function updateThemePreference(theme: ThemeOption) {
           <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.dateFormatLabel') }}
           </label>
-          <select
-            :value="prefsStore.preferences.dateFormat"
-            class="tabular-telemetry mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-            @change="updateField('dateFormat', ($event.target as HTMLSelectElement).value as DateFormatPreset)"
-          >
-            <option value="locale">{{ $t('settings.dateFormatLocale') }}</option>
-            <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-            <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-            <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-          </select>
+          <UiSelect
+            class="mt-2"
+            tabular
+            :model-value="prefsStore.preferences.dateFormat"
+            :options="dateFormatSelectOptions"
+            :aria-label="$t('settings.dateFormatLabel')"
+            test-id="settings-date-format-select"
+            @update:model-value="updateField('dateFormat', $event as DateFormatPreset)"
+          />
         </div>
 
         <!-- Clock Hour Cycle -->
@@ -238,14 +264,14 @@ function updateThemePreference(theme: ThemeOption) {
           <label class="label-eyebrow block text-text-muted">
             {{ $t('settings.hourCycleLabel') }}
           </label>
-          <select
-            :value="prefsStore.preferences.hourCycle"
-            class="mt-2 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-            @change="updateField('hourCycle', ($event.target as HTMLSelectElement).value as HourCyclePreference)"
-          >
-            <option value="h23">{{ $t('settings.hourCycle24') }}</option>
-            <option value="h12">{{ $t('settings.hourCycle12') }}</option>
-          </select>
+          <UiSelect
+            class="mt-2"
+            :model-value="prefsStore.preferences.hourCycle"
+            :options="hourCycleSelectOptions"
+            :aria-label="$t('settings.hourCycleLabel')"
+            test-id="settings-hour-cycle-select"
+            @update:model-value="updateField('hourCycle', $event as HourCyclePreference)"
+          />
         </div>
       </div>
     </div>

@@ -171,7 +171,7 @@ void main() {
 
   vec3 limbColor = mix(uRimPrimary, uRimCore, clamp(crispLimb * 1.45, 0.0, 1.0));
   surface = mix(surface, uRimPrimary * 0.42 + surface * 0.58, clamp(broadScatter * 0.55, 0.0, 0.65));
-  surface += limbColor * (broadScatter * 0.52 + crispLimb * 1.48) * uRimIntensity;
+  surface += limbColor * (broadScatter * 0.52 + crispLimb * 1.12) * uRimIntensity;
 
   gl_FragColor = vec4(surface, 1.0);
 }
@@ -269,9 +269,9 @@ void main() {
   float upperMask = smoothstep(-0.12, 0.72, n.y);
   float shimmer = 0.95 + 0.05 * sin(n.x * 6.0 + uTime * 0.32);
 
-  float strength = (rayleigh * 0.62 + core * 1.15) * upperMask * shimmer * uRimIntensity * (uIsDark > 0.5 ? 1.28 : 0.58);
+  float strength = (rayleigh * 0.62 + core * 1.15) * upperMask * shimmer * uRimIntensity * (uIsDark > 0.5 ? 1.08 : 0.58);
   vec3 color = mix(uAtmoHalo, uRimCore, clamp(core * 1.15, 0.0, 1.0));
-  float alpha = clamp(strength, 0.0, uIsDark > 0.5 ? 0.94 : 0.42);
+  float alpha = clamp(strength, 0.0, uIsDark > 0.5 ? 0.80 : 0.42);
 
   gl_FragColor = vec4(color, alpha);
 }

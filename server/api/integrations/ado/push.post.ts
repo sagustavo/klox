@@ -49,6 +49,7 @@ export default defineEventHandler(async (event) => {
       project: target.project,
       workItemId: item.workItemId,
       approvedDeltaHours: item.approvedDeltaHours,
+      completedWorkFieldRef: connection.completedWorkFieldRef,
     });
     results.push({
       ...result,

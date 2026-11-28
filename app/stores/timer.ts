@@ -1,11 +1,14 @@
+import { evaluateTaskTimerEligibility } from '~/domain/ado';
 import { elapsedSeconds } from '~/domain/duration';
 import { tenantStorageKey } from '~/domain/auth';
 import { publishDomainEvent } from '~/domain/events';
 import { UNASSIGNED_PROJECT_ID, applyProjectSwitch, isEmptyActiveTimer } from '~/domain/invariants';
 import type { ActiveTimer, EntityId, TimeLog } from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
+import { useAdoStore } from './ado';
 import { useAuthStore } from './auth';
 import { useCatalogStore } from './catalog';
+import { usePreferencesStore } from './preferences';
 import { useTimeLogsStore } from './timeLogs';
 
 const STORAGE_ACTIVE_TIMER_KEY = 'klox_active_timer';
@@ -306,8 +309,20 @@ export const useTimerStore = defineStore('timer', () => {
     taskId: EntityId;
   }): Promise<void> {
     const catalogStore = useCatalogStore();
+    const prefsStore = usePreferencesStore();
+    const adoStore = useAdoStore();
     const task = catalogStore.getTaskById(params.taskId);
     if (!task) return;
+
+    const conn = adoStore.getConnectionForProject(task.projectId);
+    const eligibility = evaluateTaskTimerEligibility({
+      task,
+      allTasks: catalogStore.tasks,
+      policy: prefsStore.preferences.taskTrackingPolicy,
+      workItemTypes: conn ? adoStore.workItemTypesByConn[conn.id] : undefined,
+      completedWorkFieldRef: conn?.completedWorkFieldRef,
+    });
+    if (!eligibility.allowed) return;
 
     localMutationEpoch += 1;
     if (activeTimer.value) {

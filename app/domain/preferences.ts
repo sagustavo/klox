@@ -1,4 +1,9 @@
-import type { SupportedLocale, UserPreferences, WeekStartDay } from './types';
+import type {
+  SupportedLocale,
+  TaskTrackingPolicy,
+  UserPreferences,
+  WeekStartDay,
+} from './types';
 
 export const COMMON_IANA_TIMEZONES: readonly string[] = [
   'America/Sao_Paulo',
@@ -15,12 +20,27 @@ export const COMMON_IANA_TIMEZONES: readonly string[] = [
   'Australia/Sydney',
 ];
 
+export const DEFAULT_TASK_TRACKING_POLICY: TaskTrackingPolicy = {
+  allowNonCompletedWorkTracking: false,
+  allowParentTaskTracking: false,
+};
+
+export function normalizeTaskTrackingPolicy(
+  raw?: Partial<TaskTrackingPolicy> | null
+): TaskTrackingPolicy {
+  return {
+    allowNonCompletedWorkTracking: Boolean(raw?.allowNonCompletedWorkTracking),
+    allowParentTaskTracking: Boolean(raw?.allowParentTaskTracking),
+  };
+}
+
 export const DEFAULT_PREFERENCES: UserPreferences = {
   locale: 'en',
   timeZone: 'UTC',
   weekStartsOn: 1,
   dateFormat: 'locale',
   hourCycle: 'h23',
+  taskTrackingPolicy: { ...DEFAULT_TASK_TRACKING_POLICY },
 };
 
 export function matchSupportedLocale(languages: readonly string[] | undefined): SupportedLocale {

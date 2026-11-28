@@ -445,7 +445,7 @@ function renderFrame(dtSeconds: number) {
   } else {
     camera.position.set(baseCameraPos.x, baseCameraPos.y, baseCameraPos.z);
   }
-  camera.lookAt(0, -0.35, -2.0);
+  camera.lookAt(0, 0.05, -2.0);
 
   renderer.render(scene, camera);
 
@@ -573,11 +573,11 @@ function initScene() {
   scene = new Scene();
   camera = new PerspectiveCamera(40, width / height, 0.1, 200);
   camera.position.set(baseCameraPos.x, baseCameraPos.y, baseCameraPos.z);
-  camera.lookAt(0, -0.35, -2.0);
+  camera.lookAt(0, 0.05, -2.0);
 
   // Layer 1 & 2: True Low-Earth-Orbit Horizon (R=42.0, Karman-line R_atmo=42.65)
   const earthGroup = new Group();
-  earthGroup.position.set(0, -43.95, -4.5);
+  earthGroup.position.set(0, -45.55, -4.5);
   scene.add(earthGroup);
 
   const earthSegW = mobile ? 72 : 160;

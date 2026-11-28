@@ -9,6 +9,9 @@ import {
   Play,
   Square,
 } from 'lucide-vue-next';
+import {
+  type TaskTimerEligibility,
+} from '~/domain/ado';
 import { formatHMS, toDateKey } from '~/domain/duration';
 import {
   MAX_TASK_DEPTH,
@@ -28,6 +31,8 @@ const props = withDefaults(
     runningElapsedSeconds?: number;
     trackedSecondsByTask?: ReadonlyMap<EntityId, number>;
     unsyncedHoursByTask?: ReadonlyMap<EntityId, number>;
+    effectiveCompletedHoursByTask?: ReadonlyMap<EntityId, number>;
+    timerEligibilityByTask?: ReadonlyMap<EntityId, TaskTimerEligibility>;
     projectTags?: readonly ProjectTag[];
     selectedTaskIds?: ReadonlySet<EntityId>;
     selectedCount?: number;
@@ -45,6 +50,8 @@ const props = withDefaults(
     runningElapsedSeconds: 0,
     trackedSecondsByTask: () => new Map(),
     unsyncedHoursByTask: () => new Map(),
+    effectiveCompletedHoursByTask: () => new Map(),
+    timerEligibilityByTask: () => new Map(),
     projectTags: () => [],
     selectedTaskIds: () => new Set(),
     selectedCount: 0,
@@ -76,6 +83,7 @@ const emit = defineEmits<{
   toggleDone: [payload: { taskId: EntityId; current: TaskStatus }];
   deleteTask: [task: Task];
   bulkDelete: [];
+  bulkUpdateTags: [];
   bulkMarkStatus: [status: TaskStatus];
   duplicateTasks: [taskId: EntityId];
   exportMarkdown: [taskId: EntityId];
@@ -399,12 +407,6 @@ function handleTitleClick(event: MouseEvent, node: TaskTreeNode) {
     return;
   }
 
-  // Google Tasks ergonomics: clicking an already-selected single task title enters inline edit
-  if (props.selectedTaskIds.has(node.task.id) && props.selectedCount === 1) {
-    emit('startInlineRename', node.task.id);
-    return;
-  }
-
   emit('rowSelect', {
     taskId: node.task.id,
     shiftKey: false,
@@ -476,7 +478,7 @@ function handleRowKeydown(event: KeyboardEvent, idx: number, node: TaskTreeNode)
       emit('toggleCollapse', node.task.id);
       return;
     }
-    if (event.key === 'F2' || event.key === 'e') {
+    if (event.key === 'F2') {
       event.preventDefault();
       event.stopPropagation();
       emit('startInlineRename', node.task.id);
@@ -610,16 +612,35 @@ function dueBadgeClass(task: Task): string {
   return 'border-border-hairline bg-bg-elevated text-text-muted';
 }
 
+function effectiveCompletedWorkFor(node: TaskTreeNode): number {
+  return props.effectiveCompletedHoursByTask.get(node.task.id) ?? node.task.completedWorkHours ?? 0;
+}
+
+function getTimerEligibility(taskId: EntityId): TaskTimerEligibility {
+  return props.timerEligibilityByTask.get(taskId) ?? { allowed: true, reason: null };
+}
+
+function startTimerHint(node: TaskTreeNode): string {
+  const elig = getTimerEligibility(node.task.id);
+  if (!elig.allowed) {
+    return elig.reason === 'PARENT_HAS_SUBTASKS'
+      ? t('tasks.timerBlockedParentHint')
+      : t('tasks.timerBlockedUnsupportedAdoHint');
+  }
+  return t('catalog.startTaskTimer');
+}
+
 function hasMetadataRow(node: TaskTreeNode): boolean {
-  const t = node.task;
+  const taskItem = node.task;
   return Boolean(
-    t.externalWorkItemId ||
+    taskItem.externalWorkItemId ||
       isLevel2RolledUp(node) ||
-      (t.tagIds?.length ?? 0) > 0 ||
-      t.dueDate ||
-      t.description ||
-      (props.trackedSecondsByTask.get(t.id) ?? 0) > 0 ||
-      (props.unsyncedHoursByTask.get(t.id) ?? 0) > 0
+      (taskItem.tagIds?.length ?? 0) > 0 ||
+      taskItem.dueDate ||
+      taskItem.description ||
+      (props.trackedSecondsByTask.get(taskItem.id) ?? 0) > 0 ||
+      (props.unsyncedHoursByTask.get(taskItem.id) ?? 0) > 0 ||
+      effectiveCompletedWorkFor(node) > 0
   );
 }
 </script>
@@ -630,7 +651,11 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
     :role="depth === 0 ? 'tree' : 'group'"
     :aria-multiselectable="depth === 0 ? 'true' : undefined"
     :data-task-depth="depth"
-    class="divide-y divide-border-hairline border border-border-hairline bg-bg-primary"
+    :class="
+      depth === 0
+        ? 'divide-y divide-border-hairline border border-border-hairline bg-bg-primary'
+        : 'divide-y divide-border-hairline'
+    "
   >
     <li
       v-for="(node, idx) in nodes"
@@ -679,14 +704,6 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
         @rename-inline="emit('startInlineRename', node.task.id)"
         @add-subtask="emit('openSubtaskComposer', node.task.id)"
         @duplicate="emit('duplicateTasks', node.task.id)"
-        @toggle-select="
-          emit('rowSelect', {
-            taskId: node.task.id,
-            shiftKey: false,
-            ctrlOrMetaKey: true,
-            toggleOnly: true,
-          })
-        "
         @indent="
           idx > 0 && depth < MAX_TASK_DEPTH
             ? emit('reparent', {
@@ -705,6 +722,7 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
         "
         @export-markdown="emit('exportMarkdown', node.task.id)"
         @export-csv="emit('exportCsv', node.task.id)"
+        @bulk-update-tags="emit('bulkUpdateTags')"
         @bulk-mark-done="emit('bulkMarkStatus', 'done')"
         @bulk-mark-todo="emit('bulkMarkStatus', 'todo')"
         @delete="emit('deleteTask', node.task)"
@@ -718,9 +736,8 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
           :aria-selected="selectedTaskIds.has(node.task.id)"
           :aria-expanded="node.children.length > 0 ? !collapsedTaskIds.has(node.task.id) : undefined"
           :aria-level="depth + 1"
-          class="flex items-start justify-between gap-2 py-2.5 pr-2.5 sm:pr-3.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-signal"
+          class="flex items-start justify-between gap-2 py-2.5 pl-2.5 sm:pl-3.5 pr-2.5 sm:pr-3.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-signal"
           :class="[
-            depth === 0 ? 'pl-2.5 sm:pl-3.5' : depth === 1 ? 'pl-6 sm:pl-9' : 'pl-10 sm:pl-14',
             draggingTaskId === node.task.id ? 'cursor-grabbing' : nodes.length > 1 ? 'cursor-grab' : '',
           ]"
           :style="{ touchAction: draggingTaskId === node.task.id ? 'none' : 'pan-y' }"
@@ -854,10 +871,11 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
                     />
                   </span>
                   <span
-                    v-if="node.task.completedWorkHours > 0"
+                    v-if="effectiveCompletedWorkFor(node) > 0"
                     class="tabular-telemetry hidden sm:inline text-xs text-text-muted"
+                    :title="node.children.length > 0 ? $t('tasks.completedWorkRolledUpHint') : undefined"
                   >
-                    {{ node.task.completedWorkHours.toFixed(2) }}h
+                    {{ node.children.length > 0 ? '∑ ' : '' }}{{ effectiveCompletedWorkFor(node).toFixed(2) }}h
                   </span>
                   <span
                     v-if="(unsyncedHoursByTask.get(node.task.id) ?? 0) > 0"
@@ -873,6 +891,14 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
                   :title="$t('tasks.rollsUpToAdoHint', { id: inheritedAdoTask!.externalWorkItemId, type: inheritedAdoTask!.externalWorkItemType || 'Task' })"
                 >
                   <span>↳ ∑ #{{ inheritedAdoTask!.externalWorkItemId }}</span>
+                </span>
+
+                <span
+                  v-else-if="node.children.length > 0 && effectiveCompletedWorkFor(node) > 0"
+                  class="tabular-telemetry inline-flex items-center gap-1 border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-xs text-text-muted"
+                  :title="$t('tasks.completedWorkRolledUpHint')"
+                >
+                  ∑ {{ effectiveCompletedWorkFor(node).toFixed(2) }}h
                 </span>
 
                 <!-- 1-Click Editable Inline Project-Scoped Tags (when tags attached) -->
@@ -969,12 +995,21 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
               type="button"
               data-no-row-drag
               data-testid="task-row-start-timer"
-              :aria-label="$t('tasks.startTimerAria', { name: node.task.name })"
-              :title="$t('catalog.startTaskTimer')"
-              class="row-action-ghost hover:border-signal/60 hover:text-signal"
+              :disabled="!getTimerEligibility(node.task.id).allowed"
+              :aria-label="
+                getTimerEligibility(node.task.id).allowed
+                  ? $t('tasks.startTimerAria', { name: node.task.name })
+                  : startTimerHint(node)
+              "
+              :title="startTimerHint(node)"
+              :class="
+                getTimerEligibility(node.task.id).allowed
+                  ? 'row-action-ghost hover:border-signal/60 hover:text-signal'
+                  : 'inline-flex h-8 w-8 shrink-0 items-center justify-center border border-transparent text-text-faint opacity-35 cursor-not-allowed'
+              "
               @mousedown.prevent
               @pointerdown.stop
-              @click.stop="emit('startTimer', node.task.id)"
+              @click.stop="getTimerEligibility(node.task.id).allowed && emit('startTimer', node.task.id)"
             >
               <Play class="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -992,14 +1027,6 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
               @rename-inline="emit('startInlineRename', node.task.id)"
               @add-subtask="emit('openSubtaskComposer', node.task.id)"
               @duplicate="emit('duplicateTasks', node.task.id)"
-              @toggle-select="
-                emit('rowSelect', {
-                  taskId: node.task.id,
-                  shiftKey: false,
-                  ctrlOrMetaKey: true,
-                  toggleOnly: true,
-                })
-              "
               @indent="
                 idx > 0 && depth < MAX_TASK_DEPTH
                   ? emit('reparent', {
@@ -1018,6 +1045,7 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
               "
               @export-markdown="emit('exportMarkdown', node.task.id)"
               @export-csv="emit('exportCsv', node.task.id)"
+              @bulk-update-tags="emit('bulkUpdateTags')"
               @bulk-mark-done="emit('bulkMarkStatus', 'done')"
               @bulk-mark-todo="emit('bulkMarkStatus', 'todo')"
               @delete="emit('deleteTask', node.task)"
@@ -1030,8 +1058,7 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
       <!-- Inline Subtask Composer Right Beneath Parent Task -->
       <div
         v-if="addingSubtaskForId === node.task.id"
-        class="flex items-center gap-2 border-t border-border-hairline bg-bg-elevated/70 py-2 pr-3.5"
-        :class="depth === 0 ? 'pl-8 sm:pl-11' : 'pl-11 sm:pl-16'"
+        class="flex items-center gap-2 border-t border-border-hairline bg-bg-elevated/70 py-2 pl-6 sm:pl-9 pr-3.5"
       >
         <CornerDownRight class="h-3.5 w-3.5 shrink-0 text-signal" aria-hidden="true" />
         <input
@@ -1052,10 +1079,11 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
         />
       </div>
 
-      <!-- Recursive Child Subtasks / Sub-subtasks (Collapsible) -->
+      <!-- Recursive Child Subtasks / Sub-subtasks (Stepped Left-Rail Indentation) -->
       <div
         v-if="node.children.length > 0 && !collapsedTaskIds.has(node.task.id)"
-        class="border-t border-border-hairline"
+        class="border-t border-border-hairline bg-bg-elevated/25 ml-5 sm:ml-8 border-l-2"
+        :class="depth === 0 ? 'border-l-signal/40' : 'border-l-border-hairline'"
       >
         <TasksTaskTreeLevel
           :nodes="node.children"
@@ -1066,6 +1094,8 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
           :running-elapsed-seconds="runningElapsedSeconds"
           :tracked-seconds-by-task="trackedSecondsByTask"
           :unsynced-hours-by-task="unsyncedHoursByTask"
+          :effective-completed-hours-by-task="effectiveCompletedHoursByTask"
+          :timer-eligibility-by-task="timerEligibilityByTask"
           :project-tags="projectTags"
           :selected-task-ids="selectedTaskIds"
           :selected-count="selectedCount"
@@ -1086,6 +1116,7 @@ function hasMetadataRow(node: TaskTreeNode): boolean {
           @toggle-done="emit('toggleDone', $event)"
           @delete-task="emit('deleteTask', $event)"
           @bulk-delete="emit('bulkDelete')"
+          @bulk-update-tags="emit('bulkUpdateTags')"
           @bulk-mark-status="emit('bulkMarkStatus', $event)"
           @duplicate-tasks="emit('duplicateTasks', $event)"
           @export-markdown="emit('exportMarkdown', $event)"

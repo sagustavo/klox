@@ -1,23 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_ADO_COMPLETED_WORK_FIELD,
   buildAdoSyncCandidates,
+  buildEffectiveCompletedWorkMap,
   classificationNodePathToIterationPath,
   classifyIterationTimeFrame,
   computeLogUnsyncedSeconds,
   escapeWiqlLiteral,
+  evaluateTaskTimerEligibility,
   getAdoWorkItemTypeVisual,
+  groupAdoSyncCandidatesByParent,
+  normalizeAdoFieldRef,
   normalizeAdoOrgUrl,
   normalizeStoredAdoConnections,
   parseWorkItemIdInput,
   pickDefaultCurrentIteration,
   resolveControllingAdoTask,
   resolveEffectiveProjectAdoTarget,
+  resolveTaskSupportsCompletedWork,
   type AdoIterationInfo,
 } from '../../app/domain/ado';
 import {
   buildTaskTree,
   classifyDueDateTone,
   collectBulkDeleteTaskIds,
+  computeBulkTaskTagIds,
   computeTaskReparent,
   computeTaskSelectionTransition,
   computeTaskSiblingReorder,
@@ -29,6 +36,7 @@ import {
   isValidTaskDueDate,
   paginateTaskRoots,
   sanitizeTaskTagIds,
+  summarizeSelectedTaskTags,
   tasksToCsv,
   tasksToMarkdownTable,
 } from '../../app/domain/invariants';
@@ -837,5 +845,332 @@ describe('domain/invariants board filtering, completed partitioning, pagination,
     expect(csv).toContain('Work Item,Type,Parent,Task,Status,Project,Tags,Deadline,Tracked Duration,ADO Completed Hours');
     expect(csv).toContain('#42,Product Backlog Item,,Build Execution Board,in_progress,Klox Core,Sprint 12,2026-12-01,01:30:00,1.5');
     expect(csv).toContain(',,Build Execution Board,"Add Context Menu, Shortcuts",done,Klox Core,,,00:30:00,0');
+  });
+});
+
+describe('domain/ado custom field, task timer eligibility, completed work rollup & sync tree', () => {
+  const mkProj = (id: string, name = 'Klox'): Project => ({
+    id,
+    userId: 'u1',
+    name,
+    color: '#3B82F6',
+    isBillableDefault: true,
+    createdAt: '2026-11-27T00:00:00.000Z',
+  });
+
+  const mkItem = (overrides: Partial<Task> & { id: string; name: string }): Task => ({
+    userId: 'u1',
+    projectId: 'p1',
+    completedWorkHours: 0,
+    status: 'todo',
+    createdAt: '2026-11-27T00:00:00.000Z',
+    ...(overrides.externalWorkItemId ? { externalProvider: 'azure_devops' as const } : {}),
+    ...overrides,
+  });
+
+  const mkTimeLog = (overrides: Partial<TimeLog> & { id: string; taskId: string; durationSeconds: number }): TimeLog => ({
+    userId: 'u1',
+    description: 'Implementation',
+    normalizedDescription: 'implementation',
+    projectId: 'p1',
+    projectNameSnapshot: 'Klox',
+    projectColorSnapshot: '#3B82F6',
+    tagIds: [],
+    isBillable: true,
+    startTime: '2026-11-27T10:00:00.000Z',
+    endTime: new Date(Date.parse('2026-11-27T10:00:00.000Z') + overrides.durationSeconds * 1000).toISOString(),
+    timeZone: 'UTC',
+    dateKey: '2026-11-27',
+    ...overrides,
+  });
+
+  it('normalizes and validates custom ADO completed work field references', () => {
+    expect(normalizeAdoFieldRef()).toEqual({
+      valid: true,
+      fieldRef: DEFAULT_ADO_COMPLETED_WORK_FIELD,
+    });
+    expect(normalizeAdoFieldRef('  Custom.ActualHours  ')).toEqual({
+      valid: true,
+      fieldRef: 'Custom.ActualHours',
+    });
+    expect(normalizeAdoFieldRef('InvalidFieldNoDot')).toEqual({
+      valid: false,
+      error: 'ADO_INVALID_INPUT',
+    });
+    expect(normalizeAdoFieldRef('bad space.Field')).toEqual({
+      valid: false,
+      error: 'ADO_INVALID_INPUT',
+    });
+  });
+
+  it('evaluates timer eligibility for parent tasks and non-CompletedWork ADO items with policy overrides', () => {
+    const storyParent = mkItem({
+      id: 'story-1',
+      name: 'Auth Story',
+      depth: 0,
+      externalWorkItemId: '100',
+      externalWorkItemType: 'User Story',
+      externalSupportsCompletedWork: false,
+    });
+    const adoTaskChild = mkItem({
+      id: 'task-1',
+      parentTaskId: 'story-1',
+      name: 'Build OAuth endpoint',
+      depth: 1,
+      externalWorkItemId: '101',
+      externalWorkItemType: 'Task',
+      externalSupportsCompletedWork: true,
+    });
+    const soloStory = mkItem({
+      id: 'story-2',
+      name: 'Standalone PBI',
+      depth: 0,
+      externalWorkItemId: '200',
+      externalWorkItemType: 'Product Backlog Item',
+      externalSupportsCompletedWork: false,
+    });
+
+    const all = [storyParent, adoTaskChild, soloStory];
+    const types = [
+      { name: 'Task', supportsCompletedWork: true },
+      { name: 'User Story', supportsCompletedWork: false },
+      { name: 'Product Backlog Item', supportsCompletedWork: false },
+    ];
+
+    // Default policy: blocks parent with subtasks AND unsupported ADO items
+    expect(
+      evaluateTaskTimerEligibility({ task: storyParent, allTasks: all, workItemTypes: types })
+    ).toEqual({ allowed: false, reason: 'PARENT_HAS_SUBTASKS' });
+    expect(
+      evaluateTaskTimerEligibility({ task: soloStory, allTasks: all, workItemTypes: types })
+    ).toEqual({ allowed: false, reason: 'ADO_COMPLETED_WORK_UNSUPPORTED' });
+    expect(
+      evaluateTaskTimerEligibility({ task: adoTaskChild, allTasks: all, workItemTypes: types })
+    ).toEqual({ allowed: true, reason: null });
+
+    // Opt-in policy overrides allow local tracking in Klox
+    expect(
+      evaluateTaskTimerEligibility({
+        task: storyParent,
+        allTasks: all,
+        workItemTypes: types,
+        policy: { allowParentTaskTracking: true, allowNonCompletedWorkTracking: true },
+      })
+    ).toEqual({ allowed: true, reason: null });
+
+    expect(
+      evaluateTaskTimerEligibility({
+        task: soloStory,
+        allTasks: all,
+        workItemTypes: types,
+        policy: { allowNonCompletedWorkTracking: true },
+      })
+    ).toEqual({ allowed: true, reason: null });
+    expect(resolveTaskSupportsCompletedWork(soloStory, types)).toBe(false);
+  });
+
+  it('rolls up parent CompletedWork from children while preserving Level-1 ADO Task own hours over manual sub-subtasks', () => {
+    const story = mkItem({
+      id: 'story-1',
+      name: 'Story',
+      depth: 0,
+      externalWorkItemId: '10',
+      externalWorkItemType: 'User Story',
+      completedWorkHours: 0,
+    });
+    const childTaskA = mkItem({
+      id: 't-a',
+      parentTaskId: 'story-1',
+      name: 'API Task',
+      depth: 1,
+      externalWorkItemId: '11',
+      externalWorkItemType: 'Task',
+      completedWorkHours: 3.5,
+    });
+    const manualSubSub = mkItem({
+      id: 'subsub-1',
+      parentTaskId: 't-a',
+      name: 'Write unit tests',
+      depth: 2,
+      completedWorkHours: 0,
+    });
+    const childTaskB = mkItem({
+      id: 't-b',
+      parentTaskId: 'story-1',
+      name: 'UI Task',
+      depth: 1,
+      externalWorkItemId: '12',
+      externalWorkItemType: 'Task',
+      completedWorkHours: 1.25,
+    });
+
+    const tree = buildTaskTree([story, childTaskA, manualSubSub, childTaskB], 'p1');
+    const rolled = buildEffectiveCompletedWorkMap(tree);
+
+    expect(rolled.get('subsub-1')).toBe(0);
+    expect(rolled.get('t-a')).toBe(3.5);
+    expect(rolled.get('t-b')).toBe(1.25);
+    expect(rolled.get('story-1')).toBe(4.75);
+  });
+
+  it('excludes unsupported ADO work items from push candidates and groups pushable children by parent', () => {
+    const project = mkProj('p1', 'Core API');
+    const conn: AdoConnectionSummary = {
+      id: 'conn-1',
+      organization: 'klox',
+      orgUrl: 'https://dev.azure.com/klox',
+      defaultProject: 'Core',
+      kloxProjectId: 'p1',
+      connected: true,
+      defaultWorkItemType: 'Task',
+      completedWorkFieldRef: 'Custom.ActualHours',
+      connectedAt: '2026-11-27T00:00:00.000Z',
+    };
+
+    const pbi = mkItem({
+      id: 'pbi-1',
+      name: 'Checkout Epic',
+      depth: 0,
+      externalWorkItemId: '50',
+      externalWorkItemType: 'Product Backlog Item',
+      externalOrgUrl: conn.orgUrl,
+      externalProject: conn.defaultProject,
+      externalSupportsCompletedWork: false,
+    });
+    const child1 = mkItem({
+      id: 'c-1',
+      parentTaskId: 'pbi-1',
+      name: 'Stripe webhook',
+      depth: 1,
+      sortOrder: 100,
+      externalWorkItemId: '51',
+      externalWorkItemType: 'Task',
+      externalOrgUrl: conn.orgUrl,
+      externalProject: conn.defaultProject,
+      externalSupportsCompletedWork: true,
+      completedWorkHours: 1,
+    });
+    const child2 = mkItem({
+      id: 'c-2',
+      parentTaskId: 'pbi-1',
+      name: 'Invoice PDF',
+      depth: 1,
+      sortOrder: 200,
+      externalWorkItemId: '52',
+      externalWorkItemType: 'Task',
+      externalOrgUrl: conn.orgUrl,
+      externalProject: conn.defaultProject,
+      externalSupportsCompletedWork: true,
+      completedWorkHours: 2,
+    });
+    const standaloneTask = mkItem({
+      id: 'solo-1',
+      name: 'Standalone Fix',
+      depth: 0,
+      externalWorkItemId: '60',
+      externalWorkItemType: 'Task',
+      externalOrgUrl: conn.orgUrl,
+      externalProject: conn.defaultProject,
+      externalSupportsCompletedWork: true,
+      completedWorkHours: 0.5,
+    });
+    const allTasks = [pbi, child1, child2, standaloneTask];
+
+    const logs = [
+      // Tracked directly on unsupported PBI — MUST NOT become push candidate
+      mkTimeLog({ id: 'l-pbi', taskId: 'pbi-1', durationSeconds: 3600 }),
+      mkTimeLog({ id: 'l-c1', taskId: 'c-1', durationSeconds: 5400 }), // 1.5h
+      mkTimeLog({ id: 'l-c2', taskId: 'c-2', durationSeconds: 1800 }), // 0.5h
+      mkTimeLog({ id: 'l-solo', taskId: 'solo-1', durationSeconds: 3600 }), // 1.0h
+    ];
+
+    const result = buildAdoSyncCandidates({
+      projects: [project],
+      tasks: allTasks,
+      logs,
+      connections: [conn],
+      workItemTypesByConn: {
+        'conn-1': [
+          { name: 'Product Backlog Item', supportsCompletedWork: false },
+          { name: 'Task', supportsCompletedWork: true },
+        ],
+      },
+    });
+
+    expect(result.readyItems.map((i) => i.workItemId)).toEqual([51, 60, 52]);
+    expect(result.totalRecommendedHours).toBe(3);
+
+    const groups = groupAdoSyncCandidatesByParent(result.readyItems, allTasks);
+    expect(groups).toHaveLength(2);
+
+    const parentGroup = groups.find((g) => g.parentTask?.id === 'pbi-1')!;
+    expect(parentGroup.isParentContainer).toBe(true);
+    expect(parentGroup.parentTask?.externalWorkItemId).toBe('50');
+    expect(parentGroup.items.map((i) => i.workItemId)).toEqual([51, 52]);
+    expect(parentGroup.totalRecommendedDeltaHours).toBe(2);
+    expect(parentGroup.totalUnsyncedSeconds).toBe(7200);
+
+    const soloGroup = groups.find((g) => g.parentTask === null)!;
+    expect(soloGroup.isParentContainer).toBe(false);
+    expect(soloGroup.items.map((i) => i.workItemId)).toEqual([60]);
+  });
+
+  it('computes project-scoped bulk task tag updates (add, remove, replace) and summarizes tag coverage', () => {
+    const p1Tags: ProjectTag[] = [
+      { id: 't1', userId: 'u1', projectId: 'p1', name: 'Backend' },
+      { id: 't2', userId: 'u1', projectId: 'p1', name: 'Auth' },
+      { id: 't3', userId: 'u1', projectId: 'p1', name: 'Urgent' },
+      { id: 't-other', userId: 'u1', projectId: 'p2', name: 'Foreign' },
+    ];
+
+    // Add merges cleanly, preserves order, deduplicates, and rejects foreign-project tags
+    expect(
+      computeBulkTaskTagIds({
+        currentTagIds: ['t1', 't-other'],
+        targetTagIds: ['t2', 't1', 't-other'],
+        mode: 'add',
+        projectId: 'p1',
+        allTags: p1Tags,
+      })
+    ).toEqual(['t1', 't2']);
+
+    // Remove deletes target tags while preserving remaining tags
+    expect(
+      computeBulkTaskTagIds({
+        currentTagIds: ['t1', 't2', 't3'],
+        targetTagIds: ['t2'],
+        mode: 'remove',
+        projectId: 'p1',
+        allTags: p1Tags,
+      })
+    ).toEqual(['t1', 't3']);
+
+    // Replace overwrites or clears tags when target is empty
+    expect(
+      computeBulkTaskTagIds({
+        currentTagIds: ['t1', 't2'],
+        targetTagIds: ['t3', 't-other'],
+        mode: 'replace',
+        projectId: 'p1',
+        allTags: p1Tags,
+      })
+    ).toEqual(['t3']);
+
+    expect(
+      computeBulkTaskTagIds({
+        currentTagIds: ['t1', 't2'],
+        targetTagIds: [],
+        mode: 'replace',
+        projectId: 'p1',
+        allTags: p1Tags,
+      })
+    ).toEqual([]);
+
+    const taskA = mkItem({ id: 'a', name: 'Task A', tagIds: ['t1', 't2'] });
+    const taskB = mkItem({ id: 'b', name: 'Task B', tagIds: ['t1', 't3'] });
+    expect(summarizeSelectedTaskTags([taskA, taskB])).toEqual({
+      commonTagIds: ['t1'],
+      partialTagIds: ['t2', 't3'],
+    });
   });
 });

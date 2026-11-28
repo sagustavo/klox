@@ -29,6 +29,7 @@ export default defineEventHandler(async (event) => {
     project: target.project,
     queryText: body?.query ?? '',
     top: body?.top ?? 20,
+    completedWorkFieldRef: connection.completedWorkFieldRef,
   });
 
   return {

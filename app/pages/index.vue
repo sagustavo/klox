@@ -128,7 +128,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         />
       </ClientOnly>
       <div
-        class="pointer-events-none absolute inset-0 bg-gradient-to-b from-bg-primary/25 via-transparent to-bg-primary/95 transition-opacity duration-1000 ease-out"
+        class="bg-hero-webgl-scrim pointer-events-none absolute inset-0 transition-opacity duration-1000 ease-out"
         :class="webglTakeover ? 'opacity-100' : 'opacity-0'"
         aria-hidden="true"
       />
@@ -151,7 +151,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         />
 
         <p
-          class="animate-rise mt-8 max-w-xl text-base leading-relaxed text-text-muted sm:text-lg"
+          class="hero-copy-shadow animate-rise mt-8 max-w-xl text-base leading-relaxed text-text-primary/85 sm:text-lg"
           style="animation-delay: 240ms"
         >
           {{ $t('landing.heroSubtitle') }}
@@ -173,7 +173,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
           <a
             href="#features"
-            class="label-eyebrow inline-flex h-12 items-center px-3 text-text-muted transition-colors hover:text-text-primary"
+            class="label-eyebrow hero-copy-shadow inline-flex h-12 items-center px-3 text-text-primary/75 transition-colors hover:text-text-primary"
           >
             {{ $t('landing.hero.ctaSpecs') }} ↓
           </a>
@@ -270,11 +270,12 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
       </div>
     </section>
 
-    <!-- Section 3: Upcoming Enterprise Integration Teaser -->
+    <!-- Section 3: Live Azure DevOps Integration -->
     <section class="mx-auto max-w-7xl px-4 pb-24 sm:px-6 sm:pb-28">
       <div data-scroll-reveal>
         <UiInstrumentPanel signal-line class="p-6 sm:p-10">
           <div class="label-eyebrow inline-flex items-center gap-2 text-signal">
+            <span class="h-1.5 w-1.5 rounded-full bg-signal motion-safe:animate-pulse" aria-hidden="true" />
             <GitBranch class="h-4 w-4 shrink-0" />
             <span>{{ $t('landing.adoTeaser.badge') }}</span>
           </div>
@@ -300,6 +301,17 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
               <Check class="mt-0.5 h-4 w-4 shrink-0 text-signal" />
               <span>{{ $t('landing.adoTeaser.bullet3') }}</span>
             </div>
+          </div>
+
+          <div class="mt-8 flex flex-wrap items-center gap-3">
+            <NuxtLink :to="localePath('/login?mode=signup')" class="btn-launch h-10 px-6">
+              <span>{{ $t('landing.adoTeaser.ctaPrimary') }}</span>
+              <ArrowRight class="h-4 w-4" />
+            </NuxtLink>
+            <NuxtLink :to="localePath('/app?demo=1')" class="btn-orbit h-10 px-6">
+              <Play class="h-3.5 w-3.5 text-signal" />
+              <span>{{ $t('landing.adoTeaser.ctaDemo') }}</span>
+            </NuxtLink>
           </div>
         </UiInstrumentPanel>
       </div>
@@ -356,7 +368,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
             <ul class="mt-10 flex-1 space-y-4 text-sm text-text-primary">
               <li
-                v-for="fKey in ['f1', 'f2', 'f3', 'f4'] as const"
+                v-for="fKey in ['f1', 'f2', 'f3', 'f4', 'f5'] as const"
                 :key="fKey"
                 class="flex items-start gap-3"
               >
@@ -400,7 +412,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
             <ul class="mt-10 flex-1 space-y-4 text-sm text-text-muted">
               <li
-                v-for="fKey in ['f1', 'f2', 'f3', 'f4'] as const"
+                v-for="fKey in ['f1', 'f2', 'f3', 'f4', 'f5'] as const"
                 :key="fKey"
                 class="flex items-start gap-3"
               >

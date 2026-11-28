@@ -1,4 +1,8 @@
-import { DEFAULT_PREFERENCES, detectBrowserPreferences } from '~/domain/preferences';
+import {
+  DEFAULT_PREFERENCES,
+  detectBrowserPreferences,
+  normalizeTaskTrackingPolicy,
+} from '~/domain/preferences';
 import { sanitizeShortcutOverrides } from '~/domain/shortcuts';
 import type { UserPreferences } from '~/domain/types';
 import { getFirebaseClient } from '~/utils/firebaseClient';
@@ -13,6 +17,7 @@ function normalizePreferences(raw: UserPreferences): UserPreferences {
     weekStartsOn: raw.weekStartsOn,
     dateFormat: raw.dateFormat,
     hourCycle: raw.hourCycle,
+    taskTrackingPolicy: normalizeTaskTrackingPolicy(raw.taskTrackingPolicy),
   };
   if (Object.keys(cleanShortcuts).length > 0) {
     next.keyboardShortcuts = cleanShortcuts;

@@ -18,6 +18,7 @@ export interface AdoConnectionSummary {
   organization: string;
   defaultProject: string;
   defaultWorkItemType: string;
+  completedWorkFieldRef?: string; // ADO numeric hours field ref (defaults to Microsoft.VSTS.Scheduling.CompletedWork)
   tokenHint: string;
   connectedAt: string; // UTC ISO
   lastVerifiedAt: string; // UTC ISO
@@ -80,6 +81,7 @@ export interface Task {
   externalWorkItemUrl?: string;
   externalOrgUrl?: string;
   externalProject?: string;
+  externalSupportsCompletedWork?: boolean;
   externalSyncedAt?: string;
   completedWorkHours: number;
   status: TaskStatus;
@@ -138,6 +140,11 @@ export type ShortcutCommandId =
 
 export type KeyboardShortcutOverrides = Partial<Record<ShortcutCommandId, string>>;
 
+export interface TaskTrackingPolicy {
+  allowNonCompletedWorkTracking: boolean;
+  allowParentTaskTracking: boolean;
+}
+
 export interface UserPreferences {
   locale: SupportedLocale;
   timeZone: string; // IANA e.g. "America/Sao_Paulo"
@@ -145,6 +152,7 @@ export interface UserPreferences {
   dateFormat: DateFormatPreset;
   hourCycle: HourCyclePreference;
   keyboardShortcuts?: KeyboardShortcutOverrides;
+  taskTrackingPolicy?: TaskTrackingPolicy;
 }
 
 export type ChecklistItemId =
@@ -201,7 +209,7 @@ export interface UserProfile {
 }
 
 export type HeatmapIntensityLevel = 0 | 1 | 2 | 3 | 4;
-export type HeatmapRangeSelection = 'rolling_365' | number;
+export type HeatmapRangeSelection = 'filtered' | 'rolling_365' | number;
 
 export interface HeatmapDayCell {
   dateKey: string; // "YYYY-MM-DD"

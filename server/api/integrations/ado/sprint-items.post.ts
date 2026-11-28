@@ -45,6 +45,7 @@ export default defineEventHandler(async (event) => {
     pat,
     project: target.project,
     iterationPath: effectiveIterationPath,
+    completedWorkFieldRef: connection.completedWorkFieldRef,
   });
 
   return {

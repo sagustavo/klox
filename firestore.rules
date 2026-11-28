@@ -21,10 +21,10 @@ rules_version = '2';
 //   - photoURL: string | null (optional, <= 2048 chars, Google/OAuth URL)
 //   - customAvatarUrl: string | null (optional, <= 120000 chars, raster WebP/JPEG/PNG data URI)
 //   - activeTimer: map | null (optional, singleton live stopwatch state)
-//   - preferences: map (optional, regional settings: locale, timeZone, weekStartsOn, dateFormat, hourCycle; optional keyboardShortcuts map <= 20 entries)
+//   - preferences: map (optional, regional settings: locale, timeZone, weekStartsOn, dateFormat, hourCycle; optional keyboardShortcuts map <= 20 entries; optional taskTrackingPolicy map)
 //   - onboarding: map (optional, wizardStatus, version, profile, checklist, timestamps)
-//   - adoConnection: map | null (optional, legacy single non-secret Azure DevOps connection summary)
-//   - adoConnections: list<map> | null (optional, max 25 project-bound Azure DevOps connection summaries)
+//   - adoConnection: map | null (optional, legacy single non-secret Azure DevOps connection summary; optional completedWorkFieldRef)
+//   - adoConnections: list<map> | null (optional, max 25 project-bound Azure DevOps connection summaries; optional completedWorkFieldRef)
 //   - updatedAt: string (optional, UTC ISO timestamp <= 64 chars)
 //
 // Collection: usernames/{username}
@@ -79,6 +79,7 @@ rules_version = '2';
 //   - externalOrgUrl: string | null (optional, <= 200 chars)
 //   - externalProject: string | null (optional, <= 128 chars)
 //   - externalSyncedAt: string | null (optional, UTC ISO string <= 64 chars)
+//   - externalSupportsCompletedWork: bool | null (optional, whether external ADO work item type supports CompletedWork)
 //
 // Collection: users/{userId}/timeLogs/{logId}
 // Document ID: {logId}
@@ -216,16 +217,25 @@ service cloud.firestore {
     // Domain Validators (Invoked on BOTH create and update)
     // ===============================================================
 
+    function isValidTaskTrackingPolicy(policy) {
+      return policy is map &&
+        policy.keys().hasAll(['allowNonCompletedWorkTracking', 'allowParentTaskTracking']) &&
+        policy.keys().hasOnly(['allowNonCompletedWorkTracking', 'allowParentTaskTracking']) &&
+        policy.allowNonCompletedWorkTracking is bool &&
+        policy.allowParentTaskTracking is bool;
+    }
+
     function isValidPreferences(prefs) {
       return prefs is map &&
         prefs.keys().hasAll(['locale', 'timeZone', 'weekStartsOn', 'dateFormat', 'hourCycle']) &&
-        prefs.keys().hasOnly(['locale', 'timeZone', 'weekStartsOn', 'dateFormat', 'hourCycle', 'keyboardShortcuts']) &&
+        prefs.keys().hasOnly(['locale', 'timeZone', 'weekStartsOn', 'dateFormat', 'hourCycle', 'keyboardShortcuts', 'taskTrackingPolicy']) &&
         prefs.locale in ['en', 'pt-br'] &&
         isNonEmptyString(prefs.timeZone, 100) &&
         prefs.weekStartsOn in [0, 1, 6] &&
         prefs.dateFormat in ['locale', 'YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'] &&
         prefs.hourCycle in ['h12', 'h23'] &&
-        (!('keyboardShortcuts' in prefs) || prefs.keyboardShortcuts == null || (prefs.keyboardShortcuts is map && prefs.keyboardShortcuts.size() <= 20));
+        (!('keyboardShortcuts' in prefs) || prefs.keyboardShortcuts == null || (prefs.keyboardShortcuts is map && prefs.keyboardShortcuts.size() <= 20)) &&
+        (!('taskTrackingPolicy' in prefs) || prefs.taskTrackingPolicy == null || isValidTaskTrackingPolicy(prefs.taskTrackingPolicy));
     }
 
     function isValidOnboarding(onboarding) {
@@ -292,6 +302,7 @@ service cloud.firestore {
           'organization',
           'defaultProject',
           'defaultWorkItemType',
+          'completedWorkFieldRef',
           'tokenHint',
           'connectedAt',
           'lastVerifiedAt'
@@ -304,6 +315,7 @@ service cloud.firestore {
         isNonEmptyString(conn.organization, 80) &&
         isNonEmptyString(conn.defaultProject, 128) &&
         isNonEmptyString(conn.defaultWorkItemType, 80) &&
+        (!('completedWorkFieldRef' in conn) || conn.completedWorkFieldRef == null || (conn.completedWorkFieldRef is string && conn.completedWorkFieldRef.size() >= 3 && conn.completedWorkFieldRef.size() <= 128 && conn.completedWorkFieldRef.matches('^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$'))) &&
         isNonEmptyString(conn.tokenHint, 32) &&
         isNonEmptyString(conn.connectedAt, 64) &&
         isNonEmptyString(conn.lastVerifiedAt, 64);
@@ -333,6 +345,7 @@ service cloud.firestore {
           'organization',
           'defaultProject',
           'defaultWorkItemType',
+          'completedWorkFieldRef',
           'tokenHint',
           'connectedAt',
           'lastVerifiedAt'
@@ -348,6 +361,7 @@ service cloud.firestore {
         isNonEmptyString(conn.organization, 80) &&
         isNonEmptyString(conn.defaultProject, 128) &&
         isNonEmptyString(conn.defaultWorkItemType, 80) &&
+        (!('completedWorkFieldRef' in conn) || conn.completedWorkFieldRef == null || (conn.completedWorkFieldRef is string && conn.completedWorkFieldRef.size() >= 3 && conn.completedWorkFieldRef.size() <= 128 && conn.completedWorkFieldRef.matches('^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$'))) &&
         isNonEmptyString(conn.tokenHint, 32) &&
         isNonEmptyString(conn.connectedAt, 64) &&
         isNonEmptyString(conn.lastVerifiedAt, 64);
@@ -470,7 +484,8 @@ service cloud.firestore {
           'externalWorkItemUrl',
           'externalOrgUrl',
           'externalProject',
-          'externalSyncedAt'
+          'externalSyncedAt',
+          'externalSupportsCompletedWork'
         ]) &&
         data.id is string && data.id == taskId && data.id.size() >= 1 && data.id.size() <= 128 &&
         data.userId is string && data.userId == userId &&
@@ -494,7 +509,8 @@ service cloud.firestore {
         (!('externalWorkItemUrl' in data) || data.externalWorkItemUrl == null || (data.externalWorkItemUrl is string && data.externalWorkItemUrl.size() <= 512 && data.externalWorkItemUrl.matches('^https://.+'))) &&
         isOptionalBoundedString(data, 'externalOrgUrl', 200) &&
         isOptionalBoundedString(data, 'externalProject', 128) &&
-        isOptionalBoundedString(data, 'externalSyncedAt', 64);
+        isOptionalBoundedString(data, 'externalSyncedAt', 64) &&
+        (!('externalSupportsCompletedWork' in data) || data.externalSupportsCompletedWork == null || data.externalSupportsCompletedWork is bool);
     }
 
     function isValidTimeLogAdoSync(sync) {

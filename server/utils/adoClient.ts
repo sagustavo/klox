@@ -1,16 +1,19 @@
 import type { H3Event } from 'h3';
 import {
+  DEFAULT_ADO_COMPLETED_WORK_FIELD,
   LEGACY_ADO_CONNECTION_ID,
   buildAdoWorkItemWebUrl,
   classificationNodePathToIterationPath,
   classifyIterationTimeFrame,
   escapeWiqlLiteral,
+  normalizeAdoFieldRef,
   normalizeAdoOrgUrl,
   normalizeStoredAdoConnections,
   parseWorkItemIdInput,
   pickDefaultCurrentIteration,
   roundHours2,
   type AdoErrorCode,
+  type AdoFieldOption,
   type AdoIterationInfo,
   type AdoSprintWorkItemNode,
   type AdoWorkItemSummary,
@@ -78,7 +81,8 @@ function basicAuthHeader(pat: string): string {
 async function adoFetchJson<T>(
   url: string,
   pat: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  activeFieldRef?: string
 ): Promise<T> {
   if (!url.startsWith('https://dev.azure.com/')) {
     throw createAdoError(400, 'ADO_INVALID_ORG_URL');
@@ -125,7 +129,8 @@ async function adoFetchJson<T>(
   if (!res.ok) {
     if (
       res.status === 400 &&
-      text.includes('Microsoft.VSTS.Scheduling.CompletedWork')
+      (text.includes(DEFAULT_ADO_COMPLETED_WORK_FIELD) ||
+        (activeFieldRef && text.includes(activeFieldRef)))
     ) {
       throw createAdoError(400, 'ADO_COMPLETED_WORK_UNSUPPORTED');
     }
@@ -301,30 +306,98 @@ export async function listAdoProjects(params: {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function hasCompletedWorkField(rawType: {
-  fields?: Array<{ referenceName?: string }>;
-  fieldInstances?: Array<{ referenceName?: string }>;
-}): boolean | null {
+const EXCLUDED_NUMERIC_FIELDS = new Set([
+  'system.id',
+  'system.rev',
+  'system.watermark',
+  'system.parent',
+  'system.areaid',
+  'system.iterationid',
+  'system.attachedfilecount',
+  'system.externalinkcount',
+  'system.hyperlinxcount',
+  'system.relatedlinkcount',
+  'system.commentcount',
+]);
+
+function resolveActiveFieldRef(raw?: string | null): string {
+  const check = normalizeAdoFieldRef(raw);
+  return check.valid ? check.fieldRef : DEFAULT_ADO_COMPLETED_WORK_FIELD;
+}
+
+export async function listProjectNumericFields(params: {
+  orgUrl: string;
+  pat: string;
+  project: string;
+}): Promise<AdoFieldOption[]> {
+  const norm = normalizeAdoOrgUrl(params.orgUrl);
+  if (!norm.valid) throw createAdoError(400, 'ADO_INVALID_ORG_URL');
+
+  const url = `${norm.orgUrl}/${encodeURIComponent(params.project)}/_apis/wit/fields?api-version=${ADO_API_VERSION}`;
+  const res = await adoFetchJson<{
+    value?: Array<{
+      name?: string;
+      referenceName?: string;
+      type?: string;
+      readOnly?: boolean;
+    }>;
+  }>(url, params.pat);
+
+  const fields: AdoFieldOption[] = [];
+  for (const f of res.value ?? []) {
+    if (!f.referenceName || !f.name || f.readOnly) continue;
+    if (f.type !== 'double' && f.type !== 'integer') continue;
+    const lower = f.referenceName.toLowerCase();
+    if (EXCLUDED_NUMERIC_FIELDS.has(lower)) continue;
+    if (!normalizeAdoFieldRef(f.referenceName).valid) continue;
+    fields.push({
+      referenceName: f.referenceName,
+      name: f.name,
+      type: f.type,
+    });
+  }
+
+  fields.sort((a, b) => {
+    const aDef = a.referenceName.toLowerCase() === DEFAULT_ADO_COMPLETED_WORK_FIELD.toLowerCase();
+    const bDef = b.referenceName.toLowerCase() === DEFAULT_ADO_COMPLETED_WORK_FIELD.toLowerCase();
+    if (aDef !== bDef) return aDef ? -1 : 1;
+    const aCustom = a.referenceName.toLowerCase().startsWith('custom.');
+    const bCustom = b.referenceName.toLowerCase().startsWith('custom.');
+    if (aCustom !== bCustom) return aCustom ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return fields;
+}
+
+function hasCompletedWorkField(
+  rawType: {
+    fields?: Array<{ referenceName?: string }>;
+    fieldInstances?: Array<{ referenceName?: string }>;
+  },
+  fieldRef: string
+): boolean | null {
   const list = Array.isArray(rawType.fields)
     ? rawType.fields
     : Array.isArray(rawType.fieldInstances)
       ? rawType.fieldInstances
       : null;
   if (!list) return null;
-  return list.some(
-    (f) => f.referenceName?.toLowerCase() === 'microsoft.vsts.scheduling.completedwork'
-  );
+  const targetLower = fieldRef.toLowerCase();
+  return list.some((f) => f.referenceName?.toLowerCase() === targetLower);
 }
 
 export async function getProjectWorkItemTypes(params: {
   orgUrl: string;
   pat: string;
   project: string;
+  completedWorkFieldRef?: string;
 }): Promise<AdoWorkItemTypeCapability[]> {
   const norm = normalizeAdoOrgUrl(params.orgUrl);
   if (!norm.valid) throw createAdoError(400, 'ADO_INVALID_ORG_URL');
 
-  const cacheKey = `${norm.orgUrl.toLowerCase()}::${params.project.toLowerCase()}`;
+  const fieldRef = resolveActiveFieldRef(params.completedWorkFieldRef);
+  const cacheKey = `${norm.orgUrl.toLowerCase()}::${params.project.toLowerCase()}::${fieldRef.toLowerCase()}`;
   const cached = typeCapabilitiesCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.types;
@@ -343,7 +416,7 @@ export async function getProjectWorkItemTypes(params: {
   const types: AdoWorkItemTypeCapability[] = [];
   for (const wt of res.value ?? []) {
     if (!wt.name || wt.isDisabled) continue;
-    let supportsCompletedWork = hasCompletedWorkField(wt);
+    let supportsCompletedWork = hasCompletedWorkField(wt, fieldRef);
     if (supportsCompletedWork === null) {
       // Fallback single-type inspection if list payload omitted fields
       try {
@@ -352,7 +425,7 @@ export async function getProjectWorkItemTypes(params: {
           fields?: Array<{ referenceName?: string }>;
           fieldInstances?: Array<{ referenceName?: string }>;
         }>(detailUrl, params.pat);
-        supportsCompletedWork = hasCompletedWorkField(detail) ?? false;
+        supportsCompletedWork = hasCompletedWorkField(detail, fieldRef) ?? false;
       } catch {
         supportsCompletedWork = false;
       }
@@ -382,12 +455,13 @@ function mapRawWorkItem(
   raw: RawAdoWorkItem,
   orgUrl: string,
   project: string,
-  supportByType: Map<string, boolean>
+  supportByType: Map<string, boolean>,
+  fieldRef: string
 ): AdoWorkItemSummary {
   const fields = raw.fields ?? {};
   const title = String(fields['System.Title'] ?? `#${raw.id}`);
   const workItemType = String(fields['System.WorkItemType'] ?? 'Task');
-  const rawCompleted = Number(fields['Microsoft.VSTS.Scheduling.CompletedWork'] ?? 0);
+  const rawCompleted = Number(fields[fieldRef] ?? 0);
   const completedWork = Number.isFinite(rawCompleted) ? roundHours2(rawCompleted) : 0;
   const supportsCompletedWork = supportByType.get(workItemType.toLowerCase()) ?? false;
 
@@ -406,6 +480,7 @@ export async function getAdoWorkItemsByIds(params: {
   pat: string;
   project: string;
   ids: readonly number[];
+  completedWorkFieldRef?: string;
 }): Promise<AdoWorkItemSummary[]> {
   const norm = normalizeAdoOrgUrl(params.orgUrl);
   if (!norm.valid) throw createAdoError(400, 'ADO_INVALID_ORG_URL');
@@ -415,10 +490,12 @@ export async function getAdoWorkItemsByIds(params: {
   );
   if (uniqueIds.length === 0) return [];
 
+  const fieldRef = resolveActiveFieldRef(params.completedWorkFieldRef);
   const types = await getProjectWorkItemTypes({
     orgUrl: norm.orgUrl,
     pat: params.pat,
     project: params.project,
+    completedWorkFieldRef: fieldRef,
   });
   const supportByType = new Map(types.map((t) => [t.name.toLowerCase(), t.supportsCompletedWork]));
 
@@ -432,19 +509,14 @@ export async function getAdoWorkItemsByIds(params: {
       method: 'POST',
       body: JSON.stringify({
         ids: chunk,
-        fields: [
-          'System.Id',
-          'System.Title',
-          'System.WorkItemType',
-          'Microsoft.VSTS.Scheduling.CompletedWork',
-        ],
+        fields: ['System.Id', 'System.Title', 'System.WorkItemType', fieldRef],
         errorPolicy: 'Omit',
       }),
     });
 
     for (const item of res.value ?? []) {
       if (item && Number.isInteger(item.id)) {
-        results.push(mapRawWorkItem(item, norm.orgUrl, params.project, supportByType));
+        results.push(mapRawWorkItem(item, norm.orgUrl, params.project, supportByType, fieldRef));
       }
     }
   }
@@ -458,10 +530,12 @@ export async function searchAdoWorkItems(params: {
   project: string;
   queryText: string;
   top?: number;
+  completedWorkFieldRef?: string;
 }): Promise<AdoWorkItemSummary[]> {
   const norm = normalizeAdoOrgUrl(params.orgUrl);
   if (!norm.valid) throw createAdoError(400, 'ADO_INVALID_ORG_URL');
 
+  const fieldRef = resolveActiveFieldRef(params.completedWorkFieldRef);
   const trimmed = params.queryText.trim();
   const parsedId = parseWorkItemIdInput(trimmed);
   if (parsedId !== null) {
@@ -470,6 +544,7 @@ export async function searchAdoWorkItems(params: {
       pat: params.pat,
       project: params.project,
       ids: [parsedId],
+      completedWorkFieldRef: fieldRef,
     });
   }
 
@@ -499,6 +574,7 @@ export async function searchAdoWorkItems(params: {
     pat: params.pat,
     project: params.project,
     ids,
+    completedWorkFieldRef: fieldRef,
   });
 }
 
@@ -509,6 +585,7 @@ export async function createAdoWorkItem(params: {
   workItemType: string;
   title: string;
   initialCompletedWork?: number;
+  completedWorkFieldRef?: string;
 }): Promise<AdoWorkItemSummary> {
   const norm = normalizeAdoOrgUrl(params.orgUrl);
   if (!norm.valid) throw createAdoError(400, 'ADO_INVALID_ORG_URL');
@@ -519,10 +596,12 @@ export async function createAdoWorkItem(params: {
     throw createAdoError(400, 'ADO_INVALID_INPUT');
   }
 
+  const fieldRef = resolveActiveFieldRef(params.completedWorkFieldRef);
   const types = await getProjectWorkItemTypes({
     orgUrl: norm.orgUrl,
     pat: params.pat,
     project: params.project,
+    completedWorkFieldRef: fieldRef,
   });
   const typeMeta = types.find((t) => t.name.toLowerCase() === cleanType.toLowerCase());
   const supportsCompletedWork = typeMeta?.supportsCompletedWork ?? false;
@@ -535,24 +614,29 @@ export async function createAdoWorkItem(params: {
   if (cleanHours > 0 && supportsCompletedWork) {
     patchOps.push({
       op: 'add',
-      path: '/fields/Microsoft.VSTS.Scheduling.CompletedWork',
+      path: `/fields/${fieldRef}`,
       value: cleanHours,
     });
   }
 
   const url = `${norm.orgUrl}/${encodeURIComponent(params.project)}/_apis/wit/workitems/$${encodeURIComponent(cleanType)}?api-version=${ADO_API_VERSION}`;
-  const created = await adoFetchJson<RawAdoWorkItem>(url, params.pat, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json-patch+json' },
-    body: JSON.stringify(patchOps),
-  });
+  const created = await adoFetchJson<RawAdoWorkItem>(
+    url,
+    params.pat,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json-patch+json' },
+      body: JSON.stringify(patchOps),
+    },
+    fieldRef
+  );
 
   const supportMap = new Map([[cleanType.toLowerCase(), supportsCompletedWork]]);
-  return mapRawWorkItem(created, norm.orgUrl, params.project, supportMap);
+  return mapRawWorkItem(created, norm.orgUrl, params.project, supportMap, fieldRef);
 }
 
 /**
- * Strictly updates ONLY `Microsoft.VSTS.Scheduling.CompletedWork` on an existing ADO Work Item
+ * Strictly updates ONLY the configured completed-work field on an existing ADO Work Item
  * using an optimistic `/rev` test patch (with 1 conflict retry).
  */
 export async function patchAdoCompletedWork(params: {
@@ -561,6 +645,7 @@ export async function patchAdoCompletedWork(params: {
   project: string;
   workItemId: number;
   approvedDeltaHours: number;
+  completedWorkFieldRef?: string;
 }): Promise<AdoPushItemResult> {
   const norm = normalizeAdoOrgUrl(params.orgUrl);
   if (!norm.valid) {
@@ -572,24 +657,26 @@ export async function patchAdoCompletedWork(params: {
     return { workItemId: params.workItemId, ok: false, errorCode: 'ADO_INVALID_INPUT' };
   }
 
+  const fieldRef = resolveActiveFieldRef(params.completedWorkFieldRef);
   const types = await getProjectWorkItemTypes({
     orgUrl: norm.orgUrl,
     pat: params.pat,
     project: params.project,
+    completedWorkFieldRef: fieldRef,
   });
   const supportByType = new Map(types.map((t) => [t.name.toLowerCase(), t.supportsCompletedWork]));
 
-  const itemUrl = `${norm.orgUrl}/${encodeURIComponent(params.project)}/_apis/wit/workitems/${params.workItemId}?fields=System.Id,System.Title,System.WorkItemType,Microsoft.VSTS.Scheduling.CompletedWork&api-version=${ADO_API_VERSION}`;
+  const itemUrl = `${norm.orgUrl}/${encodeURIComponent(params.project)}/_apis/wit/workitems/${params.workItemId}?fields=System.Id,System.Title,System.WorkItemType,${encodeURIComponent(fieldRef)}&api-version=${ADO_API_VERSION}`;
   const patchUrl = `${norm.orgUrl}/${encodeURIComponent(params.project)}/_apis/wit/workitems/${params.workItemId}?api-version=${ADO_API_VERSION}`;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const live = await adoFetchJson<RawAdoWorkItem>(itemUrl, params.pat);
+      const live = await adoFetchJson<RawAdoWorkItem>(itemUrl, params.pat, {}, fieldRef);
       const fields = live.fields ?? {};
       const title = String(fields['System.Title'] ?? `#${params.workItemId}`);
       const workItemType = String(fields['System.WorkItemType'] ?? 'Task');
       const rev = typeof live.rev === 'number' ? live.rev : null;
-      const rawCurrent = Number(fields['Microsoft.VSTS.Scheduling.CompletedWork'] ?? 0);
+      const rawCurrent = Number(fields[fieldRef] ?? 0);
       const previousCompletedWork = Number.isFinite(rawCurrent) ? roundHours2(rawCurrent) : 0;
 
       const supportsCompletedWork = supportByType.get(workItemType.toLowerCase()) ?? false;
@@ -605,25 +692,28 @@ export async function patchAdoCompletedWork(params: {
       }
 
       const nextCompletedWork = roundHours2(previousCompletedWork + delta);
-      const patchOps: Array<{ op: string; path: string; value: number }> = [];
+      const patchOps: Array<{ op: 'test' | 'add'; path: string; value: number }> = [];
       if (rev !== null) {
         patchOps.push({ op: 'test', path: '/rev', value: rev });
       }
       patchOps.push({
         op: 'add',
-        path: '/fields/Microsoft.VSTS.Scheduling.CompletedWork',
+        path: `/fields/${fieldRef}`,
         value: nextCompletedWork,
       });
 
-      const updated = await adoFetchJson<RawAdoWorkItem>(patchUrl, params.pat, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json-patch+json' },
-        body: JSON.stringify(patchOps),
-      });
-
-      const updatedCompleted = Number(
-        updated.fields?.['Microsoft.VSTS.Scheduling.CompletedWork'] ?? nextCompletedWork
+      const updated = await adoFetchJson<RawAdoWorkItem>(
+        patchUrl,
+        params.pat,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json-patch+json' },
+          body: JSON.stringify(patchOps),
+        },
+        fieldRef
       );
+
+      const updatedCompleted = Number(updated.fields?.[fieldRef] ?? nextCompletedWork);
 
       return {
         workItemId: params.workItemId,
@@ -749,10 +839,12 @@ async function fetchRawWorkItemsBatch(params: {
   pat: string;
   project: string;
   ids: readonly number[];
+  completedWorkFieldRef?: string;
 }): Promise<RawAdoWorkItem[]> {
   const uniqueIds = Array.from(new Set(params.ids.filter((id) => Number.isInteger(id) && id > 0)));
   if (uniqueIds.length === 0) return [];
 
+  const fieldRef = resolveActiveFieldRef(params.completedWorkFieldRef);
   const collected: RawAdoWorkItem[] = [];
   const CHUNK_SIZE = 200;
 
@@ -770,7 +862,7 @@ async function fetchRawWorkItemsBatch(params: {
           'System.Parent',
           'System.AssignedTo',
           'System.IterationPath',
-          'Microsoft.VSTS.Scheduling.CompletedWork',
+          fieldRef,
         ],
         errorPolicy: 'Omit',
       }),
@@ -795,6 +887,7 @@ export async function fetchAdoSprintAssignedHierarchy(params: {
   pat: string;
   project: string;
   iterationPath: string;
+  completedWorkFieldRef?: string;
 }): Promise<AdoSprintWorkItemNode[]> {
   const norm = normalizeAdoOrgUrl(params.orgUrl);
   if (!norm.valid) throw createAdoError(400, 'ADO_INVALID_ORG_URL');
@@ -802,6 +895,7 @@ export async function fetchAdoSprintAssignedHierarchy(params: {
   const safeIter = escapeWiqlLiteral(params.iterationPath);
   if (!safeIter) throw createAdoError(400, 'ADO_INVALID_INPUT');
 
+  const fieldRef = resolveActiveFieldRef(params.completedWorkFieldRef);
   const flatWiql = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.IterationPath] UNDER '${safeIter}' AND [System.AssignedTo] = @Me AND [System.State] <> 'Removed' ORDER BY [System.ChangedDate] DESC`;
   const linksWiql = `SELECT [System.Id] FROM WorkItemLinks WHERE ([Source].[System.TeamProject] = @project AND [Source].[System.IterationPath] UNDER '${safeIter}' AND [Source].[System.AssignedTo] = @Me AND [Source].[System.State] <> 'Removed') AND ([System.Links.LinkType] = 'System.LinkTypes.Hierarchy-Forward') AND ([Target].[System.TeamProject] = @project AND [Target].[System.State] <> 'Removed') MODE (Recursive)`;
 
@@ -826,6 +920,7 @@ export async function fetchAdoSprintAssignedHierarchy(params: {
       orgUrl: norm.orgUrl,
       pat: params.pat,
       project: params.project,
+      completedWorkFieldRef: fieldRef,
     }),
   ]);
 
@@ -858,6 +953,7 @@ export async function fetchAdoSprintAssignedHierarchy(params: {
     pat: params.pat,
     project: params.project,
     ids: Array.from(allCandidateIds),
+    completedWorkFieldRef: fieldRef,
   });
 
   const rawById = new Map<number, RawAdoWorkItem>(initialRaw.map((item) => [item.id, item]));
@@ -880,6 +976,7 @@ export async function fetchAdoSprintAssignedHierarchy(params: {
       pat: params.pat,
       project: params.project,
       ids: missingParentIds,
+      completedWorkFieldRef: fieldRef,
     });
     for (const p of parentRaws) {
       // Do not pull Epic/Feature containers into Sprint task tree roots
@@ -968,7 +1065,7 @@ export async function fetchAdoSprintAssignedHierarchy(params: {
     parentId: number | null,
     depth: 0 | 1
   ): AdoSprintWorkItemNode => {
-    const mapped = mapRawWorkItem(raw, norm.orgUrl, params.project, supportByType);
+    const mapped = mapRawWorkItem(raw, norm.orgUrl, params.project, supportByType, fieldRef);
     return {
       id: mapped.id,
       parentId,

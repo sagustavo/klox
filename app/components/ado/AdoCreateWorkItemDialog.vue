@@ -9,6 +9,7 @@ import {
   DialogRoot,
   DialogTitle,
 } from 'reka-ui';
+import type { UiSelectOption } from '~/components/ui/Select.vue';
 import { secondsToHours2, type AdoErrorCode, type AdoWorkItemSummary } from '~/domain/ado';
 import type { EntityId, Task } from '~/domain/types';
 import { useAdoStore } from '~/stores/ado';
@@ -68,6 +69,14 @@ const availableTypes = computed(() => {
     { name: 'Product Backlog Item', supportsCompletedWork: false },
   ];
 });
+
+const projectSelectOptions = computed<UiSelectOption<string>[]>(() =>
+  adoStore.projects.map((proj) => ({ value: proj.name, label: proj.name }))
+);
+
+const typeSelectOptions = computed<UiSelectOption<string>[]>(() =>
+  availableTypes.value.map((wt) => ({ value: wt.name, label: wt.name }))
+);
 
 const selectedTypeSupportsCompletedWork = computed(() => {
   if (adoStore.workItemTypes.length === 0) return true;
@@ -214,17 +223,15 @@ async function handleSubmit() {
               <label for="ado-create-project" class="label-eyebrow block text-text-muted">
                 {{ $t('ado.createModal.projectLabel') }}
               </label>
-              <select
+              <UiSelect
                 v-if="adoStore.projects.length > 0"
                 id="ado-create-project"
-                v-model="selectedProject"
-                class="mt-1.5 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-                @change="handleProjectChange"
-              >
-                <option v-for="proj in adoStore.projects" :key="proj.id" :value="proj.name">
-                  {{ proj.name }}
-                </option>
-              </select>
+                class="mt-1.5"
+                :model-value="selectedProject"
+                :options="projectSelectOptions"
+                :aria-label="$t('ado.createModal.projectLabel')"
+                @update:model-value="selectedProject = String($event); handleProjectChange()"
+              />
               <input
                 v-else
                 id="ado-create-project"
@@ -239,15 +246,14 @@ async function handleSubmit() {
               <label for="ado-create-type" class="label-eyebrow block text-text-muted">
                 {{ $t('ado.createModal.typeLabel') }}
               </label>
-              <select
+              <UiSelect
                 id="ado-create-type"
-                v-model="selectedType"
-                class="mt-1.5 h-10 w-full border border-border-input bg-bg-primary px-3 text-sm text-text-primary focus:border-signal focus:outline-none"
-              >
-                <option v-for="wt in availableTypes" :key="wt.name" :value="wt.name">
-                  {{ wt.name }}
-                </option>
-              </select>
+                class="mt-1.5"
+                :model-value="selectedType"
+                :options="typeSelectOptions"
+                :aria-label="$t('ado.createModal.typeLabel')"
+                @update:model-value="selectedType = String($event)"
+              />
             </div>
           </div>
 

@@ -645,10 +645,7 @@ async function handleConfirmWipe() {
       </div>
     </UiInstrumentPanel>
 
-    <!-- Section 2: Year-at-a-Glance Activity Heatmap -->
-    <ProfileActivityHeatmap />
-
-    <!-- Section 3: Danger Zone (Backup-First Wipe All Data) -->
+    <!-- Section 2: Danger Zone (Backup-First Wipe All Data) -->
     <UiInstrumentPanel class="border-destructive/40">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="max-w-2xl space-y-2">

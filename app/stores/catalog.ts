@@ -12,6 +12,7 @@ import {
   compareTasksByPriority,
   computeTaskReparent,
   computeTaskSiblingReorder,
+  computeBulkTaskTagIds,
   createUnassignedProject,
   flattenTaskTree,
   formatCompactTaskLabel,
@@ -23,6 +24,7 @@ import {
   tagsForProject,
   validateProjectTagRename,
   validateTaskParent,
+  type BulkTagUpdateMode,
   type TagRenameErrorCode,
   type TaskTreeNode,
 } from '~/domain/invariants';
@@ -604,6 +606,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     externalWorkItemUrl?: string;
     externalOrgUrl?: string;
     externalProject?: string;
+    externalSupportsCompletedWork?: boolean | null;
     completedWorkHours?: number;
     externalSyncedAt?: string;
   }): Promise<Task> {
@@ -659,6 +662,9 @@ export const useCatalogStore = defineStore('catalog', () => {
             ...(params.externalProject?.trim()
               ? { externalProject: params.externalProject.trim().slice(0, 128) }
               : {}),
+            ...(typeof params.externalSupportsCompletedWork === 'boolean'
+              ? { externalSupportsCompletedWork: params.externalSupportsCompletedWork }
+              : {}),
             ...(params.externalSyncedAt?.trim()
               ? { externalSyncedAt: params.externalSyncedAt.trim().slice(0, 64) }
               : {}),
@@ -702,6 +708,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     externalWorkItemUrl?: string | null;
     externalOrgUrl?: string | null;
     externalProject?: string | null;
+    externalSupportsCompletedWork?: boolean | null;
     completedWorkHours?: number;
     externalSyncedAt?: string | null;
   }): Promise<void> {
@@ -760,6 +767,7 @@ export const useCatalogStore = defineStore('catalog', () => {
         delete updated.externalWorkItemUrl;
         delete updated.externalOrgUrl;
         delete updated.externalProject;
+        delete updated.externalSupportsCompletedWork;
         delete updated.externalSyncedAt;
       }
     }
@@ -791,6 +799,13 @@ export const useCatalogStore = defineStore('catalog', () => {
       assignOptionalString('externalOrgUrl', params.externalOrgUrl, 200);
       assignOptionalString('externalProject', params.externalProject, 128);
       assignOptionalString('externalSyncedAt', params.externalSyncedAt, 64);
+      if (params.externalSupportsCompletedWork !== undefined) {
+        if (typeof params.externalSupportsCompletedWork === 'boolean') {
+          updated.externalSupportsCompletedWork = params.externalSupportsCompletedWork;
+        } else {
+          delete updated.externalSupportsCompletedWork;
+        }
+      }
     }
 
     if (typeof params.completedWorkHours === 'number' && Number.isFinite(params.completedWorkHours)) {
@@ -999,6 +1014,7 @@ export const useCatalogStore = defineStore('catalog', () => {
           completedWorkHours: Number.isFinite(node.completedWork)
             ? Math.max(0, node.completedWork)
             : 0,
+          externalSupportsCompletedWork: Boolean(node.supportsCompletedWork),
           externalSyncedAt: nowIso,
           status: 'todo',
           createdAt: nowIso,
@@ -1028,6 +1044,7 @@ export const useCatalogStore = defineStore('catalog', () => {
           completedWorkHours: Number.isFinite(node.completedWork)
             ? Math.max(0, node.completedWork)
             : current.completedWorkHours,
+          externalSupportsCompletedWork: Boolean(node.supportsCompletedWork),
           externalSyncedAt: nowIso,
         };
 
@@ -1105,6 +1122,7 @@ export const useCatalogStore = defineStore('catalog', () => {
       externalWorkItemUrl?: string;
       externalOrgUrl?: string;
       externalProject?: string;
+      externalSupportsCompletedWork?: boolean;
       completedWorkHours?: number;
       externalSyncedAt?: string;
     }>;
@@ -1144,6 +1162,9 @@ export const useCatalogStore = defineStore('catalog', () => {
       }
       if (typeof p.completedWorkHours === 'number' && Number.isFinite(p.completedWorkHours)) {
         next.completedWorkHours = Math.max(0, p.completedWorkHours);
+      }
+      if (typeof p.externalSupportsCompletedWork === 'boolean') {
+        next.externalSupportsCompletedWork = p.externalSupportsCompletedWork;
       }
       updatedTasks.push(next);
       return next;
@@ -1434,6 +1455,58 @@ export const useCatalogStore = defineStore('catalog', () => {
     }
   }
 
+  async function updateTasksTagsBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    taskIds: readonly EntityId[];
+    tagIds: readonly EntityId[];
+    mode: BulkTagUpdateMode;
+  }): Promise<number> {
+    const idSet = new Set(params.taskIds);
+    const updatedTasks: Task[] = [];
+    tasks.value = tasks.value.map((t) => {
+      if (!idSet.has(t.id)) return t;
+      const prev = t.tagIds ?? [];
+      const nextTagIds = computeBulkTaskTagIds({
+        currentTagIds: prev,
+        targetTagIds: params.tagIds,
+        mode: params.mode,
+        projectId: t.projectId,
+        allTags: tags.value,
+      });
+      if (
+        prev.length === nextTagIds.length &&
+        prev.every((id, idx) => id === nextTagIds[idx])
+      ) {
+        return t;
+      }
+      const next: Task = { ...t, tagIds: nextTagIds };
+      updatedTasks.push(next);
+      return next;
+    });
+
+    if (updatedTasks.length === 0) return 0;
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < updatedTasks.length; i += BATCH_SIZE) {
+          const chunk = updatedTasks.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const item of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+          }
+          await batch.commit();
+        }
+      }
+    }
+
+    return updatedTasks.length;
+  }
+
   /**
    * Bulk task creation for Toggl CSV backup restoration and imports.
    * Splits `"Task / Subtask / Sub-subtask"` hierarchy paths up to 3 levels, creating
@@ -1673,6 +1746,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     updateTask,
     updateTaskStatus,
     updateTasksStatusBatch,
+    updateTasksTagsBatch,
     duplicateTaskSubtree,
     reparentTask,
     reorderTaskSiblings,

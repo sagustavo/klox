@@ -1,9 +1,12 @@
 import {
+  DEFAULT_ADO_COMPLETED_WORK_FIELD,
   buildAdoWorkItemWebUrl,
+  normalizeAdoFieldRef,
   normalizeStoredAdoConnections,
   parseWorkItemIdInput,
   roundHours2,
   type AdoErrorCode,
+  type AdoFieldOption,
   type AdoIterationInfo,
   type AdoSprintWorkItemNode,
   type AdoWorkItemSummary,
@@ -21,6 +24,36 @@ import { useTimeLogsStore } from './timeLogs';
 const DEMO_ADO_CONNS_KEY = 'klox_ado_demo_connections';
 const DEMO_ADO_CONN_LEGACY_KEY = 'klox_ado_demo_connection';
 const DEMO_ADO_ITEMS_KEY = 'klox_ado_demo_workitems';
+
+const DEMO_NUMERIC_FIELDS: AdoFieldOption[] = [
+  {
+    referenceName: 'Microsoft.VSTS.Scheduling.CompletedWork',
+    name: 'Completed Work',
+    type: 'double',
+  },
+  {
+    referenceName: 'Custom.ActualHours',
+    name: 'Actual Hours',
+    type: 'double',
+  },
+  {
+    referenceName: 'Microsoft.VSTS.Scheduling.OriginalEstimate',
+    name: 'Original Estimate',
+    type: 'double',
+  },
+];
+
+function demoTypesForField(fieldRef?: string): AdoWorkItemTypeCapability[] {
+  const isCustomField =
+    Boolean(fieldRef?.trim()) &&
+    fieldRef!.trim().toLowerCase() !== DEFAULT_ADO_COMPLETED_WORK_FIELD.toLowerCase();
+  return [
+    { name: 'Task', supportsCompletedWork: true },
+    { name: 'Bug', supportsCompletedWork: true },
+    { name: 'Product Backlog Item', supportsCompletedWork: isCustomField },
+    { name: 'User Story', supportsCompletedWork: isCustomField },
+  ];
+}
 
 export interface AdoProjectOption {
   id: string;
@@ -111,6 +144,8 @@ export const useAdoStore = defineStore('ado', () => {
   const connections = ref<AdoConnectionSummary[]>([]);
   const projects = ref<AdoProjectOption[]>([]);
   const workItemTypes = ref<AdoWorkItemTypeCapability[]>([]);
+  const workItemTypesByConn = ref<Record<string, AdoWorkItemTypeCapability[]>>({});
+  const numericFieldsByConn = ref<Record<string, AdoFieldOption[]>>({});
   const iterationsByConn = ref<Record<string, AdoIterationInfo[]>>({});
   const currentIterByConn = ref<Record<string, string | null>>({});
   const loading = ref(false);
@@ -160,15 +195,20 @@ export const useAdoStore = defineStore('ado', () => {
           { id: 'demo-klox', name: connections.value[0]?.defaultProject || 'Klox' },
           { id: 'demo-core', name: 'Core Platform' },
         ];
-        workItemTypes.value = [
-          { name: 'Task', supportsCompletedWork: true },
-          { name: 'Bug', supportsCompletedWork: true },
-          { name: 'Product Backlog Item', supportsCompletedWork: false },
-          { name: 'User Story', supportsCompletedWork: false },
-        ];
+        const nextTypesByConn: Record<string, AdoWorkItemTypeCapability[]> = {};
+        const nextFieldsByConn: Record<string, AdoFieldOption[]> = {};
+        for (const conn of connections.value) {
+          nextTypesByConn[conn.id] = demoTypesForField(conn.completedWorkFieldRef);
+          nextFieldsByConn[conn.id] = [...DEMO_NUMERIC_FIELDS];
+        }
+        workItemTypesByConn.value = nextTypesByConn;
+        numericFieldsByConn.value = nextFieldsByConn;
+        workItemTypes.value = nextTypesByConn[connections.value[0]!.id] ?? demoTypesForField();
       } else {
         projects.value = [];
         workItemTypes.value = [];
+        workItemTypesByConn.value = {};
+        numericFieldsByConn.value = {};
       }
     } catch {
       connections.value = [];
@@ -196,6 +236,8 @@ export const useAdoStore = defineStore('ado', () => {
     connections.value = [];
     projects.value = [];
     workItemTypes.value = [];
+    workItemTypesByConn.value = {};
+    numericFieldsByConn.value = {};
     iterationsByConn.value = {};
     currentIterByConn.value = {};
     loading.value = false;
@@ -236,11 +278,13 @@ export const useAdoStore = defineStore('ado', () => {
     connectionId?: string;
     orgUrl: string;
     defaultProject?: string;
+    completedWorkFieldRef?: string;
     pat?: string;
   }): Promise<{
     ok: boolean;
     projects: AdoProjectOption[];
     workItemTypes: AdoWorkItemTypeCapability[];
+    numericFields: AdoFieldOption[];
     errorCode?: AdoErrorCode;
   }> {
     if (params.isDemo) {
@@ -248,15 +292,21 @@ export const useAdoStore = defineStore('ado', () => {
         { id: 'demo-klox', name: params.defaultProject?.trim() || 'Klox' },
         { id: 'demo-core', name: 'Core Platform' },
       ];
-      const demoTypes = [
-        { name: 'Task', supportsCompletedWork: true },
-        { name: 'Bug', supportsCompletedWork: true },
-        { name: 'Product Backlog Item', supportsCompletedWork: false },
-        { name: 'User Story', supportsCompletedWork: false },
-      ];
+      const demoTypes = demoTypesForField(params.completedWorkFieldRef);
+      const demoFields = [...DEMO_NUMERIC_FIELDS];
       projects.value = demoProjects;
       workItemTypes.value = demoTypes;
-      return { ok: true, projects: demoProjects, workItemTypes: demoTypes };
+      if (params.connectionId) {
+        workItemTypesByConn.value = {
+          ...workItemTypesByConn.value,
+          [params.connectionId]: demoTypes,
+        };
+        numericFieldsByConn.value = {
+          ...numericFieldsByConn.value,
+          [params.connectionId]: demoFields,
+        };
+      }
+      return { ok: true, projects: demoProjects, workItemTypes: demoTypes, numericFields: demoFields };
     }
 
     loading.value = true;
@@ -264,6 +314,7 @@ export const useAdoStore = defineStore('ado', () => {
       const res = await fetchAuthedApi<{
         projects: AdoProjectOption[];
         workItemTypes: AdoWorkItemTypeCapability[];
+        numericFields?: AdoFieldOption[];
       }>('/api/integrations/ado/connection', {
         method: 'POST',
         body: {
@@ -271,21 +322,37 @@ export const useAdoStore = defineStore('ado', () => {
           orgUrl: params.orgUrl,
           ...(params.connectionId ? { connectionId: params.connectionId } : {}),
           ...(params.defaultProject?.trim() ? { defaultProject: params.defaultProject.trim() } : {}),
+          ...(params.completedWorkFieldRef?.trim()
+            ? { completedWorkFieldRef: params.completedWorkFieldRef.trim() }
+            : {}),
           ...(params.pat?.trim() ? { pat: params.pat.trim() } : {}),
         },
       });
       projects.value = res.projects ?? [];
       workItemTypes.value = res.workItemTypes ?? [];
+      const fields = res.numericFields ?? [];
+      if (params.connectionId) {
+        workItemTypesByConn.value = {
+          ...workItemTypesByConn.value,
+          [params.connectionId]: workItemTypes.value,
+        };
+        numericFieldsByConn.value = {
+          ...numericFieldsByConn.value,
+          [params.connectionId]: fields,
+        };
+      }
       return {
         ok: true,
         projects: projects.value,
         workItemTypes: workItemTypes.value,
+        numericFields: fields,
       };
     } catch (err) {
       return {
         ok: false,
         projects: projects.value,
         workItemTypes: workItemTypes.value,
+        numericFields: [],
         errorCode: extractApiErrorCode(err),
       };
     } finally {
@@ -301,6 +368,7 @@ export const useAdoStore = defineStore('ado', () => {
     orgUrl: string;
     defaultProject: string;
     defaultWorkItemType: string;
+    completedWorkFieldRef?: string;
     pat?: string;
   }): Promise<{ ok: boolean; connection?: AdoConnectionSummary; errorCode?: AdoErrorCode }> {
     loading.value = true;
@@ -308,6 +376,12 @@ export const useAdoStore = defineStore('ado', () => {
       if (!params.kloxProjectId?.trim()) {
         return { ok: false, errorCode: 'ADO_INVALID_INPUT' };
       }
+
+      const fieldCheck = normalizeAdoFieldRef(params.completedWorkFieldRef);
+      if (!fieldCheck.valid) {
+        return { ok: false, errorCode: fieldCheck.error };
+      }
+      const activeFieldRef = fieldCheck.fieldRef;
 
       if (params.isDemo) {
         const nowIso = new Date().toISOString();
@@ -342,6 +416,9 @@ export const useAdoStore = defineStore('ado', () => {
           organization: orgSlug,
           defaultProject: params.defaultProject.trim() || 'Klox',
           defaultWorkItemType: params.defaultWorkItemType.trim() || 'Task',
+          ...(activeFieldRef !== DEFAULT_ADO_COMPLETED_WORK_FIELD
+            ? { completedWorkFieldRef: activeFieldRef }
+            : {}),
           tokenHint: params.pat?.trim()
             ? `••••${params.pat.trim().slice(-4)}`
             : prev?.tokenHint || '••••demo',
@@ -363,12 +440,16 @@ export const useAdoStore = defineStore('ado', () => {
           { id: 'demo-klox', name: nextConn.defaultProject },
           { id: 'demo-core', name: 'Core Platform' },
         ];
-        workItemTypes.value = [
-          { name: 'Task', supportsCompletedWork: true },
-          { name: 'Bug', supportsCompletedWork: true },
-          { name: 'Product Backlog Item', supportsCompletedWork: false },
-          { name: 'User Story', supportsCompletedWork: false },
-        ];
+        const demoTypes = demoTypesForField(activeFieldRef);
+        workItemTypes.value = demoTypes;
+        workItemTypesByConn.value = {
+          ...workItemTypesByConn.value,
+          [effectiveId]: demoTypes,
+        };
+        numericFieldsByConn.value = {
+          ...numericFieldsByConn.value,
+          [effectiveId]: [...DEMO_NUMERIC_FIELDS],
+        };
         persistDemoState(params.uid);
         publishDomainEvent({ type: 'AdoConnected', at: nowIso });
         return { ok: true, connection: nextConn };
@@ -379,6 +460,7 @@ export const useAdoStore = defineStore('ado', () => {
         connections: AdoConnectionSummary[];
         projects: AdoProjectOption[];
         workItemTypes: AdoWorkItemTypeCapability[];
+        numericFields?: AdoFieldOption[];
       }>('/api/integrations/ado/connection', {
         method: 'POST',
         body: {
@@ -387,6 +469,7 @@ export const useAdoStore = defineStore('ado', () => {
           orgUrl: params.orgUrl,
           defaultProject: params.defaultProject,
           defaultWorkItemType: params.defaultWorkItemType,
+          completedWorkFieldRef: activeFieldRef,
           ...(params.pat?.trim() ? { pat: params.pat.trim() } : {}),
         },
       });
@@ -394,6 +477,14 @@ export const useAdoStore = defineStore('ado', () => {
       connections.value = res.connections ?? [res.connection];
       projects.value = res.projects ?? [];
       workItemTypes.value = res.workItemTypes ?? [];
+      workItemTypesByConn.value = {
+        ...workItemTypesByConn.value,
+        [res.connection.id]: workItemTypes.value,
+      };
+      numericFieldsByConn.value = {
+        ...numericFieldsByConn.value,
+        [res.connection.id]: res.numericFields ?? [],
+      };
       publishDomainEvent({ type: 'AdoConnected', at: new Date().toISOString() });
       return { ok: true, connection: res.connection };
     } catch (err) {
@@ -484,35 +575,62 @@ export const useAdoStore = defineStore('ado', () => {
     connectionId?: string;
     orgUrl?: string;
     project?: string;
+    completedWorkFieldRef?: string;
   }): Promise<{
     projects: AdoProjectOption[];
     workItemTypes: AdoWorkItemTypeCapability[];
+    numericFields: AdoFieldOption[];
     errorCode?: AdoErrorCode;
   }> {
+    const conn = params.connectionId ? getConnectionById(params.connectionId) : connection.value;
+    const fieldRef = params.completedWorkFieldRef ?? conn?.completedWorkFieldRef;
+
     if (params.isDemo) {
-      return { projects: projects.value, workItemTypes: workItemTypes.value };
+      const types = demoTypesForField(fieldRef);
+      const fields = [...DEMO_NUMERIC_FIELDS];
+      workItemTypes.value = types;
+      if (conn) {
+        workItemTypesByConn.value = { ...workItemTypesByConn.value, [conn.id]: types };
+        numericFieldsByConn.value = { ...numericFieldsByConn.value, [conn.id]: fields };
+      }
+      return { projects: projects.value, workItemTypes: types, numericFields: fields };
     }
     try {
       const res = await fetchAuthedApi<{
         projects: AdoProjectOption[];
         workItemTypes: AdoWorkItemTypeCapability[];
+        numericFields?: AdoFieldOption[];
       }>('/api/integrations/ado/projects', {
         query: {
           ...(params.connectionId ? { connectionId: params.connectionId } : {}),
           ...(params.orgUrl ? { orgUrl: params.orgUrl } : {}),
           ...(params.project ? { project: params.project } : {}),
+          ...(fieldRef ? { completedWorkFieldRef: fieldRef } : {}),
         },
       });
       projects.value = res.projects ?? [];
       workItemTypes.value = res.workItemTypes ?? [];
+      const fields = res.numericFields ?? [];
+      if (conn) {
+        workItemTypesByConn.value = {
+          ...workItemTypesByConn.value,
+          [conn.id]: workItemTypes.value,
+        };
+        numericFieldsByConn.value = {
+          ...numericFieldsByConn.value,
+          [conn.id]: fields,
+        };
+      }
       return {
         projects: projects.value,
         workItemTypes: workItemTypes.value,
+        numericFields: fields,
       };
     } catch (err) {
       return {
         projects: projects.value,
         workItemTypes: workItemTypes.value,
+        numericFields: conn ? numericFieldsByConn.value[conn.id] ?? [] : [],
         errorCode: extractApiErrorCode(err),
       };
     }
@@ -977,6 +1095,7 @@ export const useAdoStore = defineStore('ado', () => {
             externalWorkItemUrl: match.url,
             externalOrgUrl: match.orgUrl,
             externalProject: match.project,
+            externalSupportsCompletedWork: match.supportsCompletedWork,
             completedWorkHours: match.completedWork,
             externalSyncedAt: nowIso,
           };
@@ -1033,9 +1152,16 @@ export const useAdoStore = defineStore('ado', () => {
     if (params.isDemo) {
       const maxId = demoWorkItems.value.reduce((m, w) => Math.max(m, w.id), 100);
       const nextId = maxId + 1;
-      const supportsCompletedWork =
-        params.workItemType.toLowerCase() !== 'product backlog item' &&
-        params.workItemType.toLowerCase() !== 'user story';
+      const demoCaps =
+        workItemTypesByConn.value[activeConn.id] ??
+        demoTypesForField(activeConn.completedWorkFieldRef);
+      const matchedCap = demoCaps.find(
+        (wt) => wt.name.toLowerCase() === params.workItemType.toLowerCase()
+      );
+      const supportsCompletedWork = matchedCap
+        ? matchedCap.supportsCompletedWork
+        : params.workItemType.toLowerCase() !== 'product backlog item' &&
+          params.workItemType.toLowerCase() !== 'user story';
       createdItem = {
         id: nextId,
         title: params.title.trim(),
@@ -1085,6 +1211,7 @@ export const useAdoStore = defineStore('ado', () => {
       externalWorkItemUrl: createdItem.url,
       externalOrgUrl: targetOrg,
       externalProject: targetProject,
+      externalSupportsCompletedWork: createdItem.supportsCompletedWork,
       completedWorkHours: createdItem.completedWork,
       externalSyncedAt: nowIso,
     });
@@ -1307,6 +1434,8 @@ export const useAdoStore = defineStore('ado', () => {
     connection,
     projects,
     workItemTypes,
+    workItemTypesByConn,
+    numericFieldsByConn,
     iterationsByConn,
     currentIterByConn,
     loading,

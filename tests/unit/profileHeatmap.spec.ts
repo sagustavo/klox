@@ -337,4 +337,46 @@ describe('domain/toggl (Lossless Pre-Wipe Backup CSV Round-Trip)', () => {
       ])
     );
   });
+
+  it('supports reactive filtered-range heatmaps anchored to dashboard bounds with >366d clamp', () => {
+    const referenceNow = new Date('2026-11-28T12:00:00.000Z');
+    const logs: TimeLog[] = [
+      makeLog({
+        id: 'f-1',
+        startTime: '2026-11-10T10:00:00.000Z',
+        durationSeconds: 3600,
+      }),
+      makeLog({
+        id: 'f-2',
+        startTime: '2026-11-25T15:00:00.000Z',
+        durationSeconds: 7200,
+      }),
+    ];
+
+    const shortRes = buildActivityHeatmap({
+      logs,
+      timeZone: 'UTC',
+      weekStartsOn: 1,
+      range: 'filtered',
+      customBounds: { startDateKey: '2026-11-01', endDateKey: '2026-11-30' },
+      now: referenceNow,
+    });
+    expect(shortRes.startDateKey).toBe('2026-11-01');
+    expect(shortRes.endDateKey).toBe('2026-11-30');
+    expect(shortRes.summary.totalSeconds).toBe(10800);
+    expect(shortRes.summary.activeDays).toBe(2);
+
+    const longRes = buildActivityHeatmap({
+      logs,
+      timeZone: 'UTC',
+      weekStartsOn: 1,
+      range: 'filtered',
+      customBounds: { startDateKey: '2023-01-01', endDateKey: '2026-11-28' },
+      now: referenceNow,
+    });
+    // Spans > 366 days clamp to trailing 365 days ending on endDateKey
+    expect(longRes.endDateKey).toBe('2026-11-28');
+    expect(longRes.startDateKey).toBe('2025-11-29');
+    expect(longRes.summary.totalSeconds).toBe(10800);
+  });
 });

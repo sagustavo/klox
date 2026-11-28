@@ -4,6 +4,8 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Download,
   GitBranch,
   Plus,
@@ -14,11 +16,15 @@ import {
 } from 'lucide-vue-next';
 import type { AdoSelectedWorkItem } from '~/components/ado/AdoWorkItemPickerPopover.vue';
 import type { FilterMultiSelectOption } from '~/components/ui/FilterMultiSelect.vue';
+import type { UiSelectOption } from '~/components/ui/Select.vue';
 import {
   buildAdoSyncCandidates,
+  buildEffectiveCompletedWorkMap,
+  evaluateTaskTimerEligibility,
   parseWorkItemIdInput,
   resolveEffectiveProjectAdoTarget,
   type AdoErrorCode,
+  type TaskTimerEligibility,
 } from '~/domain/ado';
 import { toDateKey } from '~/domain/duration';
 import {
@@ -34,6 +40,7 @@ import {
   paginateTaskRoots,
   tasksToCsv,
   tasksToMarkdownTable,
+  type BulkTagUpdateMode,
   type TaskLinkFilter,
   type TaskSelectionAction,
   type TaskSelectionState,
@@ -79,8 +86,8 @@ const searchQuery = ref('');
 const selectedFilterTagIds = ref<string[]>([]);
 const selectedLinkFilter = ref<TaskLinkFilter>('all');
 
-// Expand/Collapse & Completed Section state (#1, #13)
-const manualCollapsedIds = ref<Set<EntityId>>(new Set());
+// Expand/Collapse & Completed Section state (collapsed by default — opt-in expandedTaskIds)
+const expandedTaskIds = ref<Set<EntityId>>(new Set());
 const completedExpanded = ref(false);
 
 // Dynamic pagination state (#11)
@@ -116,6 +123,8 @@ const detailModalTaskId = ref<EntityId | null>(null);
 // Other Modals & Confirmation state
 const syncReviewOpen = ref(false);
 const createAdoDialogOpen = ref(false);
+const bulkTagsModalOpen = ref(false);
+const bulkTagsSaving = ref(false);
 const createAdoTargetTask = ref<Task | null>(null);
 const refreshingAdo = ref(false);
 
@@ -189,6 +198,14 @@ const activeTagFilterIds = computed(() =>
   selectedFilterTagIds.value.filter((id) => id !== UNTAGGED_FILTER_VALUE)
 );
 
+const linkFilterOptions = computed<UiSelectOption<TaskLinkFilter>[]>(() => [
+  { value: 'all', label: t('tasks.filters.link_all') },
+  { value: 'ado_linked', label: t('tasks.filters.link_ado_linked') },
+  { value: 'unlinked', label: t('tasks.filters.link_unlinked') },
+  { value: 'has_deadline', label: t('tasks.filters.link_has_deadline') },
+  { value: 'overdue', label: t('tasks.filters.link_overdue') },
+]);
+
 const hasActiveFilters = computed(
   () =>
     searchQuery.value.trim().length > 0 ||
@@ -224,10 +241,17 @@ watch(
     sprintError.value = null;
     if (connId) {
       void loadIterationsForConnection(connId);
+      if ((adoStore.workItemTypesByConn[connId]?.length ?? 0) === 0) {
+        void adoStore.fetchProjectsAndTypes({
+          isDemo: authStore.isDemoMode,
+          connectionId: connId,
+        });
+      }
     } else {
       selectedIterationPath.value = '';
     }
-  }
+  },
+  { immediate: true }
 );
 
 watch(selectedProjectId, () => {
@@ -281,6 +305,7 @@ function clearAllFilters() {
 function isAnyModalOpen(): boolean {
   return Boolean(
     detailModalOpen.value ||
+      bulkTagsModalOpen.value ||
       sprintImportOpen.value ||
       createAdoDialogOpen.value ||
       syncReviewOpen.value ||
@@ -378,7 +403,7 @@ function onWindowKeydown(event: KeyboardEvent) {
     !event.ctrlKey &&
     !event.metaKey &&
     !event.shiftKey &&
-    (event.key === 'F2' || event.key === 'e')
+    event.key === 'F2'
   ) {
     const targetId =
       selectionState.value.selectedIds.length === 1
@@ -505,13 +530,26 @@ const filteredTreeResult = computed(() =>
 );
 
 const effectiveCollapsedIds = computed<Set<EntityId>>(() => {
-  const next = new Set(manualCollapsedIds.value);
+  const collapsed = new Set<EntityId>();
+  const walk = (nodes: readonly TaskTreeNode[]) => {
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        collapsed.add(node.task.id);
+        walk(node.children);
+      }
+    }
+  };
+  walk(filteredTreeResult.value.roots);
+
+  for (const id of expandedTaskIds.value) {
+    collapsed.delete(id);
+  }
   if (hasActiveFilters.value) {
     for (const id of filteredTreeResult.value.autoExpandedIds) {
-      next.delete(id);
+      collapsed.delete(id);
     }
   }
-  return next;
+  return collapsed;
 });
 
 const activeRoots = computed<TaskTreeNode[]>(() =>
@@ -592,12 +630,46 @@ const trackedSecondsByTask = computed(() => {
   return rolledUp;
 });
 
+const connWorkItemTypes = computed(() =>
+  (projectConnection.value?.id
+    ? adoStore.workItemTypesByConn[projectConnection.value.id]
+    : undefined) ?? adoStore.workItemTypes
+);
+
+const effectiveCompletedHoursByTask = computed(() =>
+  buildEffectiveCompletedWorkMap(
+    rawProjectTreeRoots.value,
+    connWorkItemTypes.value,
+    projectConnection.value?.completedWorkFieldRef
+  )
+);
+
+const timerEligibilityByTask = computed(() => {
+  const map = new Map<EntityId, TaskTimerEligibility>();
+  const policy = prefsStore.preferences.taskTrackingPolicy;
+  const fieldRef = projectConnection.value?.completedWorkFieldRef;
+  for (const task of catalogStore.getTasksForProject(selectedProjectId.value)) {
+    map.set(
+      task.id,
+      evaluateTaskTimerEligibility({
+        task,
+        allTasks: catalogStore.tasks,
+        policy,
+        workItemTypes: connWorkItemTypes.value,
+        completedWorkFieldRef: fieldRef,
+      })
+    );
+  }
+  return map;
+});
+
 const syncCandidates = computed(() =>
   buildAdoSyncCandidates({
     projects: catalogStore.projects,
     tasks: catalogStore.tasks,
     logs: timeLogsStore.logs,
     connections: adoStore.connections,
+    workItemTypesByConn: adoStore.workItemTypesByConn,
   })
 );
 
@@ -691,36 +763,40 @@ function handlePrepareContextMenu(taskId: EntityId) {
 }
 
 function toggleTaskCollapsed(taskId: EntityId) {
-  const next = new Set(manualCollapsedIds.value);
+  const next = new Set(expandedTaskIds.value);
   if (effectiveCollapsedIds.value.has(taskId)) {
-    next.delete(taskId);
-  } else {
     next.add(taskId);
+  } else {
+    next.delete(taskId);
   }
-  manualCollapsedIds.value = next;
+  expandedTaskIds.value = next;
 }
 
 function toggleAllExpanded() {
-  const next = new Set(manualCollapsedIds.value);
+  const next = new Set(expandedTaskIds.value);
   if (allExpanded.value) {
-    for (const id of expandableParentIds.value) {
-      next.add(id);
-    }
-  } else {
     for (const id of expandableParentIds.value) {
       next.delete(id);
     }
+  } else {
+    for (const id of expandableParentIds.value) {
+      next.add(id);
+    }
   }
-  manualCollapsedIds.value = next;
+  expandedTaskIds.value = next;
 }
 
 function ensureExpanded(taskId: EntityId | null | undefined) {
   if (!taskId) return;
-  if (manualCollapsedIds.value.has(taskId)) {
-    const next = new Set(manualCollapsedIds.value);
-    next.delete(taskId);
-    manualCollapsedIds.value = next;
+  const next = new Set(expandedTaskIds.value);
+  let curId: EntityId | null | undefined = taskId;
+  const seen = new Set<EntityId>();
+  while (curId && !seen.has(curId)) {
+    seen.add(curId);
+    next.add(curId);
+    curId = catalogStore.getTaskById(curId)?.parentTaskId ?? null;
   }
+  expandedTaskIds.value = next;
 }
 
 function openTaskDetailModal(taskId: EntityId) {
@@ -1107,6 +1183,41 @@ async function handlePasteClipboardTasks() {
         focusedId: createdRoots[0]!.id,
       };
     }
+  }
+}
+
+const selectedTasksForBulk = computed<Task[]>(() =>
+  selectionState.value.selectedIds
+    .map((id) => catalogStore.getTaskById(id))
+    .filter((item): item is Task => Boolean(item))
+);
+
+function openBulkTagsModal() {
+  if (selectionState.value.selectedIds.length === 0) return;
+  bulkTagsModalOpen.value = true;
+}
+
+async function handleBulkUpdateTags(payload: {
+  mode: BulkTagUpdateMode;
+  tagIds: EntityId[];
+}) {
+  if (!authStore.user || selectionState.value.selectedIds.length === 0 || bulkTagsSaving.value) {
+    return;
+  }
+  bulkTagsSaving.value = true;
+  try {
+    const selectedCount = selectionState.value.selectedIds.length;
+    await catalogStore.updateTasksTagsBatch({
+      uid: authStore.user.uid,
+      isDemo: authStore.isDemoMode,
+      taskIds: selectionState.value.selectedIds,
+      tagIds: payload.tagIds,
+      mode: payload.mode,
+    });
+    bulkTagsModalOpen.value = false;
+    showActionStatus(t('tasks.toast.tagsUpdated', { count: selectedCount }));
+  } finally {
+    bulkTagsSaving.value = false;
   }
 }
 
@@ -1533,19 +1644,27 @@ async function confirmDeleteAction() {
         </div>
 
         <div class="w-full sm:w-44">
-          <select
+          <UiSelect
             v-model="selectedLinkFilter"
-            data-testid="tasks-filter-link"
+            :options="linkFilterOptions"
+            test-id="tasks-filter-link"
             :aria-label="$t('tasks.filters.linkLabel')"
-            class="h-10 w-full border border-border-input bg-bg-primary px-3 text-ui text-text-primary focus:border-signal focus:outline-none"
-          >
-            <option value="all">{{ $t('tasks.filters.link_all') }}</option>
-            <option value="ado_linked">{{ $t('tasks.filters.link_ado_linked') }}</option>
-            <option value="unlinked">{{ $t('tasks.filters.link_unlinked') }}</option>
-            <option value="has_deadline">{{ $t('tasks.filters.link_has_deadline') }}</option>
-            <option value="overdue">{{ $t('tasks.filters.link_overdue') }}</option>
-          </select>
+          />
         </div>
+
+        <button
+          v-if="expandableParentIds.length > 0"
+          type="button"
+          data-testid="tasks-toolbar-toggle-all-expanded"
+          class="btn-press inline-flex h-10 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-text-primary hover:border-signal/60 hover:bg-bg-hover transition-colors"
+          @click="toggleAllExpanded"
+        >
+          <ChevronsDownUp v-if="allExpanded" class="h-3.5 w-3.5 text-signal" aria-hidden="true" />
+          <ChevronsUpDown v-else class="h-3.5 w-3.5 text-signal" aria-hidden="true" />
+          <span>
+            {{ allExpanded ? $t('tasks.pagination.collapseAll') : $t('tasks.pagination.expandAll') }}
+          </span>
+        </button>
 
         <button
           v-if="hasActiveFilters"
@@ -1711,6 +1830,8 @@ async function confirmDeleteAction() {
             :running-elapsed-seconds="timerStore.currentElapsedSeconds"
             :tracked-seconds-by-task="trackedSecondsByTask"
             :unsynced-hours-by-task="unsyncedHoursByTask"
+            :effective-completed-hours-by-task="effectiveCompletedHoursByTask"
+            :timer-eligibility-by-task="timerEligibilityByTask"
             :project-tags="projectTags"
             :selected-task-ids="selectedTaskIdSet"
             :selected-count="selectionState.selectedIds.length"
@@ -1731,6 +1852,7 @@ async function confirmDeleteAction() {
             @toggle-done="handleToggleDone"
             @delete-task="requestDeleteTask"
             @bulk-delete="requestBulkDeleteSelected"
+            @bulk-update-tags="openBulkTagsModal"
             @bulk-mark-status="handleBulkMarkStatus"
             @duplicate-tasks="handleDuplicateTasks"
             @export-markdown="handleExportMarkdown"
@@ -1800,6 +1922,8 @@ async function confirmDeleteAction() {
               :running-elapsed-seconds="timerStore.currentElapsedSeconds"
               :tracked-seconds-by-task="trackedSecondsByTask"
               :unsynced-hours-by-task="unsyncedHoursByTask"
+              :effective-completed-hours-by-task="effectiveCompletedHoursByTask"
+              :timer-eligibility-by-task="timerEligibilityByTask"
               :project-tags="projectTags"
               :selected-task-ids="selectedTaskIdSet"
               :selected-count="selectionState.selectedIds.length"
@@ -1820,6 +1944,7 @@ async function confirmDeleteAction() {
               @toggle-done="handleToggleDone"
               @delete-task="requestDeleteTask"
               @bulk-delete="requestBulkDeleteSelected"
+              @bulk-update-tags="openBulkTagsModal"
               @bulk-mark-status="handleBulkMarkStatus"
               @duplicate-tasks="handleDuplicateTasks"
               @export-markdown="handleExportMarkdown"
@@ -1842,6 +1967,8 @@ async function confirmDeleteAction() {
       :running-elapsed-seconds="timerStore.currentElapsedSeconds"
       :tracked-seconds-by-task="trackedSecondsByTask"
       :unsynced-hours-by-task="unsyncedHoursByTask"
+      :effective-completed-hours-by-task="effectiveCompletedHoursByTask"
+      :timer-eligibility-by-task="timerEligibilityByTask"
       :ado-connected="Boolean(projectConnection)"
       :ado-connection-id="projectConnection?.id"
       :ado-org-url="effectiveAdoTarget?.orgUrl"
@@ -1875,6 +2002,15 @@ async function confirmDeleteAction() {
     />
 
     <AdoSyncReviewDialog v-model:open="syncReviewOpen" />
+
+    <TasksBulkTagsDialog
+      v-model:open="bulkTagsModalOpen"
+      :selected-tasks="selectedTasksForBulk"
+      :project-id="selectedProjectId"
+      :project-tags="projectTags"
+      :saving="bulkTagsSaving"
+      @apply="handleBulkUpdateTags"
+    />
 
     <UiConfirmDialog
       :open="Boolean(pendingDelete)"

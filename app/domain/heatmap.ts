@@ -68,11 +68,18 @@ export function computeHeatmapIntensityLevel(
   return 4;
 }
 
+function daySpanInclusive(startKey: string, endKey: string): number {
+  const startMs = parseDateKeyUtc(startKey).getTime();
+  const endMs = parseDateKeyUtc(endKey).getTime();
+  return Math.floor((endMs - startMs) / 86_400_000) + 1;
+}
+
 export function buildActivityHeatmap(params: {
   logs: readonly TimeLog[];
   timeZone: string;
   weekStartsOn: WeekStartDay;
   range: HeatmapRangeSelection;
+  customBounds?: { startDateKey?: string | null; endDateKey?: string | null };
   now?: Date;
 }): ActivityHeatmapData {
   const effectiveTz = params.timeZone || 'UTC';
@@ -90,12 +97,36 @@ export function buildActivityHeatmap(params: {
     }
   }
 
-  const startDateKey =
-    params.range === 'rolling_365'
-      ? addDaysToDateKey(todayKey, -364)
-      : `${params.range}-01-01`;
-  const endDateKey =
-    params.range === 'rolling_365' ? todayKey : `${params.range}-12-31`;
+  let startDateKey: string;
+  let endDateKey: string;
+  if (params.range === 'filtered') {
+    const rawStart = params.customBounds?.startDateKey || null;
+    const rawEnd = params.customBounds?.endDateKey || null;
+    if (rawStart && rawEnd && rawStart <= rawEnd) {
+      endDateKey = rawEnd;
+      startDateKey =
+        daySpanInclusive(rawStart, rawEnd) > 366 ? addDaysToDateKey(rawEnd, -364) : rawStart;
+    } else if (rawStart) {
+      endDateKey = todayKey >= rawStart ? todayKey : rawStart;
+      startDateKey =
+        daySpanInclusive(rawStart, endDateKey) > 366
+          ? addDaysToDateKey(endDateKey, -364)
+          : rawStart;
+    } else if (rawEnd) {
+      endDateKey = rawEnd;
+      startDateKey = addDaysToDateKey(rawEnd, -364);
+    } else {
+      startDateKey = addDaysToDateKey(todayKey, -364);
+      endDateKey = todayKey;
+    }
+  } else {
+    startDateKey =
+      params.range === 'rolling_365'
+        ? addDaysToDateKey(todayKey, -364)
+        : `${params.range}-01-01`;
+    endDateKey =
+      params.range === 'rolling_365' ? todayKey : `${params.range}-12-31`;
+  }
 
   const startWeekday = weekdayOfDateKey(startDateKey);
   const leadingPad = (startWeekday - params.weekStartsOn + 7) % 7;

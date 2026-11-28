@@ -1,13 +1,17 @@
 import {
+  DEFAULT_ADO_COMPLETED_WORK_FIELD,
   LEGACY_ADO_CONNECTION_ID,
+  normalizeAdoFieldRef,
   normalizeAdoOrgUrl,
   normalizeStoredAdoConnections,
+  type AdoFieldOption,
 } from '~/domain/ado';
 import { UNASSIGNED_PROJECT_ID } from '~/domain/invariants';
 import type { AdoConnectionSummary } from '~/domain/types';
 import {
   getProjectWorkItemTypes,
   listAdoProjects,
+  listProjectNumericFields,
 } from '../../../utils/adoClient';
 import {
   AdoCryptoError,
@@ -24,6 +28,7 @@ interface ConnectionRequestBody {
   orgUrl: string;
   defaultProject?: string;
   defaultWorkItemType?: string;
+  completedWorkFieldRef?: string;
   pat?: string;
   previewOnly?: boolean;
 }
@@ -90,6 +95,23 @@ export default defineEventHandler(async (event) => {
   }
 
   const requestedConnId = body?.connectionId?.trim() || '';
+  const previousConn = existingConnections.find(
+    (c) => c.id === requestedConnId
+  );
+  const fieldCheck = normalizeAdoFieldRef(
+    body?.completedWorkFieldRef !== undefined
+      ? body.completedWorkFieldRef
+      : previousConn?.completedWorkFieldRef
+  );
+  if (!fieldCheck.valid) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'ADO_INVALID_INPUT',
+      data: { code: 'ADO_INVALID_INPUT' },
+    });
+  }
+  const activeFieldRef = fieldCheck.fieldRef;
+
   const suppliedPat = (body?.pat ?? '').trim();
   const patToUse =
     suppliedPat ||
@@ -107,20 +129,37 @@ export default defineEventHandler(async (event) => {
   const projects = await listAdoProjects({ orgUrl: norm.orgUrl, pat: patToUse });
   const requestedProject = (body?.defaultProject ?? '').trim() || projects[0]?.name || '';
 
+  const safeFetchNumericFields = async (targetProj: string): Promise<AdoFieldOption[]> => {
+    try {
+      return await listProjectNumericFields({
+        orgUrl: norm.orgUrl,
+        pat: patToUse,
+        project: targetProj,
+      });
+    } catch {
+      return [];
+    }
+  };
+
   if (body?.previewOnly) {
     const matchedProj =
       projects.find((p) => p.name.toLowerCase() === requestedProject.toLowerCase())?.name ??
       requestedProject;
-    const workItemTypes = matchedProj
-      ? await getProjectWorkItemTypes({
-          orgUrl: norm.orgUrl,
-          pat: patToUse,
-          project: matchedProj,
-        })
-      : [];
+    const [workItemTypes, numericFields] = matchedProj
+      ? await Promise.all([
+          getProjectWorkItemTypes({
+            orgUrl: norm.orgUrl,
+            pat: patToUse,
+            project: matchedProj,
+            completedWorkFieldRef: activeFieldRef,
+          }),
+          safeFetchNumericFields(matchedProj),
+        ])
+      : [[], []];
     return {
       projects,
       workItemTypes,
+      numericFields,
     };
   }
 
@@ -159,23 +198,27 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const workItemTypes = await getProjectWorkItemTypes({
-    orgUrl: norm.orgUrl,
-    pat: patToUse,
-    project: defaultProject,
-  });
+  const [workItemTypes, numericFields] = await Promise.all([
+    getProjectWorkItemTypes({
+      orgUrl: norm.orgUrl,
+      pat: patToUse,
+      project: defaultProject,
+      completedWorkFieldRef: activeFieldRef,
+    }),
+    safeFetchNumericFields(defaultProject),
+  ]);
 
   const matchedProject =
     projects.find((p) => p.name.toLowerCase() === defaultProject.toLowerCase())?.name ??
     defaultProject;
 
-  const previousConn = existingConnections.find(
+  const existingPrev = existingConnections.find(
     (c) => c.id === effectiveConnId || (requestedConnId && c.id === requestedConnId)
   );
 
   const nowIso = new Date().toISOString();
   const tail = patToUse.slice(-4);
-  const tokenHint = suppliedPat ? `••••${tail}` : previousConn?.tokenHint || `••••${tail}`;
+  const tokenHint = suppliedPat ? `••••${tail}` : existingPrev?.tokenHint || `••••${tail}`;
 
   const summary: AdoConnectionSummary = {
     id: effectiveConnId,
@@ -186,8 +229,11 @@ export default defineEventHandler(async (event) => {
     organization: norm.organization,
     defaultProject: matchedProject,
     defaultWorkItemType,
+    ...(activeFieldRef !== DEFAULT_ADO_COMPLETED_WORK_FIELD
+      ? { completedWorkFieldRef: activeFieldRef }
+      : {}),
     tokenHint,
-    connectedAt: previousConn?.connectedAt || nowIso,
+    connectedAt: existingPrev?.connectedAt || nowIso,
     lastVerifiedAt: nowIso,
   };
 
@@ -250,5 +296,6 @@ export default defineEventHandler(async (event) => {
     connections: updatedConnections,
     projects,
     workItemTypes,
+    numericFields,
   };
 });

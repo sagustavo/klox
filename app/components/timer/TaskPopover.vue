@@ -6,9 +6,15 @@ import {
   PopoverRoot,
   PopoverTrigger,
 } from 'reka-ui';
+import {
+  evaluateTaskTimerEligibility,
+  type TaskTimerEligibility,
+} from '~/domain/ado';
 import type { TaskTreeNode } from '~/domain/invariants';
 import type { EntityId } from '~/domain/types';
+import { useAdoStore } from '~/stores/ado';
 import { useCatalogStore } from '~/stores/catalog';
+import { usePreferencesStore } from '~/stores/preferences';
 
 const props = withDefaults(
   defineProps<{
@@ -34,6 +40,41 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const catalogStore = useCatalogStore();
+const prefsStore = usePreferencesStore();
+const adoStore = useAdoStore();
+
+const connForProject = computed(() => adoStore.getConnectionForProject(props.projectId));
+
+const eligibilityMap = computed(() => {
+  const map = new Map<EntityId, TaskTimerEligibility>();
+  const conn = connForProject.value;
+  const connTypes = (conn ? adoStore.workItemTypesByConn[conn.id] : undefined) ?? adoStore.workItemTypes;
+  for (const node of allProjectTasks.value) {
+    map.set(
+      node.task.id,
+      evaluateTaskTimerEligibility({
+        task: node.task,
+        allTasks: catalogStore.tasks,
+        policy: prefsStore.preferences.taskTrackingPolicy,
+        workItemTypes: connTypes,
+        completedWorkFieldRef: conn?.completedWorkFieldRef,
+      })
+    );
+  }
+  return map;
+});
+
+function isTaskOptionAllowed(taskId: EntityId): boolean {
+  return eligibilityMap.value.get(taskId)?.allowed ?? true;
+}
+
+function getTaskOptionBlockHint(taskId: EntityId): string | undefined {
+  const elig = eligibilityMap.value.get(taskId);
+  if (!elig || elig.allowed) return undefined;
+  return elig.reason === 'PARENT_HAS_SUBTASKS'
+    ? t('tasks.timerBlockedParentHint')
+    : t('tasks.timerBlockedUnsupportedAdoHint');
+}
 
 const open = ref(false);
 const searchQuery = ref('');
@@ -254,14 +295,20 @@ function handleSearchKeydown(event: KeyboardEvent) {
           <li v-for="(node, idx) in filteredTasks" :key="node.task.id">
             <button
               type="button"
+              :disabled="!isTaskOptionAllowed(node.task.id)"
+              :title="getTaskOptionBlockHint(node.task.id)"
               :data-testid="`tracker-task-option-${node.task.id}`"
               class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-ui transition-colors"
               :class="[
-                idx === highlightedIdx ? 'bg-bg-hover' : 'hover:bg-bg-hover/70',
+                !isTaskOptionAllowed(node.task.id)
+                  ? 'opacity-45 cursor-not-allowed text-text-muted'
+                  : idx === highlightedIdx
+                    ? 'bg-bg-hover'
+                    : 'hover:bg-bg-hover/70',
                 node.task.id === taskId ? 'bg-signal-soft text-signal font-medium' : 'text-text-primary',
               ]"
               @mouseenter="highlightedIdx = idx"
-              @click="handleSelectTask(node.task.id)"
+              @click="isTaskOptionAllowed(node.task.id) && handleSelectTask(node.task.id)"
             >
               <span class="flex items-center gap-1.5 min-w-0 truncate">
                 <span class="truncate">

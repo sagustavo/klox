@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   CheckCircle2,
-  CheckSquare,
   Circle,
   Copy,
   Download,
@@ -13,6 +12,7 @@ import {
   Plus,
   SlidersHorizontal,
   Table,
+  Tag,
   Trash2,
 } from 'lucide-vue-next';
 import {
@@ -53,11 +53,11 @@ const emit = defineEmits<{
   renameInline: [];
   addSubtask: [];
   duplicate: [];
-  toggleSelect: [];
   indent: [];
   outdent: [];
   exportMarkdown: [];
   exportCsv: [];
+  bulkUpdateTags: [];
   bulkMarkDone: [];
   bulkMarkTodo: [];
   delete: [];
@@ -131,6 +131,17 @@ function handleUpdateOpen(nextOpen: boolean) {
           </ContextMenuItem>
 
           <ContextMenuSeparator as="hr" class="my-1 border-border-hairline" />
+
+          <ContextMenuItem as-child @select="emit('bulkUpdateTags')">
+            <button
+              type="button"
+              data-testid="task-context-bulk-tags"
+              class="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover focus:bg-bg-hover focus:outline-none data-[highlighted]:bg-bg-hover"
+            >
+              <Tag class="h-4 w-4 shrink-0 text-signal" aria-hidden="true" />
+              <span>{{ $t('tasks.contextMenu.bulkUpdateTags') }}</span>
+            </button>
+          </ContextMenuItem>
 
           <ContextMenuItem as-child @select="emit('bulkMarkDone')">
             <button
@@ -222,19 +233,6 @@ function handleUpdateOpen(nextOpen: boolean) {
               <Copy class="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
               <span>{{ $t('tasks.contextMenu.duplicate') }}</span>
               <span class="ml-auto text-xs text-text-faint" aria-hidden="true">⌘D</span>
-            </button>
-          </ContextMenuItem>
-
-          <ContextMenuItem as-child @select="emit('toggleSelect')">
-            <button
-              type="button"
-              data-testid="task-context-toggle-select"
-              class="flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-ui text-text-primary transition-colors hover:bg-bg-hover focus:bg-bg-hover focus:outline-none data-[highlighted]:bg-bg-hover"
-            >
-              <CheckSquare class="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
-              <span>
-                {{ selected ? $t('tasks.rowMenu.deselectItem') : $t('tasks.rowMenu.selectItem') }}
-              </span>
             </button>
           </ContextMenuItem>
 

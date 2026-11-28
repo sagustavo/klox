@@ -29,7 +29,9 @@ import {
   groupLogsTwoLevel,
   paginateItems,
   resolveDateKeyBounds,
+  resolveDefaultTimeGranularity,
 } from '~/domain/aggregation';
+import type { UiSelectOption } from '~/components/ui/Select.vue';
 import { toDateKey } from '~/domain/duration';
 import { publishDomainEvent } from '~/domain/events';
 import { buildTagNameMap, resolveTagNames } from '~/domain/invariants';
@@ -96,6 +98,7 @@ const isCustomEndValid = ref(true);
 const pizzaDimension = ref<SliceDimension>('project');
 const barDimension = ref<SliceDimension>('project');
 const barGranularity = ref<TimeGranularity>('day');
+const userOverrodeGranularity = ref(false);
 
 const primaryGroup = ref<GroupByDimension>('project');
 const secondaryGroup = ref<GroupByDimension>('tag');
@@ -262,6 +265,51 @@ const filteredLogs = computed(() =>
   })
 );
 
+const dimensionFilteredLogs = computed(() =>
+  filterTimeLogs({
+    logs: timeLogsStore.sortedLogs,
+    filters: {
+      ...filters,
+      preset: 'all_time',
+      customStartDate: '',
+      customEndDate: '',
+    },
+    timeZone: prefsStore.preferences.timeZone,
+    weekStartsOn: prefsStore.preferences.weekStartsOn,
+  })
+);
+
+function applyDefaultGranularity() {
+  barGranularity.value = resolveDefaultTimeGranularity({
+    preset: filters.preset,
+    bounds: currentBounds.value,
+    logs: filteredLogs.value,
+    timeZone: prefsStore.preferences.timeZone,
+  });
+}
+
+watch(
+  [
+    () => filters.preset,
+    () => currentBounds.value.startDateKey,
+    () => currentBounds.value.endDateKey,
+  ],
+  () => {
+    userOverrodeGranularity.value = false;
+    applyDefaultGranularity();
+  },
+  { immediate: true }
+);
+
+watch(
+  () => filteredLogs.value.length,
+  () => {
+    if (filters.preset === 'all_time' && !userOverrodeGranularity.value) {
+      applyDefaultGranularity();
+    }
+  }
+);
+
 const catalogContext = computed(() => ({
   untaggedLabel: t('dashboard.untaggedBucket'),
   noTaskLabel: t('dashboard.noTaskBucket'),
@@ -361,6 +409,27 @@ const secondaryDimensionOptions = computed(() => {
   if (primaryGroup.value === 'none') return [];
   return dimensions.filter((d) => d !== primaryGroup.value);
 });
+
+const primaryGroupOptions = computed<UiSelectOption<GroupByDimension>[]>(() => [
+  { value: 'none', label: t('dashboard.grouping.noneOption') },
+  ...dimensions.map((dim) => ({
+    value: dim,
+    label: t(`dashboard.dimensions.${dim}`),
+  })),
+]);
+
+const secondaryGroupOptions = computed<UiSelectOption<GroupByDimension>[]>(() => [
+  { value: 'none', label: t('dashboard.grouping.noneOption') },
+  ...secondaryDimensionOptions.value.map((dim) => ({
+    value: dim,
+    label: t(`dashboard.dimensions.${dim}`),
+  })),
+]);
+
+const tablePageSizeOptions: UiSelectOption<number>[] = pageSizeOptions.map((sz) => ({
+  value: sz,
+  label: String(sz),
+}));
 
 watch(primaryGroup, (nextPrimary) => {
   if (nextPrimary === 'none' || nextPrimary === secondaryGroup.value) {
@@ -701,7 +770,7 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
                     ? 'bg-signal-soft text-signal font-semibold'
                     : 'text-text-muted hover:text-text-primary'
                 "
-                @click="barGranularity = gran"
+                @click="barGranularity = gran; userOverrodeGranularity = true"
               >
                 {{ $t(`dashboard.granularities.${gran}`) }}
               </button>
@@ -736,6 +805,15 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
       </div>
     </div>
 
+    <!-- Reactive Activity Heatmap (responds to all Analytics filters) -->
+    <DashboardActivityHeatmap
+      :filtered-logs="filteredLogs"
+      :dimension-filtered-logs="dimensionFilteredLogs"
+      :bounds="currentBounds"
+      :preset="filters.preset"
+      :has-dimension-filters="activeFiltersCount > 0"
+    />
+
     <!-- Visualization 3: 2-Level Hierarchical Breakdown & Paginated TimeLogs Table (FR-5.4) -->
     <div class="relative overflow-hidden border border-border-hairline bg-bg-elevated">
       <div class="signal-line absolute inset-x-0 top-0" aria-hidden="true" />
@@ -754,41 +832,33 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
 
         <!-- Primary & Secondary Group Controls + Page Size -->
         <div class="flex flex-wrap items-center gap-2 text-ui">
-          <label class="inline-flex items-center gap-1.5 text-text-muted">
+          <div class="inline-flex items-center gap-1.5 text-text-muted">
             <Layers class="h-4 w-4 text-signal" />
             <span>{{ $t('dashboard.grouping.primaryLabel') }}:</span>
-            <select
+            <UiSelect
               v-model="primaryGroup"
-              data-testid="dashboard-primary-group"
-              class="h-9 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
-            >
-              <option value="none">{{ $t('dashboard.grouping.noneOption') }}</option>
-              <option v-for="dim in dimensions" :key="dim" :value="dim">
-                {{ $t(`dashboard.dimensions.${dim}`) }}
-              </option>
-            </select>
-          </label>
+              :options="primaryGroupOptions"
+              size="sm"
+              test-id="dashboard-primary-group"
+              :aria-label="$t('dashboard.grouping.primaryLabel')"
+              class="w-36"
+            />
+          </div>
 
-          <label
+          <div
             v-if="primaryGroup !== 'none'"
             class="inline-flex items-center gap-1.5 text-text-muted"
           >
             <span>{{ $t('dashboard.grouping.secondaryLabel') }}:</span>
-            <select
+            <UiSelect
               v-model="secondaryGroup"
-              data-testid="dashboard-secondary-group"
-              class="h-9 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
-            >
-              <option value="none">{{ $t('dashboard.grouping.noneOption') }}</option>
-              <option
-                v-for="dim in secondaryDimensionOptions"
-                :key="dim"
-                :value="dim"
-              >
-                {{ $t(`dashboard.dimensions.${dim}`) }}
-              </option>
-            </select>
-          </label>
+              :options="secondaryGroupOptions"
+              size="sm"
+              test-id="dashboard-secondary-group"
+              :aria-label="$t('dashboard.grouping.secondaryLabel')"
+              class="w-36"
+            />
+          </div>
 
           <div
             v-if="primaryGroup !== 'none' && groupedBreakdown.length > 0"
@@ -796,32 +866,32 @@ function setInnerPage(nodeKey: string, nextIndex: number) {
           >
             <button
               type="button"
-              class="h-9 px-2.5 text-xs text-text-muted hover:text-text-primary border-r border-border-hairline transition-colors"
+              class="h-8 px-2.5 text-xs text-text-muted hover:text-text-primary border-r border-border-hairline transition-colors"
               @click="expandAllGroups"
             >
               {{ $t('dashboard.grouping.expandAll') }}
             </button>
             <button
               type="button"
-              class="h-9 px-2.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+              class="h-8 px-2.5 text-xs text-text-muted hover:text-text-primary transition-colors"
               @click="collapseAllGroups"
             >
               {{ $t('dashboard.grouping.collapseAll') }}
             </button>
           </div>
 
-          <label class="inline-flex items-center gap-1.5 text-text-muted">
+          <div class="inline-flex items-center gap-1.5 text-text-muted">
             <span>{{ $t('dashboard.pagination.rowsPerPage') }}:</span>
-            <select
-              v-model.number="tablePageSize"
-              data-testid="dashboard-table-page-size"
-              class="tabular-telemetry h-9 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
-            >
-              <option v-for="sz in pageSizeOptions" :key="sz" :value="sz">
-                {{ sz }}
-              </option>
-            </select>
-          </label>
+            <UiSelect
+              v-model="tablePageSize"
+              :options="tablePageSizeOptions"
+              size="sm"
+              tabular
+              test-id="dashboard-table-page-size"
+              :aria-label="$t('dashboard.pagination.rowsPerPage')"
+              class="w-[4.75rem]"
+            />
+          </div>
         </div>
       </div>
 

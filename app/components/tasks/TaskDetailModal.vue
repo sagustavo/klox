@@ -22,6 +22,11 @@ import {
   DialogTitle,
 } from 'reka-ui';
 import type { AdoSelectedWorkItem } from '~/components/ado/AdoWorkItemPickerPopover.vue';
+import {
+  evaluateTaskTimerEligibility,
+  resolveTaskSupportsCompletedWork,
+  type TaskTimerEligibility,
+} from '~/domain/ado';
 import { formatHMS, nextCalendarDateKey, toDateKey } from '~/domain/duration';
 import {
   MAX_TASK_DEPTH,
@@ -30,6 +35,7 @@ import {
 } from '~/domain/invariants';
 import { renderBasicMarkdown } from '~/domain/markdown';
 import type { EntityId, Project, Task, TaskStatus } from '~/domain/types';
+import { useAdoStore } from '~/stores/ado';
 import { useAuthStore } from '~/stores/auth';
 import { useCatalogStore } from '~/stores/catalog';
 import { usePreferencesStore } from '~/stores/preferences';
@@ -42,6 +48,8 @@ const props = withDefaults(
     runningElapsedSeconds?: number;
     trackedSecondsByTask?: ReadonlyMap<EntityId, number>;
     unsyncedHoursByTask?: ReadonlyMap<EntityId, number>;
+    effectiveCompletedHoursByTask?: ReadonlyMap<EntityId, number>;
+    timerEligibilityByTask?: ReadonlyMap<EntityId, TaskTimerEligibility>;
     adoConnected?: boolean;
     adoConnectionId?: string;
     adoOrgUrl?: string;
@@ -53,6 +61,8 @@ const props = withDefaults(
     runningElapsedSeconds: 0,
     trackedSecondsByTask: () => new Map(),
     unsyncedHoursByTask: () => new Map(),
+    effectiveCompletedHoursByTask: () => new Map(),
+    timerEligibilityByTask: () => new Map(),
     adoConnected: false,
     adoConnectionId: undefined,
     adoOrgUrl: undefined,
@@ -75,6 +85,7 @@ const localePath = useLocalePath();
 const authStore = useAuthStore();
 const catalogStore = useCatalogStore();
 const prefsStore = usePreferencesStore();
+const adoStore = useAdoStore();
 const { formatDateKey } = useFormat(() => prefsStore.preferences);
 
 const task = computed(() =>
@@ -154,6 +165,49 @@ const trackedSeconds = computed(() =>
 const unsyncedHours = computed(() =>
   task.value ? props.unsyncedHoursByTask.get(task.value.id) ?? 0 : 0
 );
+
+const effectiveCompletedHours = computed(() =>
+  task.value
+    ? props.effectiveCompletedHoursByTask.get(task.value.id) ?? task.value.completedWorkHours ?? 0
+    : 0
+);
+
+const connWorkItemTypes = computed(() =>
+  (props.adoConnectionId ? adoStore.workItemTypesByConn[props.adoConnectionId] : undefined) ??
+  adoStore.workItemTypes
+);
+
+const connFieldRef = computed(() =>
+  props.adoConnectionId
+    ? adoStore.getConnectionById(props.adoConnectionId)?.completedWorkFieldRef
+    : adoStore.connection?.completedWorkFieldRef
+);
+
+const taskEligibility = computed<TaskTimerEligibility>(() => {
+  if (!task.value) return { allowed: true, reason: null };
+  const provided = props.timerEligibilityByTask.get(task.value.id);
+  if (provided) return provided;
+  return evaluateTaskTimerEligibility({
+    task: task.value,
+    allTasks: catalogStore.tasks,
+    policy: prefsStore.preferences.taskTrackingPolicy,
+    workItemTypes: connWorkItemTypes.value,
+    completedWorkFieldRef: connFieldRef.value,
+  });
+});
+
+const taskSupportsCompletedWork = computed(() =>
+  task.value
+    ? resolveTaskSupportsCompletedWork(task.value, connWorkItemTypes.value, connFieldRef.value)
+    : true
+);
+
+const startTimerDisabledReason = computed(() => {
+  if (taskEligibility.value.allowed) return '';
+  return taskEligibility.value.reason === 'PARENT_HAS_SUBTASKS'
+    ? t('tasks.timerBlockedParentHint')
+    : t('tasks.timerBlockedUnsupportedAdoHint');
+});
 
 const todayDateKey = computed(() =>
   toDateKey(new Date(), prefsStore.preferences.timeZone || 'UTC')
@@ -426,8 +480,14 @@ async function commitNewSubtask() {
               v-else
               type="button"
               data-testid="task-detail-start-timer"
-              class="btn-press inline-flex h-8 items-center gap-1.5 border border-signal/50 bg-signal-soft px-2.5 text-xs font-semibold text-signal hover:bg-accent hover:text-white transition-colors"
-              @click="emit('startTimer', task.id)"
+              :disabled="!taskEligibility.allowed"
+              :title="taskEligibility.allowed ? $t('catalog.startTaskTimer') : startTimerDisabledReason"
+              :class="
+                taskEligibility.allowed
+                  ? 'btn-press inline-flex h-8 items-center gap-1.5 border border-signal/50 bg-signal-soft px-2.5 text-xs font-semibold text-signal hover:bg-accent hover:text-white transition-colors'
+                  : 'inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-2.5 text-xs font-semibold text-text-faint opacity-50 cursor-not-allowed'
+              "
+              @click="taskEligibility.allowed && emit('startTimer', task.id)"
             >
               <Play class="h-3.5 w-3.5 fill-current" aria-hidden="true" />
               <span>{{ $t('catalog.startTaskTimer') }}</span>
@@ -746,9 +806,16 @@ async function commitNewSubtask() {
                     :work-item-id="task.externalWorkItemId"
                     :work-item-title="task.externalWorkItemTitle"
                     :url="task.externalWorkItemUrl"
-                    :completed-work-hours="task.completedWorkHours"
+                    :completed-work-hours="effectiveCompletedHours"
                     show-hours
                   />
+                  <span
+                    v-if="childTasks.length > 0 && effectiveCompletedHours > 0"
+                    class="tabular-telemetry border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-xs text-text-muted"
+                    :title="$t('tasks.completedWorkRolledUpHint')"
+                  >
+                    ∑ {{ effectiveCompletedHours.toFixed(2) }}h
+                  </span>
                   <span
                     v-if="unsyncedHours > 0"
                     class="tabular-telemetry border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-500"
@@ -756,6 +823,12 @@ async function commitNewSubtask() {
                     +{{ unsyncedHours.toFixed(2) }}h
                   </span>
                 </div>
+                <p
+                  v-if="task.externalWorkItemId && !taskSupportsCompletedWork"
+                  class="text-xs text-amber-500"
+                >
+                  {{ $t('tasks.adoPushDisabledForTypeHint') }}
+                </p>
 
                 <AdoWorkItemPickerPopover
                   variant="field"

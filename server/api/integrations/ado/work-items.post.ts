@@ -34,6 +34,7 @@ export default defineEventHandler(async (event) => {
     workItemType,
     title: body?.title ?? '',
     initialCompletedWork: body?.initialCompletedWork,
+    completedWorkFieldRef: connection.completedWorkFieldRef,
   });
 
   return {

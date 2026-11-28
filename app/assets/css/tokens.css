@@ -59,6 +59,7 @@ html.light {
   );
   --gradient-signal: linear-gradient(90deg, transparent, var(--signal), transparent);
   --shadow-signal: 0 0 60px -14px oklch(0.55 0.17 250 / 32%);
+  --hero-copy-shadow: none;
 
   --scrollbar-track: #F4F4F5;
   --scrollbar-thumb: #8A8A94;
@@ -112,6 +113,7 @@ html.dark {
   );
   --gradient-signal: linear-gradient(90deg, transparent, var(--signal), transparent);
   --shadow-signal: 0 0 60px -10px oklch(0.72 0.16 245 / 50%);
+  --hero-copy-shadow: 0 1px 18px oklch(0 0 0 / 0.85);
 
   --scrollbar-track: #000000;
   --scrollbar-thumb: #5A5A64;
@@ -346,6 +348,27 @@ html.dark {
 @layer utilities {
   .bg-void-fade {
     background-image: var(--gradient-void);
+  }
+
+  .bg-hero-webgl-scrim {
+    background-image:
+      radial-gradient(
+        ellipse 58% 66% at 24% 48%,
+        oklch(var(--bg-primary-ch) / 0.82) 0%,
+        oklch(var(--bg-primary-ch) / 0.48) 52%,
+        transparent 80%
+      ),
+      linear-gradient(
+        180deg,
+        oklch(var(--bg-primary-ch) / 0.30) 0%,
+        transparent 20%,
+        transparent 74%,
+        oklch(var(--bg-primary-ch) / 0.95) 100%
+      );
+  }
+
+  .hero-copy-shadow {
+    text-shadow: var(--hero-copy-shadow);
   }
 
   .signal-line {
