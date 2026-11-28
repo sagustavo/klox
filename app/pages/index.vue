@@ -40,7 +40,11 @@ useHead({
 
 const motionPaused = ref(false);
 const landingRootRef = ref<HTMLElement | null>(null);
+const heroSectionRef = ref<HTMLElement | null>(null);
+const heroInView = ref(true);
+const webglTakeover = ref(false);
 let mql: MediaQueryList | null = null;
+let heroObserver: IntersectionObserver | null = null;
 
 useScrollReveal(landingRootRef, motionPaused);
 
@@ -58,10 +62,22 @@ onMounted(() => {
     }
     mql.addEventListener('change', handleReducedMotionChange);
   }
+
+  if (heroSectionRef.value && typeof IntersectionObserver !== 'undefined') {
+    heroObserver = new IntersectionObserver(
+      (entries) => {
+        heroInView.value = entries[0]?.isIntersecting ?? true;
+      },
+      { threshold: 0.01 }
+    );
+    heroObserver.observe(heroSectionRef.value);
+  }
 });
 
 onBeforeUnmount(() => {
   mql?.removeEventListener('change', handleReducedMotionChange);
+  heroObserver?.disconnect();
+  heroObserver = null;
 });
 
 const heroStats = [
@@ -86,6 +102,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
     <!-- Section 1: Atmospheric Orbital Horizon Hero -->
     <section
       id="top"
+      ref="heroSectionRef"
       class="relative flex min-h-screen flex-col overflow-hidden pt-16"
     >
       <img
@@ -95,9 +112,26 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         height="1088"
         fetchpriority="high"
         decoding="async"
-        class="absolute inset-0 h-full w-full object-cover object-bottom"
+        class="absolute inset-0 h-full w-full object-cover object-bottom transition-opacity duration-1000 ease-out"
+        :class="webglTakeover ? 'opacity-0' : 'opacity-100'"
       />
-      <div class="bg-void-fade absolute inset-0" aria-hidden="true" />
+      <div
+        class="bg-void-fade absolute inset-0 transition-opacity duration-1000 ease-out"
+        :class="webglTakeover ? 'opacity-0' : 'opacity-100'"
+        aria-hidden="true"
+      />
+      <ClientOnly>
+        <LandingOrbitalHorizon
+          :paused="motionPaused"
+          :active="heroInView"
+          @active-takeover="webglTakeover = $event"
+        />
+      </ClientOnly>
+      <div
+        class="pointer-events-none absolute inset-0 bg-gradient-to-b from-bg-primary/25 via-transparent to-bg-primary/95 transition-opacity duration-1000 ease-out"
+        :class="webglTakeover ? 'opacity-100' : 'opacity-0'"
+        aria-hidden="true"
+      />
 
       <div class="relative mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 py-16 sm:px-6 sm:py-24">
         <p class="label-eyebrow animate-rise text-text-muted">

@@ -131,4 +131,45 @@ export default defineNuxtConfig({
     strict: true,
     typeCheck: false,
   },
+
+  vite: {
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/three')) {
+              return 'three-vendor';
+            }
+          },
+        },
+      },
+    },
+  },
+
+  hooks: {
+    'build:manifest'(manifest) {
+      const webglRoots = Object.entries(manifest).filter(([key]) =>
+        key.includes('OrbitalHorizonScene')
+      );
+      const usedElsewhere = new Set<string>();
+      for (const [key, entry] of Object.entries(manifest)) {
+        if (key.includes('OrbitalHorizonScene')) {
+          continue;
+        }
+        for (const imp of entry.imports ?? []) {
+          usedElsewhere.add(imp);
+        }
+      }
+      for (const [, entry] of webglRoots) {
+        entry.prefetch = false;
+        entry.preload = false;
+        for (const imp of entry.imports ?? []) {
+          if (!usedElsewhere.has(imp) && manifest[imp]) {
+            manifest[imp].prefetch = false;
+            manifest[imp].preload = false;
+          }
+        }
+      }
+    },
+  },
 });

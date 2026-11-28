@@ -607,7 +607,7 @@ const en = {
     parentTaskLabel: 'Parent Task (optional)',
     parentTaskNone: 'Top-level task',
     addSubtask: '+ Subtask',
-    addSubSubtask: '+ Sub-subtask',
+    addSubSubtask: '+ Subtask',
     startTaskTimer: 'Start Timer',
     runningTaskBadge: 'RUNNING',
     targetHoursPlaceholder: 'Target h',
