@@ -1,11 +1,14 @@
 import type { AdoWorkItemSummary } from '~/domain/ado';
 import {
   getAdoWorkItemsByIds,
-  loadUserAdoContext,
+  loadUserAdoVault,
   resolveTargetOrgAndProject,
+  resolveVaultConnectionAndPat,
 } from '../../../utils/adoClient';
 
 interface PullTargetGroup {
+  connectionId?: string;
+  kloxProjectId?: string;
   orgUrl?: string;
   project?: string;
   ids: number[];
@@ -16,7 +19,7 @@ interface PullRequestBody {
 }
 
 export default defineEventHandler(async (event) => {
-  const { connection, pat } = await loadUserAdoContext(event);
+  const vault = await loadUserAdoVault(event);
   const body = await readBody<PullRequestBody>(event);
 
   if (!Array.isArray(body?.targets) || body.targets.length === 0) {
@@ -27,6 +30,14 @@ export default defineEventHandler(async (event) => {
 
   for (const group of body.targets) {
     if (!Array.isArray(group.ids) || group.ids.length === 0) continue;
+    const { connection, pat } = resolveVaultConnectionAndPat({
+      connections: vault.connections,
+      tokens: vault.tokens,
+      connectionId: group.connectionId,
+      kloxProjectId: group.kloxProjectId,
+      orgUrl: group.orgUrl,
+      project: group.project,
+    });
     const target = resolveTargetOrgAndProject(connection, group.orgUrl, group.project);
     const items = await getAdoWorkItemsByIds({
       orgUrl: target.orgUrl,

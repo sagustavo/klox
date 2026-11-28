@@ -104,7 +104,7 @@ const adoSyncSummary = computed(() =>
     projects: catalogStore.projects,
     tasks: catalogStore.tasks,
     logs: timeLogsStore.logs,
-    connection: adoStore.connection,
+    connections: adoStore.connections,
   })
 );
 
@@ -685,17 +685,21 @@ function goToPage(nextIndex: number, scrollToTop = false) {
         />
 
         <div class="sm:col-span-2">
-          <TimerProjectTaskPopover
+          <TimerProjectPopover
+            :project-id="manualProjectId"
+            variant="field"
+            test-id="manual-log-project-trigger"
+            @select="handleManualProjectChange"
+          />
+        </div>
+
+        <div class="sm:col-span-2">
+          <TimerTaskPopover
             :project-id="manualProjectId"
             :task-id="manualTaskId"
             variant="field"
-            test-id="manual-log-project-trigger"
-            @select="
-              ({ projectId, taskId }) => {
-                if (projectId !== manualProjectId) handleManualProjectChange(projectId);
-                manualTaskId = taskId || undefined;
-              }
-            "
+            test-id="manual-log-task-trigger"
+            @select="manualTaskId = $event || undefined"
           />
         </div>
 
@@ -718,7 +722,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           required
           :aria-label="$t('timer.manualStartLabel')"
           :title="$t('timer.manualStartLabel')"
-          class="tabular-telemetry sm:col-span-2 h-10 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
+          class="tabular-telemetry sm:col-span-1 h-10 border border-border-input bg-bg-primary px-2 text-ui text-text-primary focus:border-signal focus:outline-none"
           @input="handleManualRangeChange"
         />
 
@@ -729,7 +733,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           required
           :aria-label="$t('timer.manualStopLabel')"
           :title="$t('timer.manualStopLabel')"
-          class="tabular-telemetry sm:col-span-2 h-10 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
+          class="tabular-telemetry sm:col-span-1 h-10 border border-border-input bg-bg-primary px-2 text-ui text-text-primary focus:border-signal focus:outline-none"
           @input="handleManualRangeChange"
         />
 
@@ -740,7 +744,7 @@ function goToPage(nextIndex: number, scrollToTop = false) {
           placeholder="01:00:00"
           :aria-label="$t('timer.manualDurationLabel')"
           :title="$t('timer.manualDurationLabel')"
-          class="tabular-telemetry sm:col-span-1 h-10 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
+          class="tabular-telemetry sm:col-span-1 h-10 border border-border-input bg-bg-primary px-2 text-ui text-text-primary focus:border-signal focus:outline-none"
           @input="handleManualDurationInput"
         />
       </div>
@@ -959,15 +963,32 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                     @save="handleGroupDescriptionSave(entryGroup, $event)"
                   />
 
-                  <TimerProjectTaskPopover
+                  <TimerProjectPopover
                     :project-id="entryGroup.projectId"
                     :project-name-snapshot="entryGroup.projectNameSnapshot"
                     :project-color-snapshot="entryGroup.projectColorSnapshot"
+                    stop-propagation
+                    test-id="tracker-group-project-trigger"
+                    @select="
+                      handleGroupProjectTaskSave(entryGroup, {
+                        projectId: $event,
+                        taskId: $event === entryGroup.projectId ? (entryGroup.taskId ?? null) : null,
+                      })
+                    "
+                  />
+
+                  <TimerTaskPopover
+                    :project-id="entryGroup.projectId"
                     :task-id="entryGroup.taskId"
                     :task-name-snapshot="entryGroup.taskNameSnapshot"
                     stop-propagation
-                    test-id="tracker-group-project-trigger"
-                    @select="handleGroupProjectTaskSave(entryGroup, $event)"
+                    test-id="tracker-group-task-trigger"
+                    @select="
+                      handleGroupProjectTaskSave(entryGroup, {
+                        projectId: entryGroup.projectId,
+                        taskId: $event,
+                      })
+                    "
                   />
 
                   <UiTagMultiSelect
@@ -1052,13 +1073,28 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                         @save="handleSingleDescriptionSave(log, $event)"
                       />
 
-                      <TimerProjectTaskPopover
+                      <TimerProjectPopover
                         :project-id="log.projectId"
                         :project-name-snapshot="log.projectNameSnapshot"
                         :project-color-snapshot="log.projectColorSnapshot"
+                        @select="
+                          handleSingleProjectTaskSave(log, {
+                            projectId: $event,
+                            taskId: $event === log.projectId ? (log.taskId ?? null) : null,
+                          })
+                        "
+                      />
+
+                      <TimerTaskPopover
+                        :project-id="log.projectId"
                         :task-id="log.taskId"
                         :task-name-snapshot="log.taskNameSnapshot"
-                        @select="handleSingleProjectTaskSave(log, $event)"
+                        @select="
+                          handleSingleProjectTaskSave(log, {
+                            projectId: log.projectId,
+                            taskId: $event,
+                          })
+                        "
                       />
 
                       <UiTagMultiSelect
@@ -1134,13 +1170,31 @@ function goToPage(nextIndex: number, scrollToTop = false) {
                     @save="handleSingleDescriptionSave(entryGroup.items[0]!, $event)"
                   />
 
-                  <TimerProjectTaskPopover
+                  <TimerProjectPopover
                     :project-id="entryGroup.items[0]!.projectId"
                     :project-name-snapshot="entryGroup.items[0]!.projectNameSnapshot"
                     :project-color-snapshot="entryGroup.items[0]!.projectColorSnapshot"
+                    @select="
+                      handleSingleProjectTaskSave(entryGroup.items[0]!, {
+                        projectId: $event,
+                        taskId:
+                          $event === entryGroup.items[0]!.projectId
+                            ? (entryGroup.items[0]!.taskId ?? null)
+                            : null,
+                      })
+                    "
+                  />
+
+                  <TimerTaskPopover
+                    :project-id="entryGroup.items[0]!.projectId"
                     :task-id="entryGroup.items[0]!.taskId"
                     :task-name-snapshot="entryGroup.items[0]!.taskNameSnapshot"
-                    @select="handleSingleProjectTaskSave(entryGroup.items[0]!, $event)"
+                    @select="
+                      handleSingleProjectTaskSave(entryGroup.items[0]!, {
+                        projectId: entryGroup.items[0]!.projectId,
+                        taskId: $event,
+                      })
+                    "
                   />
 
                   <UiTagMultiSelect

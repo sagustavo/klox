@@ -32,10 +32,10 @@ const editName = ref('');
 const editColor = ref('#3B82F6');
 const editBillable = ref(false);
 
-// Per-Project Azure DevOps target override state
-const adoEnabled = ref(false);
-const adoProjectOverride = ref('');
-const adoWorkItemTypeOverride = ref('');
+// Project-bound Azure DevOps connection lookup
+const boundAdoConnection = computed(() =>
+  adoStore.getConnectionForProject(selectedProjectId.value)
+);
 const projectSavedFlash = ref(false);
 let savedFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -60,13 +60,6 @@ onMounted(async () => {
     catalogStore.hydrate(authStore.user.uid, authStore.isDemoMode),
     adoStore.hydrate(authStore.user.uid, authStore.isDemoMode),
   ]);
-  if (adoStore.isConnected) {
-    void adoStore.fetchProjectsAndTypes({
-      isDemo: authStore.isDemoMode,
-      orgUrl: adoStore.connection?.orgUrl,
-      project: adoStore.connection?.defaultProject,
-    });
-  }
   const first = catalogStore.sortedProjects[0];
   if (first) {
     selectProject(first);
@@ -98,11 +91,6 @@ function selectProject(project: Project) {
   editName.value = project.name;
   editColor.value = project.color;
   editBillable.value = project.isBillableDefault;
-
-  const isUnassigned = project.systemKey === 'unassigned' || project.id === UNASSIGNED_PROJECT_ID;
-  adoEnabled.value = project.adoConfig ? project.adoConfig.enabled : !isUnassigned;
-  adoProjectOverride.value = project.adoConfig?.project ?? '';
-  adoWorkItemTypeOverride.value = project.adoConfig?.defaultWorkItemType ?? '';
   cancelEditTag();
 }
 
@@ -125,16 +113,6 @@ async function handleCreateProject() {
 async function handleUpdateSelectedProject() {
   if (!authStore.user || !selectedProject.value) return;
 
-  const isUnassigned =
-    selectedProject.value.systemKey === 'unassigned' ||
-    selectedProject.value.id === UNASSIGNED_PROJECT_ID;
-
-  const hasCustomAdoConfig =
-    adoStore.isConnected &&
-    (adoEnabled.value !== !isUnassigned ||
-      adoProjectOverride.value.trim() !== '' ||
-      adoWorkItemTypeOverride.value.trim() !== '');
-
   await catalogStore.updateProject({
     uid: authStore.user.uid,
     isDemo: authStore.isDemoMode,
@@ -142,21 +120,6 @@ async function handleUpdateSelectedProject() {
     name: editName.value,
     color: editColor.value,
     isBillableDefault: editBillable.value,
-    ...(adoStore.isConnected
-      ? {
-          adoConfig: hasCustomAdoConfig
-            ? {
-                enabled: adoEnabled.value,
-                ...(adoProjectOverride.value.trim()
-                  ? { project: adoProjectOverride.value.trim() }
-                  : {}),
-                ...(adoWorkItemTypeOverride.value.trim()
-                  ? { defaultWorkItemType: adoWorkItemTypeOverride.value.trim() }
-                  : {}),
-              }
-            : null,
-        }
-      : {}),
   });
 
   projectSavedFlash.value = true;
@@ -256,11 +219,19 @@ async function confirmDelete() {
   try {
     const target = pendingDelete.value;
     if (target.kind === 'project') {
+      const boundConn = adoStore.getConnectionForProject(target.project.id);
       await catalogStore.deleteProject({
         uid: authStore.user.uid,
         isDemo: authStore.isDemoMode,
         projectId: target.project.id,
       });
+      if (boundConn) {
+        await adoStore.disconnectConnection({
+          uid: authStore.user.uid,
+          isDemo: authStore.isDemoMode,
+          connectionId: boundConn.id,
+        });
+      }
       const fallback = catalogStore.sortedProjects[0];
       if (fallback) selectProject(fallback);
     } else {
@@ -482,35 +453,49 @@ async function confirmDelete() {
               </button>
             </div>
 
-            <!-- Per-Project Azure DevOps Override -->
+            <!-- Project-Bound Azure DevOps Connection Summary -->
             <div
-              v-if="adoStore.isConnected"
-              class="border-t border-border-hairline pt-4 space-y-3"
+              v-if="selectedProject.systemKey !== 'unassigned'"
+              class="border-t border-border-hairline pt-4 flex flex-wrap items-center justify-between gap-3"
             >
-              <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0 space-y-1">
                 <div class="label-eyebrow flex items-center gap-2 text-text-muted">
                   <GitBranch class="h-3.5 w-3.5 text-signal" aria-hidden="true" />
                   <span>{{ $t('projects.adoOverrideTitle') }}</span>
                 </div>
-                <label class="inline-flex items-center gap-2 text-xs text-text-primary cursor-pointer">
-                  <input v-model="adoEnabled" type="checkbox" class="h-4 w-4 accent-accent" />
-                  <span>{{ $t('projects.adoOverrideEnabled') }}</span>
-                </label>
+                <p v-if="boundAdoConnection" class="tabular-telemetry text-xs text-text-primary">
+                  {{ boundAdoConnection.organization }} / {{ boundAdoConnection.defaultProject }} · {{ boundAdoConnection.defaultWorkItemType }} ({{ boundAdoConnection.tokenHint }})
+                </p>
+                <p v-else class="text-xs text-text-muted">
+                  {{ $t('projects.adoUnboundHint') }}
+                </p>
               </div>
 
-              <div v-if="adoEnabled" class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                <input
-                  v-model="adoProjectOverride"
-                  type="text"
-                  :placeholder="$t('projects.adoProjectPlaceholder', { default: adoStore.connection?.defaultProject })"
-                  class="h-9 border border-border-input bg-bg-primary px-3 text-ui text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
-                />
-                <input
-                  v-model="adoWorkItemTypeOverride"
-                  type="text"
-                  :placeholder="$t('projects.adoTypePlaceholder', { default: adoStore.connection?.defaultWorkItemType })"
-                  class="h-9 border border-border-input bg-bg-primary px-3 text-ui text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
-                />
+              <div class="flex items-center gap-2 shrink-0">
+                <NuxtLink
+                  v-if="boundAdoConnection"
+                  :to="localePath(`/app/tasks?projectId=${selectedProject.id}`)"
+                  class="btn-press inline-flex h-8 items-center gap-1.5 border border-border-hairline bg-bg-primary px-3 text-xs font-medium text-text-primary hover:border-signal transition-colors"
+                >
+                  <span>{{ $t('projects.goToTasks') }}</span>
+                </NuxtLink>
+                <NuxtLink
+                  :to="
+                    boundAdoConnection
+                      ? localePath(`/app/settings?editAdo=${boundAdoConnection.id}#azure-devops`)
+                      : localePath(`/app/settings?projectId=${selectedProject.id}#azure-devops`)
+                  "
+                  class="btn-press inline-flex h-8 items-center gap-1.5 border border-signal/50 bg-signal-soft px-3 text-xs font-medium text-signal hover:bg-accent hover:text-white transition-colors"
+                >
+                  <GitBranch class="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>
+                    {{
+                      boundAdoConnection
+                        ? $t('ado.settings.editButton')
+                        : $t('projects.connectAdoProjectButton')
+                    }}
+                  </span>
+                </NuxtLink>
               </div>
             </div>
           </form>

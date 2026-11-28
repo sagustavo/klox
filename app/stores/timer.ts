@@ -13,6 +13,8 @@ const STORAGE_ACTIVE_TIMER_KEY = 'klox_active_timer';
 export const useTimerStore = defineStore('timer', () => {
   const activeTimer = ref<ActiveTimer | null>(null);
   const activeUid = ref<string | null>(null);
+  const hydratedUid = ref<string | null>(null);
+  let localMutationEpoch = 0;
 
   // Draft composer state (synchronized with ActiveTimer when running)
   const description = ref('');
@@ -97,10 +99,12 @@ export const useTimerStore = defineStore('timer', () => {
 
   function reset() {
     clearPendingSync();
+    localMutationEpoch += 1;
     applyingTimerState = true;
     try {
       activeTimer.value = null;
       activeUid.value = null;
+      hydratedUid.value = null;
       description.value = '';
       projectId.value = UNASSIGNED_PROJECT_ID;
       taskId.value = undefined;
@@ -144,6 +148,7 @@ export const useTimerStore = defineStore('timer', () => {
   async function hydrate(uid: string, isDemo: boolean): Promise<void> {
     if (import.meta.server) return;
     startTicker();
+    if (hydratedUid.value === uid) return;
 
     if (activeUid.value !== uid) {
       clearPendingSync();
@@ -160,13 +165,16 @@ export const useTimerStore = defineStore('timer', () => {
         applyingTimerState = false;
       }
     }
+    hydratedUid.value = uid;
+
+    const epochBeforeStorage = localMutationEpoch;
 
     try {
       let raw = localStorage.getItem(tenantStorageKey(STORAGE_ACTIVE_TIMER_KEY, uid));
       if (raw === null && uid === 'demo-user') {
         raw = localStorage.getItem(STORAGE_ACTIVE_TIMER_KEY);
       }
-      if (raw) {
+      if (raw && localMutationEpoch === epochBeforeStorage) {
         const parsed = JSON.parse(raw) as ActiveTimer;
         if (parsed?.startTimeUTC) {
           activeTimer.value = parsed;
@@ -179,11 +187,13 @@ export const useTimerStore = defineStore('timer', () => {
 
     if (isDemo) return;
     const fb = await getFirebaseClient();
-    if (!fb) return;
+    if (!fb || localMutationEpoch !== epochBeforeStorage) return;
 
     try {
       const { doc, getDoc } = await import('firebase/firestore');
       const snap = await getDoc(doc(fb.db, 'users', uid));
+      if (localMutationEpoch !== epochBeforeStorage) return;
+
       const remoteTimer = snap.data()?.activeTimer as ActiveTimer | null | undefined;
       if (remoteTimer && typeof remoteTimer.startTimeUTC === 'string') {
         applyingTimerState = true;
@@ -194,7 +204,7 @@ export const useTimerStore = defineStore('timer', () => {
         }
         applyTimerToDraft(remoteTimer);
         persistLocal(remoteTimer);
-      } else if (snap.exists() && !remoteTimer) {
+      } else if (snap.exists() && !remoteTimer && !activeTimer.value) {
         applyingTimerState = true;
         try {
           activeTimer.value = null;
@@ -273,15 +283,22 @@ export const useTimerStore = defineStore('timer', () => {
       selectProject(task.projectId);
     }
     taskId.value = task.id;
+    if (tagIds.value.length === 0 && task.tagIds?.length) {
+      const validSet = new Set(
+        catalogStore.getTagsForProject(task.projectId).map((tag) => tag.id)
+      );
+      tagIds.value = task.tagIds.filter((id) => validSet.has(id));
+    }
     if (!description.value.trim()) {
-      description.value = catalogStore.getTaskHierarchicalLabel(task.id) || task.name;
+      description.value = task.name;
     }
   }
 
   /**
    * Direct Task-to-Timer Execution (FR-4.3 / ADR-0007):
-   * Starts a live ActiveTimer directly from any Task, Subtask, or Sub-subtask,
-   * stopping any running timer first and transitioning 'todo' -> 'in_progress'.
+   * Starts a live ActiveTimer directly from any Task, Subtask, or Sub-subtask immediately,
+   * stopping any running timer first, carrying over project-scoped Task tags,
+   * and transitioning 'todo' -> 'in_progress'.
    */
   async function startTimerFromTask(params: {
     uid: string;
@@ -292,18 +309,27 @@ export const useTimerStore = defineStore('timer', () => {
     const task = catalogStore.getTaskById(params.taskId);
     if (!task) return;
 
+    localMutationEpoch += 1;
     if (activeTimer.value) {
       await stopTimer({ uid: params.uid, isDemo: params.isDemo });
     }
 
     selectProject(task.projectId);
     taskId.value = task.id;
-    description.value = catalogStore.getTaskHierarchicalLabel(task.id) || task.name;
+    description.value = task.name;
+    if (task.tagIds?.length) {
+      const validSet = new Set(
+        catalogStore.getTagsForProject(task.projectId).map((tag) => tag.id)
+      );
+      tagIds.value = task.tagIds.filter((id) => validSet.has(id));
+    } else {
+      tagIds.value = [];
+    }
 
     await startTimer({ uid: params.uid, isDemo: params.isDemo });
 
     if (task.status === 'todo') {
-      await catalogStore.updateTaskStatus({
+      void catalogStore.updateTaskStatus({
         uid: params.uid,
         isDemo: params.isDemo,
         taskId: task.id,
@@ -395,6 +421,7 @@ export const useTimerStore = defineStore('timer', () => {
     allowEmptyDescription?: boolean;
   }): Promise<void> {
     clearPendingSync();
+    localMutationEpoch += 1;
     if (activeTimer.value) {
       if (isCurrentTimerEmpty.value) {
         await discardTimer(params);
@@ -423,8 +450,8 @@ export const useTimerStore = defineStore('timer', () => {
     nowMs.value = Date.now();
     startTicker();
 
-    await syncActiveTimerRemote(params.uid, params.isDemo, nextTimer);
     publishDomainEvent({ type: 'TimerStarted', at: nowIso });
+    void syncActiveTimerRemote(params.uid, params.isDemo, nextTimer);
   }
 
   /**
@@ -457,6 +484,7 @@ export const useTimerStore = defineStore('timer', () => {
 
   async function stopTimer(params: { uid: string; isDemo: boolean }): Promise<TimeLog | null> {
     clearPendingSync();
+    localMutationEpoch += 1;
     const current = activeTimer.value;
     if (!current) return null;
 
@@ -473,6 +501,7 @@ export const useTimerStore = defineStore('timer', () => {
     const committedProjectId = projectId.value || current.projectId;
     const committedTagIds = [...tagIds.value];
     const committedBillable = isBillable.value;
+    const committedTaskId = taskId.value ?? current.taskId;
 
     applyingTimerState = true;
     try {
@@ -481,7 +510,7 @@ export const useTimerStore = defineStore('timer', () => {
     } finally {
       applyingTimerState = false;
     }
-    await syncActiveTimerRemote(params.uid, params.isDemo, null);
+    void syncActiveTimerRemote(params.uid, params.isDemo, null);
 
     const timeLogsStore = useTimeLogsStore();
     const created = await timeLogsStore.createTimeLog({
@@ -489,7 +518,7 @@ export const useTimerStore = defineStore('timer', () => {
       isDemo: params.isDemo,
       description: committedDesc,
       projectId: committedProjectId,
-      taskId: taskId.value ?? current.taskId,
+      taskId: committedTaskId,
       tagIds: committedTagIds,
       isBillable: committedBillable,
       startTimeUTC: current.startTimeUTC,

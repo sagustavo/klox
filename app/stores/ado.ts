@@ -1,12 +1,16 @@
 import {
   buildAdoWorkItemWebUrl,
+  normalizeStoredAdoConnections,
   parseWorkItemIdInput,
   roundHours2,
   type AdoErrorCode,
+  type AdoIterationInfo,
+  type AdoSprintWorkItemNode,
   type AdoWorkItemSummary,
   type AdoWorkItemTypeCapability,
 } from '~/domain/ado';
 import { tenantStorageKey } from '~/domain/auth';
+import { toDateKey } from '~/domain/duration';
 import { publishDomainEvent } from '~/domain/events';
 import type { AdoConnectionSummary, EntityId, TimeLogAdoSync } from '~/domain/types';
 import { fetchAuthedApi } from '~/utils/apiAuth';
@@ -14,7 +18,8 @@ import { getFirebaseClient } from '~/utils/firebaseClient';
 import { useCatalogStore } from './catalog';
 import { useTimeLogsStore } from './timeLogs';
 
-const DEMO_ADO_CONN_KEY = 'klox_ado_demo_connection';
+const DEMO_ADO_CONNS_KEY = 'klox_ado_demo_connections';
+const DEMO_ADO_CONN_LEGACY_KEY = 'klox_ado_demo_connection';
 const DEMO_ADO_ITEMS_KEY = 'klox_ado_demo_workitems';
 
 export interface AdoProjectOption {
@@ -23,6 +28,7 @@ export interface AdoProjectOption {
 }
 
 export interface AdoPushApprovalItem {
+  connectionId?: string;
   workItemId: number;
   orgUrl: string;
   project: string;
@@ -49,25 +55,41 @@ function createInitialDemoWorkItems(): AdoWorkItemSummary[] {
     {
       id: 31,
       title: '[FR-V1] Azure DevOps Work Item Sync (CompletedWork)',
-      workItemType: 'Task',
-      completedWork: 4.5,
+      workItemType: 'Product Backlog Item',
+      completedWork: 0,
       url: 'https://dev.azure.com/klox-demo/Klox/_workitems/edit/31',
+      supportsCompletedWork: false,
+    },
+    {
+      id: 3101,
+      title: 'Implement encrypted PAT vault & multi-project binding',
+      workItemType: 'Task',
+      completedWork: 2.5,
+      url: 'https://dev.azure.com/klox-demo/Klox/_workitems/edit/3101',
+      supportsCompletedWork: true,
+    },
+    {
+      id: 3102,
+      title: 'Build Sprint work item hierarchy importer',
+      workItemType: 'Task',
+      completedWork: 1.5,
+      url: 'https://dev.azure.com/klox-demo/Klox/_workitems/edit/3102',
       supportsCompletedWork: true,
     },
     {
       id: 101,
-      title: 'API Gateway Rate Limiter & Token Refresh',
-      workItemType: 'Task',
-      completedWork: 2.0,
+      title: '[BUG-1] Refresh Firebase ID Token on 401',
+      workItemType: 'Bug',
+      completedWork: 0,
       url: 'https://dev.azure.com/klox-demo/Klox/_workitems/edit/101',
       supportsCompletedWork: true,
     },
     {
-      id: 102,
-      title: 'OAuth Linking Telemetry Audit',
+      id: 1011,
+      title: 'Retry Nitro API calls with forced token refresh',
       workItemType: 'Task',
-      completedWork: 1.25,
-      url: 'https://dev.azure.com/klox-demo/Klox/_workitems/edit/102',
+      completedWork: 1.0,
+      url: 'https://dev.azure.com/klox-demo/Klox/_workitems/edit/1011',
       supportsCompletedWork: true,
     },
   ];
@@ -86,41 +108,70 @@ function extractApiErrorCode(err: unknown): AdoErrorCode {
 }
 
 export const useAdoStore = defineStore('ado', () => {
-  const connection = ref<AdoConnectionSummary | null>(null);
+  const connections = ref<AdoConnectionSummary[]>([]);
   const projects = ref<AdoProjectOption[]>([]);
   const workItemTypes = ref<AdoWorkItemTypeCapability[]>([]);
+  const iterationsByConn = ref<Record<string, AdoIterationInfo[]>>({});
+  const currentIterByConn = ref<Record<string, string | null>>({});
   const loading = ref(false);
   const syncing = ref(false);
   const hydratedUid = ref<string | null>(null);
   const demoWorkItems = ref<AdoWorkItemSummary[]>([]);
 
-  const isConnected = computed(() => Boolean(connection.value?.connected));
+  // Backward-compatible primary connection & aggregate flag
+  const connection = computed<AdoConnectionSummary | null>(() => connections.value[0] ?? null);
+  const isConnected = computed(() => connections.value.some((c) => c.connected));
+
+  function getConnectionById(connectionId?: string | null): AdoConnectionSummary | null {
+    if (!connectionId) return connections.value[0] ?? null;
+    return connections.value.find((c) => c.id === connectionId) ?? null;
+  }
+
+  function getConnectionForProject(kloxProjectId?: EntityId | null): AdoConnectionSummary | null {
+    if (!kloxProjectId) return null;
+    return connections.value.find((c) => c.connected && c.kloxProjectId === kloxProjectId) ?? null;
+  }
 
   function loadDemoState(uid: string) {
     if (import.meta.server) return;
     try {
-      const rawConn = localStorage.getItem(tenantStorageKey(DEMO_ADO_CONN_KEY, uid));
-      connection.value = rawConn ? (JSON.parse(rawConn) as AdoConnectionSummary) : null;
+      const rawConns = localStorage.getItem(tenantStorageKey(DEMO_ADO_CONNS_KEY, uid));
+      const rawLegacy = localStorage.getItem(tenantStorageKey(DEMO_ADO_CONN_LEGACY_KEY, uid));
+
+      if (rawConns) {
+        connections.value = normalizeStoredAdoConnections({
+          adoConnections: JSON.parse(rawConns),
+        });
+      } else if (rawLegacy) {
+        connections.value = normalizeStoredAdoConnections({
+          adoConnection: JSON.parse(rawLegacy),
+        });
+      } else {
+        connections.value = [];
+      }
+
       const rawItems = localStorage.getItem(tenantStorageKey(DEMO_ADO_ITEMS_KEY, uid));
       demoWorkItems.value = rawItems
         ? (JSON.parse(rawItems) as AdoWorkItemSummary[])
         : createInitialDemoWorkItems();
-      if (connection.value?.connected) {
+
+      if (connections.value.length > 0) {
         projects.value = [
-          { id: 'demo-klox', name: connection.value.defaultProject || 'Klox' },
+          { id: 'demo-klox', name: connections.value[0]?.defaultProject || 'Klox' },
           { id: 'demo-core', name: 'Core Platform' },
         ];
         workItemTypes.value = [
           { name: 'Task', supportsCompletedWork: true },
           { name: 'Bug', supportsCompletedWork: true },
           { name: 'Product Backlog Item', supportsCompletedWork: false },
+          { name: 'User Story', supportsCompletedWork: false },
         ];
       } else {
         projects.value = [];
         workItemTypes.value = [];
       }
     } catch {
-      connection.value = null;
+      connections.value = [];
       demoWorkItems.value = createInitialDemoWorkItems();
     }
   }
@@ -129,8 +180,8 @@ export const useAdoStore = defineStore('ado', () => {
     if (import.meta.server) return;
     try {
       localStorage.setItem(
-        tenantStorageKey(DEMO_ADO_CONN_KEY, uid),
-        JSON.stringify(connection.value)
+        tenantStorageKey(DEMO_ADO_CONNS_KEY, uid),
+        JSON.stringify(connections.value)
       );
       localStorage.setItem(
         tenantStorageKey(DEMO_ADO_ITEMS_KEY, uid),
@@ -142,18 +193,20 @@ export const useAdoStore = defineStore('ado', () => {
   }
 
   function reset() {
-    connection.value = null;
+    connections.value = [];
     projects.value = [];
     workItemTypes.value = [];
+    iterationsByConn.value = {};
+    currentIterByConn.value = {};
     loading.value = false;
     syncing.value = false;
     hydratedUid.value = null;
     demoWorkItems.value = [];
   }
 
-  async function hydrate(uid: string, isDemo: boolean): Promise<void> {
+  async function hydrate(uid: string, isDemo: boolean, force = false): Promise<void> {
     if (import.meta.server) return;
-    if (hydratedUid.value === uid) return;
+    if (!force && hydratedUid.value === uid) return;
 
     hydratedUid.value = uid;
     if (isDemo) {
@@ -167,8 +220,9 @@ export const useAdoStore = defineStore('ado', () => {
       if (fb) {
         const { doc, getDoc } = await import('firebase/firestore');
         const snap = await getDoc(doc(fb.db, 'users', uid));
-        const conn = snap.data()?.adoConnection as AdoConnectionSummary | undefined;
-        connection.value = conn?.connected ? conn : null;
+        connections.value = normalizeStoredAdoConnections(
+          snap.data() as { adoConnections?: unknown; adoConnection?: unknown } | undefined
+        );
       }
     } catch (err) {
       console.warn('[Klox adoStore hydrate error]', err);
@@ -177,56 +231,159 @@ export const useAdoStore = defineStore('ado', () => {
     }
   }
 
-  async function connectPat(params: {
+  async function previewProjectsAndTypes(params: {
+    isDemo: boolean;
+    connectionId?: string;
+    orgUrl: string;
+    defaultProject?: string;
+    pat?: string;
+  }): Promise<{
+    ok: boolean;
+    projects: AdoProjectOption[];
+    workItemTypes: AdoWorkItemTypeCapability[];
+    errorCode?: AdoErrorCode;
+  }> {
+    if (params.isDemo) {
+      const demoProjects = [
+        { id: 'demo-klox', name: params.defaultProject?.trim() || 'Klox' },
+        { id: 'demo-core', name: 'Core Platform' },
+      ];
+      const demoTypes = [
+        { name: 'Task', supportsCompletedWork: true },
+        { name: 'Bug', supportsCompletedWork: true },
+        { name: 'Product Backlog Item', supportsCompletedWork: false },
+        { name: 'User Story', supportsCompletedWork: false },
+      ];
+      projects.value = demoProjects;
+      workItemTypes.value = demoTypes;
+      return { ok: true, projects: demoProjects, workItemTypes: demoTypes };
+    }
+
+    loading.value = true;
+    try {
+      const res = await fetchAuthedApi<{
+        projects: AdoProjectOption[];
+        workItemTypes: AdoWorkItemTypeCapability[];
+      }>('/api/integrations/ado/connection', {
+        method: 'POST',
+        body: {
+          previewOnly: true,
+          orgUrl: params.orgUrl,
+          ...(params.connectionId ? { connectionId: params.connectionId } : {}),
+          ...(params.defaultProject?.trim() ? { defaultProject: params.defaultProject.trim() } : {}),
+          ...(params.pat?.trim() ? { pat: params.pat.trim() } : {}),
+        },
+      });
+      projects.value = res.projects ?? [];
+      workItemTypes.value = res.workItemTypes ?? [];
+      return {
+        ok: true,
+        projects: projects.value,
+        workItemTypes: workItemTypes.value,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        projects: projects.value,
+        workItemTypes: workItemTypes.value,
+        errorCode: extractApiErrorCode(err),
+      };
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function saveConnection(params: {
     uid: string;
     isDemo: boolean;
+    connectionId?: string;
+    kloxProjectId: EntityId;
     orgUrl: string;
     defaultProject: string;
     defaultWorkItemType: string;
     pat?: string;
-  }): Promise<{ ok: boolean; errorCode?: AdoErrorCode }> {
+  }): Promise<{ ok: boolean; connection?: AdoConnectionSummary; errorCode?: AdoErrorCode }> {
     loading.value = true;
     try {
+      if (!params.kloxProjectId?.trim()) {
+        return { ok: false, errorCode: 'ADO_INVALID_INPUT' };
+      }
+
       if (params.isDemo) {
         const nowIso = new Date().toISOString();
         const orgSlug =
           params.orgUrl.replace(/^https?:\/\/dev\.azure\.com\//i, '').split('/')[0] ||
           'klox-demo';
-        connection.value = {
+        const effectiveId =
+          params.connectionId && params.connectionId !== 'legacy_default'
+            ? params.connectionId
+            : `demo_ado_${Date.now().toString(36)}`;
+
+        const duplicate = connections.value.find(
+          (c) =>
+            c.kloxProjectId === params.kloxProjectId &&
+            c.id !== effectiveId &&
+            c.id !== params.connectionId
+        );
+        if (duplicate) {
+          return { ok: false, errorCode: 'ADO_PROJECT_ALREADY_BOUND' };
+        }
+
+        const prev = connections.value.find(
+          (c) => c.id === effectiveId || c.id === params.connectionId
+        );
+
+        const nextConn: AdoConnectionSummary = {
+          id: effectiveId,
+          kloxProjectId: params.kloxProjectId,
           connected: true,
           authType: 'pat',
           orgUrl: `https://dev.azure.com/${orgSlug}`,
           organization: orgSlug,
           defaultProject: params.defaultProject.trim() || 'Klox',
           defaultWorkItemType: params.defaultWorkItemType.trim() || 'Task',
-          tokenHint: '••••demo',
-          connectedAt: connection.value?.connectedAt ?? nowIso,
+          tokenHint: params.pat?.trim()
+            ? `••••${params.pat.trim().slice(-4)}`
+            : prev?.tokenHint || '••••demo',
+          connectedAt: prev?.connectedAt ?? nowIso,
           lastVerifiedAt: nowIso,
         };
+
+        connections.value = [
+          ...connections.value.filter(
+            (c) => c.id !== effectiveId && c.id !== params.connectionId && c.id !== 'legacy_default'
+          ),
+          nextConn,
+        ];
+
         if (demoWorkItems.value.length === 0) {
           demoWorkItems.value = createInitialDemoWorkItems();
         }
         projects.value = [
-          { id: 'demo-klox', name: connection.value.defaultProject },
+          { id: 'demo-klox', name: nextConn.defaultProject },
           { id: 'demo-core', name: 'Core Platform' },
         ];
         workItemTypes.value = [
           { name: 'Task', supportsCompletedWork: true },
           { name: 'Bug', supportsCompletedWork: true },
           { name: 'Product Backlog Item', supportsCompletedWork: false },
+          { name: 'User Story', supportsCompletedWork: false },
         ];
         persistDemoState(params.uid);
         publishDomainEvent({ type: 'AdoConnected', at: nowIso });
-        return { ok: true };
+        return { ok: true, connection: nextConn };
       }
 
       const res = await fetchAuthedApi<{
         connection: AdoConnectionSummary;
+        connections: AdoConnectionSummary[];
         projects: AdoProjectOption[];
         workItemTypes: AdoWorkItemTypeCapability[];
       }>('/api/integrations/ado/connection', {
         method: 'POST',
         body: {
+          ...(params.connectionId ? { connectionId: params.connectionId } : {}),
+          kloxProjectId: params.kloxProjectId,
           orgUrl: params.orgUrl,
           defaultProject: params.defaultProject,
           defaultWorkItemType: params.defaultWorkItemType,
@@ -234,11 +391,11 @@ export const useAdoStore = defineStore('ado', () => {
         },
       });
 
-      connection.value = res.connection;
+      connections.value = res.connections ?? [res.connection];
       projects.value = res.projects ?? [];
       workItemTypes.value = res.workItemTypes ?? [];
       publishDomainEvent({ type: 'AdoConnected', at: new Date().toISOString() });
-      return { ok: true };
+      return { ok: true, connection: res.connection };
     } catch (err) {
       return { ok: false, errorCode: extractApiErrorCode(err) };
     } finally {
@@ -246,42 +403,85 @@ export const useAdoStore = defineStore('ado', () => {
     }
   }
 
-  async function enableDemoConnection(uid: string): Promise<{ ok: boolean }> {
-    const res = await connectPat({
+  async function enableDemoConnection(
+    uid: string,
+    kloxProjectId?: EntityId
+  ): Promise<{ ok: boolean; errorCode?: AdoErrorCode }> {
+    const catalogStore = useCatalogStore();
+    let targetProjectId = kloxProjectId;
+    if (!targetProjectId) {
+      const candidate = catalogStore.sortedProjects.find((p) => p.systemKey !== 'unassigned');
+      if (candidate) {
+        targetProjectId = candidate.id;
+      } else {
+        const created = await catalogStore.createProject({
+          uid,
+          isDemo: true,
+          name: 'Klox Engineering',
+          isBillableDefault: true,
+        });
+        targetProjectId = created.id;
+      }
+    }
+
+    const res = await saveConnection({
       uid,
       isDemo: true,
+      kloxProjectId: targetProjectId,
       orgUrl: 'https://dev.azure.com/klox-demo',
       defaultProject: 'Klox',
       defaultWorkItemType: 'Task',
       pat: 'demo-simulated-token',
     });
-    return { ok: res.ok };
+    return { ok: res.ok, errorCode: res.errorCode };
   }
 
-  async function disconnect(params: { uid: string; isDemo: boolean }): Promise<void> {
+  async function disconnectConnection(params: {
+    uid: string;
+    isDemo: boolean;
+    connectionId: string;
+  }): Promise<void> {
     loading.value = true;
     try {
       if (params.isDemo) {
-        connection.value = null;
-        projects.value = [];
-        workItemTypes.value = [];
+        connections.value = connections.value.filter((c) => c.id !== params.connectionId);
+        if (connections.value.length === 0) {
+          projects.value = [];
+          workItemTypes.value = [];
+        }
         persistDemoState(params.uid);
       } else {
-        await fetchAuthedApi('/api/integrations/ado/connection', {
-          method: 'DELETE',
-        });
-        connection.value = null;
-        projects.value = [];
-        workItemTypes.value = [];
+        const res = await fetchAuthedApi<{ ok: boolean; connections: AdoConnectionSummary[] }>(
+          '/api/integrations/ado/connection',
+          {
+            method: 'DELETE',
+            query: { connectionId: params.connectionId },
+          }
+        );
+        connections.value = res.connections ?? [];
+        if (connections.value.length === 0) {
+          projects.value = [];
+          workItemTypes.value = [];
+        }
       }
+      const nextIters = { ...iterationsByConn.value };
+      delete nextIters[params.connectionId];
+      iterationsByConn.value = nextIters;
       publishDomainEvent({ type: 'AdoDisconnected', at: new Date().toISOString() });
     } finally {
       loading.value = false;
     }
   }
 
+  async function disconnect(params: { uid: string; isDemo: boolean; connectionId?: string }): Promise<void> {
+    const id = params.connectionId ?? connections.value[0]?.id;
+    if (!id) return;
+    await disconnectConnection({ uid: params.uid, isDemo: params.isDemo, connectionId: id });
+  }
+
   async function fetchProjectsAndTypes(params: {
     isDemo: boolean;
+    connectionId?: string;
     orgUrl?: string;
     project?: string;
   }): Promise<{
@@ -298,6 +498,7 @@ export const useAdoStore = defineStore('ado', () => {
         workItemTypes: AdoWorkItemTypeCapability[];
       }>('/api/integrations/ado/projects', {
         query: {
+          ...(params.connectionId ? { connectionId: params.connectionId } : {}),
           ...(params.orgUrl ? { orgUrl: params.orgUrl } : {}),
           ...(params.project ? { project: params.project } : {}),
         },
@@ -317,8 +518,360 @@ export const useAdoStore = defineStore('ado', () => {
     }
   }
 
+  async function fetchIterations(params: {
+    isDemo: boolean;
+    connectionId: string;
+    timeZone?: string;
+  }): Promise<{
+    iterations: AdoIterationInfo[];
+    currentIterationPath: string | null;
+    errorCode?: AdoErrorCode;
+  }> {
+    const conn = getConnectionById(params.connectionId);
+    if (!conn) {
+      return { iterations: [], currentIterationPath: null, errorCode: 'ADO_CONNECTION_NOT_FOUND' };
+    }
+
+    if (params.isDemo) {
+      const todayKey = toDateKey(new Date(), params.timeZone || 'UTC');
+      const baseProject = conn.defaultProject || 'Klox';
+      const demoIters: AdoIterationInfo[] = [
+        {
+          id: 9,
+          name: 'Sprint 3',
+          displayPath: 'Sprint 3',
+          iterationPath: `${baseProject}\\Sprint 3`,
+          startDate: '2026-01-01T00:00:00Z',
+          finishDate: '2026-01-14T00:00:00Z',
+          timeFrame: 'past',
+        },
+        {
+          id: 10,
+          name: 'Sprint 4',
+          displayPath: 'Sprint 4',
+          iterationPath: `${baseProject}\\Sprint 4`,
+          startDate: `${todayKey}T00:00:00Z`,
+          finishDate: `${todayKey}T23:59:59Z`,
+          timeFrame: 'current',
+        },
+        {
+          id: 11,
+          name: 'Sprint 5',
+          displayPath: 'Sprint 5',
+          iterationPath: `${baseProject}\\Sprint 5`,
+          startDate: '2099-01-01T00:00:00Z',
+          finishDate: '2099-01-14T00:00:00Z',
+          timeFrame: 'future',
+        },
+      ];
+      iterationsByConn.value = {
+        ...iterationsByConn.value,
+        [conn.id]: demoIters,
+      };
+      currentIterByConn.value = {
+        ...currentIterByConn.value,
+        [conn.id]: demoIters[1]!.iterationPath,
+      };
+      return {
+        iterations: demoIters,
+        currentIterationPath: demoIters[1]!.iterationPath,
+      };
+    }
+
+    try {
+      const res = await fetchAuthedApi<{
+        iterations: AdoIterationInfo[];
+        currentIterationPath: string | null;
+      }>('/api/integrations/ado/iterations', {
+        query: {
+          connectionId: conn.id,
+          ...(params.timeZone ? { timeZone: params.timeZone } : {}),
+        },
+      });
+      iterationsByConn.value = {
+        ...iterationsByConn.value,
+        [conn.id]: res.iterations ?? [],
+      };
+      currentIterByConn.value = {
+        ...currentIterByConn.value,
+        [conn.id]: res.currentIterationPath ?? null,
+      };
+      return {
+        iterations: res.iterations ?? [],
+        currentIterationPath: res.currentIterationPath ?? null,
+      };
+    } catch (err) {
+      return {
+        iterations: iterationsByConn.value[conn.id] ?? [],
+        currentIterationPath: currentIterByConn.value[conn.id] ?? null,
+        errorCode: extractApiErrorCode(err),
+      };
+    }
+  }
+
+  async function previewSprintWorkItems(params: {
+    isDemo: boolean;
+    connectionId: string;
+    iterationPath?: string;
+    timeZone?: string;
+  }): Promise<{
+    ok: boolean;
+    orgUrl: string;
+    project: string;
+    iterationPath: string;
+    iterationName: string;
+    items: AdoSprintWorkItemNode[];
+    errorCode?: AdoErrorCode;
+  }> {
+    const conn = getConnectionById(params.connectionId);
+    if (!conn || !conn.kloxProjectId) {
+      return {
+        ok: false,
+        orgUrl: '',
+        project: '',
+        iterationPath: '',
+        iterationName: '',
+        items: [],
+        errorCode: 'ADO_NOT_CONNECTED',
+      };
+    }
+
+    const orgUrl = conn.orgUrl;
+    const project = conn.defaultProject;
+
+    if (params.isDemo) {
+      if (demoWorkItems.value.length === 0) {
+        demoWorkItems.value = createInitialDemoWorkItems();
+      }
+      const pbi31 = demoWorkItems.value.find((w) => w.id === 31);
+      const t3101 = demoWorkItems.value.find((w) => w.id === 3101);
+      const t3102 = demoWorkItems.value.find((w) => w.id === 3102);
+      const b101 = demoWorkItems.value.find((w) => w.id === 101);
+      const t1011 = demoWorkItems.value.find((w) => w.id === 1011);
+
+      const items: AdoSprintWorkItemNode[] = [
+        ...(pbi31
+          ? [
+              {
+                id: pbi31.id,
+                parentId: null,
+                depth: 0 as const,
+                title: pbi31.title,
+                workItemType: pbi31.workItemType,
+                completedWork: pbi31.completedWork,
+                supportsCompletedWork: pbi31.supportsCompletedWork,
+                url: buildAdoWorkItemWebUrl(orgUrl, project, pbi31.id),
+                assignedToMe: true,
+              },
+            ]
+          : []),
+        ...(t3101
+          ? [
+              {
+                id: t3101.id,
+                parentId: 31,
+                depth: 1 as const,
+                title: t3101.title,
+                workItemType: t3101.workItemType,
+                completedWork: t3101.completedWork,
+                supportsCompletedWork: t3101.supportsCompletedWork,
+                url: buildAdoWorkItemWebUrl(orgUrl, project, t3101.id),
+                assignedToMe: true,
+              },
+            ]
+          : []),
+        ...(t3102
+          ? [
+              {
+                id: t3102.id,
+                parentId: 31,
+                depth: 1 as const,
+                title: t3102.title,
+                workItemType: t3102.workItemType,
+                completedWork: t3102.completedWork,
+                supportsCompletedWork: t3102.supportsCompletedWork,
+                url: buildAdoWorkItemWebUrl(orgUrl, project, t3102.id),
+                assignedToMe: true,
+              },
+            ]
+          : []),
+        ...(b101
+          ? [
+              {
+                id: b101.id,
+                parentId: null,
+                depth: 0 as const,
+                title: b101.title,
+                workItemType: b101.workItemType,
+                completedWork: b101.completedWork,
+                supportsCompletedWork: b101.supportsCompletedWork,
+                url: buildAdoWorkItemWebUrl(orgUrl, project, b101.id),
+                assignedToMe: true,
+              },
+            ]
+          : []),
+        ...(t1011
+          ? [
+              {
+                id: t1011.id,
+                parentId: 101,
+                depth: 1 as const,
+                title: t1011.title,
+                workItemType: t1011.workItemType,
+                completedWork: t1011.completedWork,
+                supportsCompletedWork: t1011.supportsCompletedWork,
+                url: buildAdoWorkItemWebUrl(orgUrl, project, t1011.id),
+                assignedToMe: true,
+              },
+            ]
+          : []),
+      ];
+
+      const resolvedPath = params.iterationPath || `${project}\\Sprint 4`;
+      const resolvedName = resolvedPath.split('\\').pop() || 'Sprint 4';
+      return {
+        ok: true,
+        orgUrl,
+        project,
+        iterationPath: resolvedPath,
+        iterationName: resolvedName,
+        items,
+      };
+    }
+
+    try {
+      const res = await fetchAuthedApi<{
+        orgUrl: string;
+        project: string;
+        iterationPath: string;
+        iterationName: string;
+        items: AdoSprintWorkItemNode[];
+      }>('/api/integrations/ado/sprint-items', {
+        method: 'POST',
+        body: {
+          connectionId: conn.id,
+          ...(params.iterationPath ? { iterationPath: params.iterationPath } : {}),
+          ...(params.timeZone ? { timeZone: params.timeZone } : {}),
+        },
+      });
+      return {
+        ok: true,
+        orgUrl: res.orgUrl,
+        project: res.project,
+        iterationPath: res.iterationPath,
+        iterationName: res.iterationName,
+        items: res.items ?? [],
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        orgUrl,
+        project,
+        iterationPath: params.iterationPath || '',
+        iterationName: '',
+        items: [],
+        errorCode: extractApiErrorCode(err),
+      };
+    }
+  }
+
+  async function commitSprintWorkItems(params: {
+    uid: string;
+    isDemo: boolean;
+    connectionId: string;
+    orgUrl: string;
+    project: string;
+    iterationName?: string;
+    nodes: readonly AdoSprintWorkItemNode[];
+  }): Promise<{
+    ok: boolean;
+    createdCount: number;
+    updatedCount: number;
+    errorCode?: AdoErrorCode;
+  }> {
+    const conn = getConnectionById(params.connectionId);
+    if (!conn || !conn.kloxProjectId) {
+      return { ok: false, createdCount: 0, updatedCount: 0, errorCode: 'ADO_NOT_CONNECTED' };
+    }
+
+    const catalogStore = useCatalogStore();
+    const counts = await catalogStore.upsertAdoSprintTasksBatch({
+      uid: params.uid,
+      isDemo: params.isDemo,
+      projectId: conn.kloxProjectId,
+      orgUrl: params.orgUrl,
+      adoProject: params.project,
+      nodes: params.nodes,
+    });
+
+    publishDomainEvent({
+      type: 'AdoSprintImported',
+      at: new Date().toISOString(),
+      projectId: conn.kloxProjectId,
+      count: counts.createdCount + counts.updatedCount,
+    });
+
+    return {
+      ok: true,
+      createdCount: counts.createdCount,
+      updatedCount: counts.updatedCount,
+    };
+  }
+
+  async function importSprintWorkItems(params: {
+    uid: string;
+    isDemo: boolean;
+    connectionId: string;
+    iterationPath?: string;
+    timeZone?: string;
+  }): Promise<{
+    ok: boolean;
+    createdCount: number;
+    updatedCount: number;
+    totalFetched: number;
+    iterationName?: string;
+    errorCode?: AdoErrorCode;
+  }> {
+    const preview = await previewSprintWorkItems({
+      isDemo: params.isDemo,
+      connectionId: params.connectionId,
+      iterationPath: params.iterationPath,
+      timeZone: params.timeZone,
+    });
+    if (!preview.ok) {
+      return {
+        ok: false,
+        createdCount: 0,
+        updatedCount: 0,
+        totalFetched: 0,
+        errorCode: preview.errorCode,
+      };
+    }
+
+    const committed = await commitSprintWorkItems({
+      uid: params.uid,
+      isDemo: params.isDemo,
+      connectionId: params.connectionId,
+      orgUrl: preview.orgUrl,
+      project: preview.project,
+      iterationName: preview.iterationName,
+      nodes: preview.items,
+    });
+
+    return {
+      ok: committed.ok,
+      createdCount: committed.createdCount,
+      updatedCount: committed.updatedCount,
+      totalFetched: preview.items.length,
+      iterationName: preview.iterationName,
+      errorCode: committed.errorCode,
+    };
+  }
+
   async function searchWorkItems(params: {
     isDemo: boolean;
+    connectionId?: string;
+    kloxProjectId?: string;
     orgUrl?: string;
     project?: string;
     query: string;
@@ -340,6 +893,8 @@ export const useAdoStore = defineStore('ado', () => {
         {
           method: 'POST',
           body: {
+            ...(params.connectionId ? { connectionId: params.connectionId } : {}),
+            ...(params.kloxProjectId ? { kloxProjectId: params.kloxProjectId } : {}),
             orgUrl: params.orgUrl,
             project: params.project,
             query: params.query,
@@ -356,12 +911,17 @@ export const useAdoStore = defineStore('ado', () => {
   async function pullWorkItems(params: {
     uid: string;
     isDemo: boolean;
-    targets: ReadonlyArray<{ orgUrl?: string; project?: string; ids: number[] }>;
+    targets: ReadonlyArray<{
+      connectionId?: string;
+      orgUrl?: string;
+      project?: string;
+      ids: number[];
+    }>;
   }): Promise<{
     items: Array<AdoWorkItemSummary & { orgUrl: string; project: string }>;
     errorCode?: AdoErrorCode;
   }> {
-    if (!connection.value?.connected || params.targets.length === 0) {
+    if (!isConnected.value || params.targets.length === 0) {
       return { items: [] };
     }
 
@@ -371,18 +931,19 @@ export const useAdoStore = defineStore('ado', () => {
     let pulled: Array<AdoWorkItemSummary & { orgUrl: string; project: string }> = [];
 
     if (params.isDemo) {
-      const orgUrl = connection.value.orgUrl;
-      const defaultProj = connection.value.defaultProject;
+      const fallbackConn = connection.value!;
       for (const group of params.targets) {
-        const proj = group.project || defaultProj;
+        const groupConn = getConnectionById(group.connectionId) ?? fallbackConn;
+        const orgUrl = group.orgUrl || groupConn.orgUrl;
+        const proj = group.project || groupConn.defaultProject;
         for (const id of group.ids) {
           const found = demoWorkItems.value.find((w) => w.id === id);
           if (found) {
             pulled.push({
               ...found,
-              orgUrl: group.orgUrl || orgUrl,
+              orgUrl,
               project: proj,
-              url: buildAdoWorkItemWebUrl(group.orgUrl || orgUrl, proj, found.id),
+              url: buildAdoWorkItemWebUrl(orgUrl, proj, found.id),
             });
           }
         }
@@ -437,6 +998,7 @@ export const useAdoStore = defineStore('ado', () => {
   async function createWorkItemForTask(params: {
     uid: string;
     isDemo: boolean;
+    connectionId?: string;
     taskId: EntityId;
     orgUrl?: string;
     project?: string;
@@ -449,17 +1011,21 @@ export const useAdoStore = defineStore('ado', () => {
     item?: AdoWorkItemSummary & { orgUrl: string; project: string };
     errorCode?: AdoErrorCode;
   }> {
-    if (!connection.value?.connected) {
-      return { ok: false, errorCode: 'ADO_NOT_CONNECTED' };
-    }
-
     const catalogStore = useCatalogStore();
     const timeLogsStore = useTimeLogsStore();
     const task = catalogStore.getTaskById(params.taskId);
     if (!task) return { ok: false, errorCode: 'ADO_NOT_FOUND' };
 
-    const targetOrg = params.orgUrl?.trim() || connection.value.orgUrl;
-    const targetProject = params.project?.trim() || connection.value.defaultProject;
+    const activeConn =
+      getConnectionById(params.connectionId) ??
+      getConnectionForProject(task.projectId) ??
+      connection.value;
+    if (!activeConn?.connected) {
+      return { ok: false, errorCode: 'ADO_NOT_CONNECTED' };
+    }
+
+    const targetOrg = params.orgUrl?.trim() || activeConn.orgUrl;
+    const targetProject = params.project?.trim() || activeConn.defaultProject;
     const nowIso = new Date().toISOString();
 
     let createdItem: AdoWorkItemSummary;
@@ -468,7 +1034,8 @@ export const useAdoStore = defineStore('ado', () => {
       const maxId = demoWorkItems.value.reduce((m, w) => Math.max(m, w.id), 100);
       const nextId = maxId + 1;
       const supportsCompletedWork =
-        params.workItemType.toLowerCase() !== 'product backlog item';
+        params.workItemType.toLowerCase() !== 'product backlog item' &&
+        params.workItemType.toLowerCase() !== 'user story';
       createdItem = {
         id: nextId,
         title: params.title.trim(),
@@ -491,6 +1058,7 @@ export const useAdoStore = defineStore('ado', () => {
         }>('/api/integrations/ado/work-items', {
           method: 'POST',
           body: {
+            connectionId: activeConn.id,
             orgUrl: targetOrg,
             project: targetProject,
             workItemType: params.workItemType,
@@ -570,7 +1138,7 @@ export const useAdoStore = defineStore('ado', () => {
     isDemo: boolean;
     approvals: readonly AdoPushApprovalItem[];
   }): Promise<{ results: AdoPushExecutionResult[]; errorCode?: AdoErrorCode }> {
-    if (!connection.value?.connected) {
+    if (!isConnected.value) {
       return { results: [], errorCode: 'ADO_NOT_CONNECTED' };
     }
     if (params.approvals.length === 0) {
@@ -632,6 +1200,7 @@ export const useAdoStore = defineStore('ado', () => {
             method: 'POST',
             body: {
               items: params.approvals.map((a) => ({
+                ...(a.connectionId ? { connectionId: a.connectionId } : {}),
                 orgUrl: a.orgUrl,
                 project: a.project,
                 workItemId: a.workItemId,
@@ -734,18 +1303,30 @@ export const useAdoStore = defineStore('ado', () => {
   }
 
   return {
+    connections,
     connection,
     projects,
     workItemTypes,
+    iterationsByConn,
+    currentIterByConn,
     loading,
     syncing,
     isConnected,
+    getConnectionById,
+    getConnectionForProject,
     hydrate,
     reset,
-    connectPat,
+    previewProjectsAndTypes,
+    saveConnection,
+    connectPat: saveConnection,
     enableDemoConnection,
+    disconnectConnection,
     disconnect,
     fetchProjectsAndTypes,
+    fetchIterations,
+    previewSprintWorkItems,
+    commitSprintWorkItems,
+    importSprintWorkItems,
     searchWorkItems,
     pullWorkItems,
     createWorkItemForTask,

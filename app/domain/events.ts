@@ -22,6 +22,7 @@ export type DomainEvent =
   | { type: 'PasswordResetCompleted'; at: string }
   | { type: 'AdoConnected'; at: string }
   | { type: 'AdoDisconnected'; at: string }
+  | { type: 'AdoSprintImported'; at: string; projectId: string; count: number }
   | { type: 'AdoWorkItemLinked'; at: string; workItemId: number; createdNew: boolean }
   | { type: 'AdoHoursSynced'; at: string; workItemCount: number; totalHours: number };
 

@@ -5,7 +5,6 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  ExternalLink,
   GitBranch,
   Loader2,
   Plus,
@@ -84,7 +83,7 @@ const candidates = computed(() =>
     projects: catalogStore.projects,
     tasks: catalogStore.tasks,
     logs: timeLogsStore.logs,
-    connection: adoStore.connection,
+    connections: adoStore.connections,
     filterProjectId: props.filterProjectId,
   })
 );
@@ -136,12 +135,20 @@ async function refreshLiveFromAdo() {
   pulling.value = true;
   pullError.value = null;
   try {
-    const groupsMap = new Map<string, { orgUrl: string; project: string; ids: number[] }>();
+    const groupsMap = new Map<
+      string,
+      { connectionId: string; orgUrl: string; project: string; ids: number[] }
+    >();
     for (const item of items) {
-      const groupKey = `${item.orgUrl.toLowerCase()}::${item.project.toLowerCase()}`;
+      const groupKey = `${item.connectionId}::${item.orgUrl.toLowerCase()}::${item.project.toLowerCase()}`;
       let grp = groupsMap.get(groupKey);
       if (!grp) {
-        grp = { orgUrl: item.orgUrl, project: item.project, ids: [] };
+        grp = {
+          connectionId: item.connectionId,
+          orgUrl: item.orgUrl,
+          project: item.project,
+          ids: [],
+        };
         groupsMap.set(groupKey, grp);
       }
       if (!grp.ids.includes(item.workItemId)) {
@@ -203,6 +210,7 @@ const selectedApprovals = computed(() => {
       return supported && d?.selected && d.deltaHours > 0;
     })
     .map((item) => ({
+      connectionId: item.connectionId,
       workItemId: item.workItemId,
       orgUrl: item.orgUrl,
       project: item.project,
@@ -232,6 +240,7 @@ async function submitInlineCreate(u: UnplannedAdoTaskCandidate) {
     const res = await adoStore.createWorkItemForTask({
       uid: authStore.user.uid,
       isDemo: authStore.isDemoMode,
+      connectionId: u.target.connectionId,
       taskId: u.task.id,
       orgUrl: u.target.orgUrl,
       project: u.target.project,
@@ -428,19 +437,19 @@ async function handleApproveAndPush() {
                     </div>
 
                     <div class="flex flex-wrap items-center gap-2">
+                      <AdoWorkItemTypeBadge
+                        :work-item-type="getPulledItem(item.key)?.workItemType || item.cachedWorkItemType"
+                        :work-item-id="item.workItemId"
+                        :url="getPulledItem(item.key)?.url || item.cachedUrl"
+                      />
                       <a
                         :href="getPulledItem(item.key)?.url || item.cachedUrl"
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="tabular-telemetry inline-flex items-center gap-1 text-sm font-semibold text-signal hover:underline"
+                        class="text-sm font-semibold text-text-primary hover:text-signal hover:underline"
                       >
-                        <span>#{{ item.workItemId }}</span>
-                        <span>{{ getPulledItem(item.key)?.title || item.cachedTitle || '' }}</span>
-                        <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
+                        {{ getPulledItem(item.key)?.title || item.cachedTitle || `#${item.workItemId}` }}
                       </a>
-                      <span class="border border-border-hairline bg-bg-elevated px-2 py-0.5 text-xs text-text-muted">
-                        {{ getPulledItem(item.key)?.workItemType || item.cachedWorkItemType || 'Task' }}
-                      </span>
                     </div>
                   </div>
                 </label>
@@ -540,9 +549,15 @@ async function handleApproveAndPush() {
                     :key="entry.log.id"
                     class="flex items-center justify-between gap-2 px-3 py-2 text-xs"
                   >
-                    <div class="flex items-center gap-2 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 min-w-0">
                       <span class="tabular-telemetry text-text-muted shrink-0">
                         {{ formatDateKey(entry.log.dateKey) }}
+                      </span>
+                      <span
+                        v-if="entry.isRolledUpFromDescendant"
+                        class="border border-signal/35 bg-signal-soft px-1.5 py-0.5 text-xs font-medium text-signal shrink-0"
+                      >
+                        ↳ {{ entry.sourceTaskLabel }}
                       </span>
                       <span class="truncate text-text-primary">{{ entry.log.description }}</span>
                     </div>
@@ -586,6 +601,7 @@ async function handleApproveAndPush() {
                 <div class="flex flex-wrap items-center gap-2 shrink-0">
                   <AdoWorkItemPickerPopover
                     variant="pill"
+                    :connection-id="u.target.connectionId"
                     :org-url="u.target.orgUrl"
                     :project="u.target.project"
                     @select="handleLinkExistingUnplanned(u, $event)"

@@ -10,6 +10,8 @@ export type SystemProjectKey = 'unassigned';
 export type AdoAuthType = 'pat' | 'entra_oauth';
 
 export interface AdoConnectionSummary {
+  id: EntityId;
+  kloxProjectId: EntityId; // Mandatory non-unassigned Klox Project ID (empty only on unmigrated legacy docs)
   connected: boolean;
   authType: AdoAuthType;
   orgUrl: string; // Canonical "https://dev.azure.com/{org}"
@@ -68,6 +70,8 @@ export interface Task {
   sortOrder?: number; // Sparse priority rank among siblings sharing (projectId, parentTaskId)
   name: string;
   description?: string; // Basic Markdown description (<= 4000 chars)
+  tagIds?: EntityId[]; // Optional Project-Scoped Tag IDs owned by projectId (max 25)
+  dueDate?: string; // Optional "YYYY-MM-DD" deadline date
   targetHours?: number;
   externalProvider?: ExternalWorkItemProvider;
   externalWorkItemId?: string;

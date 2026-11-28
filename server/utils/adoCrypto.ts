@@ -90,3 +90,49 @@ export function decryptAdoSecret(params: {
   const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return decrypted.toString('utf8');
 }
+
+export function encryptAdoTokenMap(params: {
+  tokens: Record<string, string>;
+  uid: string;
+  masterSecret?: string;
+  isDev?: boolean;
+}): EncryptedAdoSecretPayload {
+  const cleanTokens: Record<string, string> = {};
+  for (const [id, pat] of Object.entries(params.tokens)) {
+    const cleanId = id.trim();
+    const cleanPat = pat.trim();
+    if (cleanId && cleanPat) {
+      cleanTokens[cleanId] = cleanPat;
+    }
+  }
+  return encryptAdoSecret({
+    plaintext: JSON.stringify({ v: 2, tokens: cleanTokens }),
+    uid: params.uid,
+    masterSecret: params.masterSecret,
+    isDev: params.isDev,
+  });
+}
+
+export function decryptAdoTokenMap(params: {
+  payload: EncryptedAdoSecretPayload;
+  uid: string;
+  masterSecret?: string;
+  isDev?: boolean;
+}): Record<string, string> {
+  const plaintext = decryptAdoSecret(params);
+  try {
+    const parsed = JSON.parse(plaintext) as { v?: unknown; tokens?: unknown };
+    if (parsed && parsed.v === 2 && parsed.tokens && typeof parsed.tokens === 'object') {
+      const result: Record<string, string> = {};
+      for (const [key, val] of Object.entries(parsed.tokens as Record<string, unknown>)) {
+        if (typeof val === 'string' && val.trim()) {
+          result[key] = val;
+        }
+      }
+      return result;
+    }
+  } catch {
+    // Legacy v1 single-string PAT fallback
+  }
+  return plaintext.trim() ? { legacy_default: plaintext.trim() } : {};
+}

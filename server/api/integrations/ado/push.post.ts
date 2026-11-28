@@ -1,11 +1,14 @@
 import {
-  loadUserAdoContext,
+  loadUserAdoVault,
   patchAdoCompletedWork,
   resolveTargetOrgAndProject,
+  resolveVaultConnectionAndPat,
   type AdoPushItemResult,
 } from '../../../utils/adoClient';
 
 interface PushItemRequest {
+  connectionId?: string;
+  kloxProjectId?: string;
   orgUrl?: string;
   project?: string;
   workItemId: number;
@@ -17,7 +20,7 @@ interface PushRequestBody {
 }
 
 export default defineEventHandler(async (event) => {
-  const { connection, pat } = await loadUserAdoContext(event);
+  const vault = await loadUserAdoVault(event);
   const body = await readBody<PushRequestBody>(event);
 
   if (!Array.isArray(body?.items) || body.items.length === 0) {
@@ -31,6 +34,14 @@ export default defineEventHandler(async (event) => {
   const results: Array<AdoPushItemResult & { orgUrl: string; project: string }> = [];
 
   for (const item of body.items) {
+    const { connection, pat } = resolveVaultConnectionAndPat({
+      connections: vault.connections,
+      tokens: vault.tokens,
+      connectionId: item.connectionId,
+      kloxProjectId: item.kloxProjectId,
+      orgUrl: item.orgUrl,
+      project: item.project,
+    });
     const target = resolveTargetOrgAndProject(connection, item.orgUrl, item.project);
     const result = await patchAdoCompletedWork({
       orgUrl: target.orgUrl,

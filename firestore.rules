@@ -23,7 +23,8 @@ rules_version = '2';
 //   - activeTimer: map | null (optional, singleton live stopwatch state)
 //   - preferences: map (optional, regional settings: locale, timeZone, weekStartsOn, dateFormat, hourCycle; optional keyboardShortcuts map <= 20 entries)
 //   - onboarding: map (optional, wizardStatus, version, profile, checklist, timestamps)
-//   - adoConnection: map | null (optional, non-secret Azure DevOps connection summary)
+//   - adoConnection: map | null (optional, legacy single non-secret Azure DevOps connection summary)
+//   - adoConnections: list<map> | null (optional, max 25 project-bound Azure DevOps connection summaries)
 //   - updatedAt: string (optional, UTC ISO timestamp <= 64 chars)
 //
 // Collection: usernames/{username}
@@ -64,6 +65,8 @@ rules_version = '2';
 //   - sortOrder: number | null (optional, sparse sibling priority rank -1000000000..1000000000)
 //   - name: string (required, 1..200 chars)
 //   - description: string | null (optional, <= 4000 chars, Markdown)
+//   - tagIds: list<string> | null (optional, max 25 project-scoped Tag ID strings 1..128 chars)
+//   - dueDate: string | null (optional, 10 chars YYYY-MM-DD deadline date)
 //   - completedWorkHours: number (required, >= 0 and <= 100000)
 //   - status: string (required, in ['todo', 'in_progress', 'done'])
 //   - createdAt: string (required, immutable, UTC ISO string 10..64 chars)
@@ -110,7 +113,7 @@ rules_version = '2';
 //   - salt: string (required, base64 1..128 chars)
 //   - iv: string (required, base64 1..64 chars)
 //   - tag: string (required, base64 1..64 chars)
-//   - ciphertext: string (required, base64 1..4096 chars)
+//   - ciphertext: string (required, base64 1..16384 chars)
 //   - updatedAt: string (required, UTC ISO string 1..64 chars)
 //
 // ===============================================================
@@ -170,6 +173,35 @@ service cloud.firestore {
 
     function isValidList(listVal, maxSize) {
       return listVal is list && listVal.size() <= maxSize;
+    }
+
+    function isValidStringIdList25(listVal, maxItemLen) {
+      return isValidList(listVal, 25) &&
+        (listVal.size() == 0 || isNonEmptyString(listVal[0], maxItemLen)) &&
+        (listVal.size() <= 1 || isNonEmptyString(listVal[1], maxItemLen)) &&
+        (listVal.size() <= 2 || isNonEmptyString(listVal[2], maxItemLen)) &&
+        (listVal.size() <= 3 || isNonEmptyString(listVal[3], maxItemLen)) &&
+        (listVal.size() <= 4 || isNonEmptyString(listVal[4], maxItemLen)) &&
+        (listVal.size() <= 5 || isNonEmptyString(listVal[5], maxItemLen)) &&
+        (listVal.size() <= 6 || isNonEmptyString(listVal[6], maxItemLen)) &&
+        (listVal.size() <= 7 || isNonEmptyString(listVal[7], maxItemLen)) &&
+        (listVal.size() <= 8 || isNonEmptyString(listVal[8], maxItemLen)) &&
+        (listVal.size() <= 9 || isNonEmptyString(listVal[9], maxItemLen)) &&
+        (listVal.size() <= 10 || isNonEmptyString(listVal[10], maxItemLen)) &&
+        (listVal.size() <= 11 || isNonEmptyString(listVal[11], maxItemLen)) &&
+        (listVal.size() <= 12 || isNonEmptyString(listVal[12], maxItemLen)) &&
+        (listVal.size() <= 13 || isNonEmptyString(listVal[13], maxItemLen)) &&
+        (listVal.size() <= 14 || isNonEmptyString(listVal[14], maxItemLen)) &&
+        (listVal.size() <= 15 || isNonEmptyString(listVal[15], maxItemLen)) &&
+        (listVal.size() <= 16 || isNonEmptyString(listVal[16], maxItemLen)) &&
+        (listVal.size() <= 17 || isNonEmptyString(listVal[17], maxItemLen)) &&
+        (listVal.size() <= 18 || isNonEmptyString(listVal[18], maxItemLen)) &&
+        (listVal.size() <= 19 || isNonEmptyString(listVal[19], maxItemLen)) &&
+        (listVal.size() <= 20 || isNonEmptyString(listVal[20], maxItemLen)) &&
+        (listVal.size() <= 21 || isNonEmptyString(listVal[21], maxItemLen)) &&
+        (listVal.size() <= 22 || isNonEmptyString(listVal[22], maxItemLen)) &&
+        (listVal.size() <= 23 || isNonEmptyString(listVal[23], maxItemLen)) &&
+        (listVal.size() <= 24 || isNonEmptyString(listVal[24], maxItemLen));
     }
 
     function isValidUsernameHandle(handle) {
@@ -277,6 +309,50 @@ service cloud.firestore {
         isNonEmptyString(conn.lastVerifiedAt, 64);
     }
 
+    function isValidAdoConnectionItem(conn) {
+      return conn is map &&
+        conn.keys().hasAll([
+          'id',
+          'kloxProjectId',
+          'connected',
+          'authType',
+          'orgUrl',
+          'organization',
+          'defaultProject',
+          'defaultWorkItemType',
+          'tokenHint',
+          'connectedAt',
+          'lastVerifiedAt'
+        ]) &&
+        conn.keys().hasOnly([
+          'id',
+          'kloxProjectId',
+          'connected',
+          'authType',
+          'orgUrl',
+          'organization',
+          'defaultProject',
+          'defaultWorkItemType',
+          'tokenHint',
+          'connectedAt',
+          'lastVerifiedAt'
+        ]) &&
+        isNonEmptyString(conn.id, 128) &&
+        isNonEmptyString(conn.kloxProjectId, 128) &&
+        conn.kloxProjectId != 'system_unassigned' &&
+        conn.connected is bool &&
+        conn.authType in ['pat', 'entra_oauth'] &&
+        conn.orgUrl is string &&
+        conn.orgUrl.size() <= 200 &&
+        conn.orgUrl.matches('^https://dev\\.azure\\.com/[A-Za-z0-9][A-Za-z0-9-]{0,62}$') &&
+        isNonEmptyString(conn.organization, 80) &&
+        isNonEmptyString(conn.defaultProject, 128) &&
+        isNonEmptyString(conn.defaultWorkItemType, 80) &&
+        isNonEmptyString(conn.tokenHint, 32) &&
+        isNonEmptyString(conn.connectedAt, 64) &&
+        isNonEmptyString(conn.lastVerifiedAt, 64);
+    }
+
     function isValidUserProfile(data) {
       return hasOnlyAllowedFields([
           'displayName',
@@ -288,6 +364,7 @@ service cloud.firestore {
           'preferences',
           'onboarding',
           'adoConnection',
+          'adoConnections',
           'updatedAt'
         ]) &&
         isOptionalBoundedString(data, 'displayName', 120) &&
@@ -299,7 +376,16 @@ service cloud.firestore {
         (!('activeTimer' in data) || isValidActiveTimer(data.activeTimer)) &&
         (!('preferences' in data) || isValidPreferences(data.preferences)) &&
         (!('onboarding' in data) || isValidOnboarding(data.onboarding)) &&
-        (!('adoConnection' in data) || data.adoConnection == null || isValidAdoConnection(data.adoConnection));
+        (!('adoConnection' in data) || data.adoConnection == null || isValidAdoConnection(data.adoConnection)) &&
+        (!('adoConnections' in data) || data.adoConnections == null || (
+          data.adoConnections is list &&
+          data.adoConnections.size() <= 25 &&
+          (data.adoConnections.size() == 0 || isValidAdoConnectionItem(data.adoConnections[0])) &&
+          (data.adoConnections.size() <= 1 || isValidAdoConnectionItem(data.adoConnections[1])) &&
+          (data.adoConnections.size() <= 2 || isValidAdoConnectionItem(data.adoConnections[2])) &&
+          (data.adoConnections.size() <= 3 || isValidAdoConnectionItem(data.adoConnections[3])) &&
+          (data.adoConnections.size() <= 4 || isValidAdoConnectionItem(data.adoConnections[4]))
+        ));
     }
 
     function hasClaimedUsernameAfter(userId, handle) {
@@ -371,6 +457,8 @@ service cloud.firestore {
           'sortOrder',
           'name',
           'description',
+          'tagIds',
+          'dueDate',
           'completedWorkHours',
           'status',
           'createdAt',
@@ -393,6 +481,8 @@ service cloud.firestore {
         (!('sortOrder' in data) || data.sortOrder == null || (data.sortOrder is number && data.sortOrder >= -1000000000 && data.sortOrder <= 1000000000)) &&
         isNonEmptyString(data.name, 200) &&
         isOptionalBoundedString(data, 'description', 4000) &&
+        (!('tagIds' in data) || data.tagIds == null || isValidStringIdList25(data.tagIds, 128)) &&
+        (!('dueDate' in data) || data.dueDate == null || isValidDateKey(data.dueDate)) &&
         data.completedWorkHours is number && data.completedWorkHours >= 0 && data.completedWorkHours <= 100000 &&
         data.status in ['todo', 'in_progress', 'done'] &&
         isNonEmptyString(data.createdAt, 64) &&
@@ -490,7 +580,7 @@ service cloud.firestore {
         data.iv.matches('^[A-Za-z0-9+/]+=*$') &&
         isNonEmptyString(data.tag, 64) &&
         data.tag.matches('^[A-Za-z0-9+/]+=*$') &&
-        isNonEmptyString(data.ciphertext, 4096) &&
+        isNonEmptyString(data.ciphertext, 16384) &&
         data.ciphertext.matches('^[A-Za-z0-9+/]+=*$') &&
         isNonEmptyString(data.updatedAt, 64);
     }

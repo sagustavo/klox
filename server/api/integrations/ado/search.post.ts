@@ -5,6 +5,8 @@ import {
 } from '../../../utils/adoClient';
 
 interface SearchRequestBody {
+  connectionId?: string;
+  kloxProjectId?: string;
   orgUrl?: string;
   project?: string;
   query?: string;
@@ -12,8 +14,13 @@ interface SearchRequestBody {
 }
 
 export default defineEventHandler(async (event) => {
-  const { connection, pat } = await loadUserAdoContext(event);
   const body = await readBody<SearchRequestBody>(event);
+  const { connection, pat } = await loadUserAdoContext(event, {
+    connectionId: body?.connectionId,
+    kloxProjectId: body?.kloxProjectId,
+    orgUrl: body?.orgUrl,
+    project: body?.project,
+  });
   const target = resolveTargetOrgAndProject(connection, body?.orgUrl, body?.project);
 
   const items = await searchAdoWorkItems({

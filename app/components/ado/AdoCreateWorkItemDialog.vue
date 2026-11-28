@@ -18,6 +18,7 @@ const props = withDefaults(
   defineProps<{
     open: boolean;
     task: Task | null;
+    connectionId?: string;
     orgUrl?: string;
     project?: string;
     defaultWorkItemType?: string;
@@ -25,6 +26,7 @@ const props = withDefaults(
     unsyncedLogIds?: readonly EntityId[];
   }>(),
   {
+    connectionId: undefined,
     orgUrl: undefined,
     project: undefined,
     defaultWorkItemType: undefined,
@@ -48,6 +50,13 @@ const pushInitialHours = ref(true);
 const submitting = ref(false);
 const errorCode = ref<AdoErrorCode | null>(null);
 const titleInputRef = ref<HTMLInputElement | null>(null);
+
+const activeConn = computed(
+  () =>
+    adoStore.getConnectionById(props.connectionId) ??
+    adoStore.getConnectionForProject(props.task?.projectId) ??
+    adoStore.connection
+);
 
 const recommendedHours = computed(() => secondsToHours2(props.unsyncedSeconds ?? 0));
 
@@ -74,17 +83,18 @@ watch(
     if (!isOpen || !task) return;
     errorCode.value = null;
     titleInput.value = task.name;
-    selectedProject.value = props.project || adoStore.connection?.defaultProject || '';
+    selectedProject.value = props.project || activeConn.value?.defaultProject || '';
     selectedType.value =
-      props.defaultWorkItemType || adoStore.connection?.defaultWorkItemType || 'Task';
+      props.defaultWorkItemType || activeConn.value?.defaultWorkItemType || 'Task';
     pushInitialHours.value = recommendedHours.value > 0;
     nextTick(() => {
       titleInputRef.value?.focus();
     });
-    if (adoStore.isConnected && adoStore.workItemTypes.length === 0) {
+    if (activeConn.value?.connected) {
       await adoStore.fetchProjectsAndTypes({
         isDemo: authStore.isDemoMode,
-        orgUrl: props.orgUrl,
+        connectionId: activeConn.value.id,
+        orgUrl: props.orgUrl ?? activeConn.value.orgUrl,
         project: selectedProject.value,
       });
     }
@@ -92,10 +102,11 @@ watch(
 );
 
 async function handleProjectChange() {
-  if (!adoStore.isConnected) return;
+  if (!activeConn.value?.connected) return;
   await adoStore.fetchProjectsAndTypes({
     isDemo: authStore.isDemoMode,
-    orgUrl: props.orgUrl,
+    connectionId: activeConn.value.id,
+    orgUrl: props.orgUrl ?? activeConn.value.orgUrl,
     project: selectedProject.value,
   });
 }
@@ -113,8 +124,9 @@ async function handleSubmit() {
     const res = await adoStore.createWorkItemForTask({
       uid: authStore.user.uid,
       isDemo: authStore.isDemoMode,
+      connectionId: activeConn.value?.id,
       taskId: props.task.id,
-      orgUrl: props.orgUrl,
+      orgUrl: props.orgUrl ?? activeConn.value?.orgUrl,
       project: selectedProject.value,
       workItemType: selectedType.value,
       title: titleInput.value.trim(),

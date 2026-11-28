@@ -393,8 +393,16 @@ function handleSelectTask(nextTaskId: EntityId | null) {
                 :class="node.task.id === taskId ? 'bg-signal-soft text-signal font-medium' : 'text-text-primary'"
                 @click="handleSelectTask(node.task.id)"
               >
-                <span class="truncate">
-                  {{ node.depth === 1 ? '↳ ' : node.depth === 2 ? '↳↳ ' : '' }}{{ node.task.name }}
+                <span class="flex items-center gap-1.5 min-w-0 truncate">
+                  <span class="truncate">
+                    {{ node.depth === 1 ? '↳ ' : node.depth === 2 ? '↳↳ ' : '' }}{{ node.task.name }}
+                  </span>
+                  <AdoWorkItemTypeBadge
+                    v-if="node.task.externalWorkItemId"
+                    :work-item-type="node.task.externalWorkItemType"
+                    :work-item-id="node.task.externalWorkItemId"
+                    compact
+                  />
                 </span>
                 <Check v-if="node.task.id === taskId" class="h-4 w-4 shrink-0 text-signal" />
               </button>

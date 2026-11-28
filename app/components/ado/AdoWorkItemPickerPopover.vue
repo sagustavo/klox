@@ -27,6 +27,7 @@ export interface AdoSelectedWorkItem {
 
 const props = withDefaults(
   defineProps<{
+    connectionId?: string;
     workItemId?: string;
     workItemTitle?: string;
     completedWorkHours?: number;
@@ -36,6 +37,7 @@ const props = withDefaults(
     testId?: string;
   }>(),
   {
+    connectionId: undefined,
     workItemId: undefined,
     workItemTitle: undefined,
     completedWorkHours: 0,
@@ -63,15 +65,20 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 const parsedDirectId = computed(() => parseWorkItemIdInput(searchQuery.value));
 
+const activeConn = computed(
+  () => adoStore.getConnectionById(props.connectionId) ?? adoStore.connection
+);
+const canSearchAdo = computed(() => Boolean(activeConn.value?.connected));
+
 const effectiveOrgUrl = computed(
-  () => props.orgUrl?.trim() || adoStore.connection?.orgUrl || ''
+  () => props.orgUrl?.trim() || activeConn.value?.orgUrl || ''
 );
 const effectiveProject = computed(
-  () => props.project?.trim() || adoStore.connection?.defaultProject || ''
+  () => props.project?.trim() || activeConn.value?.defaultProject || ''
 );
 
 async function runSearch(query: string) {
-  if (!adoStore.isConnected) {
+  if (!canSearchAdo.value) {
     results.value = [];
     return;
   }
@@ -80,6 +87,7 @@ async function runSearch(query: string) {
   try {
     const res = await adoStore.searchWorkItems({
       isDemo: authStore.isDemoMode,
+      connectionId: activeConn.value?.id,
       orgUrl: effectiveOrgUrl.value || undefined,
       project: effectiveProject.value || undefined,
       query,
@@ -98,14 +106,14 @@ watch(open, (isOpen) => {
     nextTick(() => {
       searchInputRef.value?.focus();
     });
-    if (adoStore.isConnected) {
+    if (canSearchAdo.value) {
       void runSearch('');
     }
   }
 });
 
 watch(searchQuery, (next) => {
-  if (!open.value || !adoStore.isConnected) return;
+  if (!open.value || !canSearchAdo.value) return;
   if (searchTimer) clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     void runSearch(next);
@@ -237,7 +245,7 @@ function handleClearLink() {
           {{ $t(`ado.errors.${errorCode}`) }}
         </div>
 
-        <div v-if="!adoStore.isConnected && !parsedDirectId" class="px-3 py-4 text-center text-ui text-text-muted">
+        <div v-if="!canSearchAdo && !parsedDirectId" class="px-3 py-4 text-center text-ui text-text-muted">
           {{ $t('ado.picker.notConnectedHint') }}
         </div>
 
@@ -249,13 +257,11 @@ function handleClearLink() {
               :class="String(item.id) === workItemId ? 'bg-signal-soft text-signal font-medium' : 'text-text-primary'"
               @click="handlePickItem(item)"
             >
-              <div class="min-w-0 space-y-0.5">
-                <div class="flex items-center gap-1.5">
-                  <span class="tabular-telemetry font-semibold text-signal">#{{ item.id }}</span>
-                  <span class="border border-border-hairline bg-bg-primary px-1.5 py-0.5 text-xs text-text-muted">
-                    {{ item.workItemType }}
-                  </span>
-                </div>
+              <div class="min-w-0 space-y-1">
+                <AdoWorkItemTypeBadge
+                  :work-item-type="item.workItemType"
+                  :work-item-id="item.id"
+                />
                 <div class="truncate text-ui text-text-primary">
                   {{ item.title }}
                 </div>

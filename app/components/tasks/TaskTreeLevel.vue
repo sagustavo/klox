@@ -1,85 +1,188 @@
 <script setup lang="ts">
 import {
+  AlignLeft,
+  Calendar,
   Check,
+  ChevronDown,
+  ChevronRight,
   CornerDownRight,
-  ExternalLink,
-  GripVertical,
-  Pencil,
   Play,
-  Plus,
-  Trash2,
-  X,
+  Square,
 } from 'lucide-vue-next';
-import type { AdoSelectedWorkItem } from '~/components/ado/AdoWorkItemPickerPopover.vue';
-import { MAX_TASK_DEPTH, type TaskTreeNode } from '~/domain/invariants';
-import { formatHMS } from '~/domain/duration';
-import { renderBasicMarkdown } from '~/domain/markdown';
-import type { EntityId, Task, TaskStatus } from '~/domain/types';
+import { formatHMS, toDateKey } from '~/domain/duration';
+import {
+  MAX_TASK_DEPTH,
+  classifyDueDateTone,
+  type TaskTreeNode,
+} from '~/domain/invariants';
+import type { EntityId, ProjectTag, Task, TaskStatus } from '~/domain/types';
+import { usePreferencesStore } from '~/stores/preferences';
 
 const props = withDefaults(
   defineProps<{
     nodes: readonly TaskTreeNode[];
     depth?: number;
+    parentParentTaskId?: EntityId | null;
+    inheritedAdoTask?: Task | null;
     runningTaskId?: EntityId | null;
+    runningElapsedSeconds?: number;
     trackedSecondsByTask?: ReadonlyMap<EntityId, number>;
     unsyncedHoursByTask?: ReadonlyMap<EntityId, number>;
-    adoConnected?: boolean;
-    adoOrgUrl?: string;
-    adoProject?: string;
-    adoEnabledForProject?: boolean;
+    projectTags?: readonly ProjectTag[];
+    selectedTaskIds?: ReadonlySet<EntityId>;
+    selectedCount?: number;
+    focusedTaskId?: EntityId | null;
+    multiSelectMode?: boolean;
+    collapsedTaskIds?: ReadonlySet<EntityId>;
+    editingTaskId?: EntityId | null;
+    addingSubtaskForId?: EntityId | null;
   }>(),
   {
     depth: 0,
+    parentParentTaskId: null,
+    inheritedAdoTask: null,
     runningTaskId: null,
+    runningElapsedSeconds: 0,
     trackedSecondsByTask: () => new Map(),
     unsyncedHoursByTask: () => new Map(),
-    adoConnected: false,
-    adoOrgUrl: undefined,
-    adoProject: undefined,
-    adoEnabledForProject: false,
+    projectTags: () => [],
+    selectedTaskIds: () => new Set(),
+    selectedCount: 0,
+    focusedTaskId: null,
+    multiSelectMode: false,
+    collapsedTaskIds: () => new Set(),
+    editingTaskId: null,
+    addingSubtaskForId: null,
   }
 );
 
 const emit = defineEmits<{
   reorder: [payload: { taskId: EntityId; targetIndex: number }];
-  startTimer: [taskId: EntityId];
-  cycleStatus: [payload: { taskId: EntityId; current: TaskStatus }];
-  prefillSubtask: [parentId: EntityId];
-  deleteTask: [task: Task];
-  saveEdit: [
+  reparent: [payload: { taskId: EntityId; newParentTaskId: EntityId | null }];
+  createSubtask: [payload: { parentTaskId: EntityId; name: string; addChildAfter?: boolean }];
+  openSubtaskComposer: [parentTaskId: EntityId | null];
+  startInlineRename: [taskId: EntityId | null];
+  commitInlineRename: [
     payload: {
       taskId: EntityId;
       name: string;
-      description: string;
-      targetHours: number | null;
-      adoItem?: AdoSelectedWorkItem | null;
+      addSubtaskAfter?: boolean;
+      reparentTarget?: EntityId | null;
     },
   ];
-  linkAdo: [payload: { task: Task; adoItem: AdoSelectedWorkItem | null }];
-  createAdo: [task: Task];
+  updateTags: [payload: { taskId: EntityId; tagIds: EntityId[] }];
+  startTimer: [taskId: EntityId];
+  stopTimer: [];
+  toggleDone: [payload: { taskId: EntityId; current: TaskStatus }];
+  deleteTask: [task: Task];
+  bulkDelete: [];
+  bulkMarkStatus: [status: TaskStatus];
+  duplicateTasks: [taskId: EntityId];
+  exportMarkdown: [taskId: EntityId];
+  exportCsv: [taskId: EntityId];
+  toggleCollapse: [taskId: EntityId];
+  openDetails: [taskId: EntityId];
+  prepareContextMenu: [taskId: EntityId];
+  rowSelect: [
+    payload: {
+      taskId: EntityId;
+      shiftKey: boolean;
+      ctrlOrMetaKey: boolean;
+      toggleOnly?: boolean;
+    },
+  ];
 }>();
 
 const { t } = useI18n();
+const prefsStore = usePreferencesStore();
+const { formatDateKey } = useFormat(() => prefsStore.preferences);
 
-// Inline Task Editor state
-const editingTaskId = ref<EntityId | null>(null);
-const editName = ref('');
-const editDescription = ref('');
-const editTargetHours = ref('');
+const todayDateKey = computed(() =>
+  toDateKey(new Date(), prefsStore.preferences.timeZone || 'UTC')
+);
 
-// Pointer Drag-and-Drop Reorder state (strictly scoped to direct siblings in this list)
+const hasAnyExpandableHere = computed(() =>
+  props.nodes.some((n) => n.children.length > 0)
+);
+
+// Controlled Inline Subtask Composer state
+const inlineSubtaskDraft = ref('');
+const subtaskInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null);
+let isSubtaskCommitting = false;
+
+// Controlled Inline Title Rename state
+const inlineTitleDraft = ref('');
+const inlineTitleInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null);
+let isInlineTitleCommitting = false;
+let cancelInlineTitleEdit = false;
+
+// Grip-less Direct Row Drag-and-Drop Reorder state
 const listRef = ref<HTMLUListElement | null>(null);
 const itemRefs = ref<Array<HTMLLIElement | null>>([]);
-const handleRefs = ref<Array<HTMLButtonElement | null>>([]);
-
 const draggingTaskId = ref<EntityId | null>(null);
 const activePointerId = ref<number | null>(null);
 const dropGapIndex = ref<number | null>(null);
 const dragOffsetY = ref(0);
-const pointerStartY = ref(0);
 const dragStartIndex = ref(-1);
 const liveAnnouncement = ref('');
 let announceTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Pending pointer activation state (mouse 6px threshold, touch 220ms long-press)
+let pendingTaskId: EntityId | null = null;
+let pendingIdx = -1;
+let pendingPointerId: number | null = null;
+let pendingPointerType = 'mouse';
+let pendingStartX = 0;
+let pendingStartY = 0;
+let pendingCapturedEl: HTMLElement | null = null;
+let touchHoldTimer: ReturnType<typeof setTimeout> | null = null;
+let justDragged = false;
+let justDraggedTimer: ReturnType<typeof setTimeout> | null = null;
+
+function resolveSingleInput(
+  r: HTMLInputElement | HTMLInputElement[] | null
+): HTMLInputElement | null {
+  return Array.isArray(r) ? (r[0] ?? null) : r;
+}
+
+function setItemRef(idx: number, el: Element | ComponentPublicInstance | null) {
+  itemRefs.value[idx] = el instanceof HTMLLIElement ? el : null;
+}
+
+watch(
+  () => props.editingTaskId,
+  (nextId) => {
+    if (!nextId) return;
+    const match = props.nodes.find((n) => n.task.id === nextId);
+    if (!match) return;
+    cancelInlineTitleEdit = false;
+    isInlineTitleCommitting = false;
+    inlineTitleDraft.value = match.task.name;
+    nextTick(() => {
+      const input = resolveSingleInput(inlineTitleInputRef.value);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.addingSubtaskForId,
+  (nextId) => {
+    if (!nextId) return;
+    const match = props.nodes.find((n) => n.task.id === nextId);
+    if (!match) return;
+    isSubtaskCommitting = false;
+    inlineSubtaskDraft.value = '';
+    nextTick(() => {
+      resolveSingleInput(subtaskInputRef.value)?.focus();
+    });
+  },
+  { immediate: true }
+);
 
 function announceMove(taskName: string, pos: number, total: number) {
   if (announceTimer) clearTimeout(announceTimer);
@@ -93,18 +196,31 @@ function announceMove(taskName: string, pos: number, total: number) {
   }, 120);
 }
 
+function clearPendingDragState() {
+  if (touchHoldTimer) {
+    clearTimeout(touchHoldTimer);
+    touchHoldTimer = null;
+  }
+  pendingTaskId = null;
+  pendingIdx = -1;
+  pendingPointerId = null;
+  pendingCapturedEl = null;
+}
+
+function cleanupWindowPointerListeners() {
+  if (import.meta.server) return;
+  window.removeEventListener('pointermove', onPointerMove);
+  window.removeEventListener('pointerup', onPointerUp);
+  window.removeEventListener('pointercancel', onPointerCancel);
+  window.removeEventListener('keydown', onDragEscape, true);
+}
+
 onBeforeUnmount(() => {
   if (announceTimer) clearTimeout(announceTimer);
+  if (justDraggedTimer) clearTimeout(justDraggedTimer);
+  clearPendingDragState();
   cleanupWindowPointerListeners();
 });
-
-function setItemRef(idx: number, el: Element | ComponentPublicInstance | null) {
-  itemRefs.value[idx] = el instanceof HTMLLIElement ? el : null;
-}
-
-function setHandleRef(idx: number, el: Element | ComponentPublicInstance | null) {
-  handleRefs.value[idx] = el instanceof HTMLButtonElement ? el : null;
-}
 
 function computeDropGapFromClientY(clientY: number): number {
   const container = listRef.value;
@@ -125,10 +241,46 @@ function computeDropGapFromClientY(clientY: number): number {
   return props.nodes.length;
 }
 
+function activateDragNow(clientY: number) {
+  if (!pendingTaskId || pendingIdx === -1 || pendingPointerId === null) return;
+  draggingTaskId.value = pendingTaskId;
+  activePointerId.value = pendingPointerId;
+  dragStartIndex.value = pendingIdx;
+  pendingStartY = clientY;
+  dragOffsetY.value = 0;
+  dropGapIndex.value = pendingIdx;
+  try {
+    pendingCapturedEl?.setPointerCapture?.(pendingPointerId);
+  } catch {
+    // Ignore environments where pointer capture is unavailable
+  }
+}
+
 function onPointerMove(event: PointerEvent) {
-  if (event.pointerId !== activePointerId.value || !draggingTaskId.value) return;
-  dragOffsetY.value = event.clientY - pointerStartY.value;
-  dropGapIndex.value = computeDropGapFromClientY(event.clientY);
+  if (draggingTaskId.value && event.pointerId === activePointerId.value) {
+    dragOffsetY.value = event.clientY - pendingStartY;
+    dropGapIndex.value = computeDropGapFromClientY(event.clientY);
+    return;
+  }
+
+  if (pendingTaskId && event.pointerId === pendingPointerId) {
+    const dx = Math.abs(event.clientX - pendingStartX);
+    const dy = Math.abs(event.clientY - pendingStartY);
+
+    if (pendingPointerType === 'touch') {
+      // Allow native vertical scrolling if the user moves their finger before long-press fires
+      if (dx > 8 || dy > 8) {
+        clearPendingDragState();
+        cleanupWindowPointerListeners();
+      }
+    } else if (dy >= 6 || dx >= 10) {
+      activateDragNow(pendingStartY);
+      if (draggingTaskId.value) {
+        dragOffsetY.value = event.clientY - pendingStartY;
+        dropGapIndex.value = computeDropGapFromClientY(event.clientY);
+      }
+    }
+  }
 }
 
 function finishPointerDrag(commit: boolean) {
@@ -136,12 +288,22 @@ function finishPointerDrag(commit: boolean) {
   const fromIdx = dragStartIndex.value;
   const gapIdx = dropGapIndex.value;
 
+  const hadActiveDrag = Boolean(movedId);
+  clearPendingDragState();
   draggingTaskId.value = null;
   activePointerId.value = null;
   dropGapIndex.value = null;
   dragOffsetY.value = 0;
   dragStartIndex.value = -1;
   cleanupWindowPointerListeners();
+
+  if (hadActiveDrag) {
+    justDragged = true;
+    if (justDraggedTimer) clearTimeout(justDraggedTimer);
+    justDraggedTimer = setTimeout(() => {
+      justDragged = false;
+    }, 80);
+  }
 
   if (!commit || !movedId || fromIdx === -1 || gapIdx === null) return;
   const targetIndex = gapIdx > fromIdx ? gapIdx - 1 : gapIdx;
@@ -155,45 +317,53 @@ function finishPointerDrag(commit: boolean) {
 }
 
 function onPointerUp(event: PointerEvent) {
-  if (event.pointerId !== activePointerId.value) return;
-  finishPointerDrag(true);
+  if (event.pointerId !== activePointerId.value && event.pointerId !== pendingPointerId) return;
+  if (draggingTaskId.value) {
+    finishPointerDrag(true);
+  } else {
+    clearPendingDragState();
+    cleanupWindowPointerListeners();
+  }
 }
 
 function onPointerCancel(event: PointerEvent) {
-  if (event.pointerId !== activePointerId.value) return;
+  if (event.pointerId !== activePointerId.value && event.pointerId !== pendingPointerId) return;
   finishPointerDrag(false);
 }
 
 function onDragEscape(event: KeyboardEvent) {
-  if (event.key === 'Escape' && draggingTaskId.value) {
+  if (event.key === 'Escape' && (draggingTaskId.value || pendingTaskId)) {
     event.preventDefault();
     event.stopPropagation();
     finishPointerDrag(false);
   }
 }
 
-function cleanupWindowPointerListeners() {
-  if (import.meta.server) return;
-  window.removeEventListener('pointermove', onPointerMove);
-  window.removeEventListener('pointerup', onPointerUp);
-  window.removeEventListener('pointercancel', onPointerCancel);
-  window.removeEventListener('keydown', onDragEscape, true);
-}
+function handleRowPointerDown(event: PointerEvent, idx: number, taskId: EntityId) {
+  if (props.editingTaskId === taskId) return;
+  if (props.nodes.length <= 1) return;
+  if (event.pointerType !== 'touch' && event.button !== 0) return;
 
-function handleDragPointerDown(event: PointerEvent, idx: number, taskId: EntityId) {
-  if (event.button !== 0 || props.nodes.length <= 1) return;
-  event.stopPropagation();
-  event.preventDefault();
+  const targetEl = event.target as HTMLElement | null;
+  if (targetEl?.closest('[data-no-row-drag], input, textarea, select, [role="menuitem"]')) {
+    return;
+  }
 
-  activePointerId.value = event.pointerId;
-  draggingTaskId.value = taskId;
-  dragStartIndex.value = idx;
-  pointerStartY.value = event.clientY;
-  dragOffsetY.value = 0;
-  dropGapIndex.value = idx;
+  clearPendingDragState();
+  pendingTaskId = taskId;
+  pendingIdx = idx;
+  pendingPointerId = event.pointerId;
+  pendingPointerType = event.pointerType;
+  pendingStartX = event.clientX;
+  pendingStartY = event.clientY;
+  pendingCapturedEl = event.currentTarget as HTMLElement | null;
 
-  const targetEl = event.currentTarget as HTMLElement | null;
-  targetEl?.setPointerCapture?.(event.pointerId);
+  if (event.pointerType === 'touch') {
+    const startY = event.clientY;
+    touchHoldTimer = setTimeout(() => {
+      activateDragNow(startY);
+    }, 220);
+  }
 
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
@@ -201,57 +371,264 @@ function handleDragPointerDown(event: PointerEvent, idx: number, taskId: EntityI
   window.addEventListener('keydown', onDragEscape, true);
 }
 
-function handleHandleKeydown(event: KeyboardEvent, idx: number, node: TaskTreeNode) {
-  if (!event.altKey) return;
-  let targetIndex = -1;
-  if (event.key === 'ArrowUp' && idx > 0) {
-    targetIndex = idx - 1;
-  } else if (event.key === 'ArrowDown' && idx < props.nodes.length - 1) {
-    targetIndex = idx + 1;
+function handleRowClick(event: MouseEvent, node: TaskTreeNode) {
+  if (justDragged || props.editingTaskId === node.task.id) return;
+  const toggleOnly = props.multiSelectMode && !event.shiftKey && !event.ctrlKey && !event.metaKey;
+  emit('rowSelect', {
+    taskId: node.task.id,
+    shiftKey: event.shiftKey,
+    ctrlOrMetaKey: event.ctrlKey || event.metaKey,
+    toggleOnly,
+  });
+}
+
+function handleRowDoubleClick(node: TaskTreeNode) {
+  if (justDragged || props.editingTaskId === node.task.id) return;
+  emit('openDetails', node.task.id);
+}
+
+function handleTitleClick(event: MouseEvent, node: TaskTreeNode) {
+  if (justDragged) return;
+  if (event.shiftKey || event.ctrlKey || event.metaKey || props.multiSelectMode) {
+    emit('rowSelect', {
+      taskId: node.task.id,
+      shiftKey: event.shiftKey,
+      ctrlOrMetaKey: event.ctrlKey || event.metaKey,
+      toggleOnly: props.multiSelectMode && !event.shiftKey && !event.ctrlKey && !event.metaKey,
+    });
+    return;
   }
-  if (targetIndex === -1) return;
 
-  event.preventDefault();
-  event.stopPropagation();
-  emit('reorder', { taskId: node.task.id, targetIndex });
-  announceMove(node.task.name, targetIndex, props.nodes.length);
+  // Google Tasks ergonomics: clicking an already-selected single task title enters inline edit
+  if (props.selectedTaskIds.has(node.task.id) && props.selectedCount === 1) {
+    emit('startInlineRename', node.task.id);
+    return;
+  }
 
+  emit('rowSelect', {
+    taskId: node.task.id,
+    shiftKey: false,
+    ctrlOrMetaKey: false,
+  });
+  emit('openDetails', node.task.id);
+}
+
+function handleRowKeydown(event: KeyboardEvent, idx: number, node: TaskTreeNode) {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('input, textarea, select')) return;
+
+  // Alt + Up/Down reorders sibling priority
+  if (event.altKey) {
+    if (event.key === 'ArrowUp' && idx > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('reorder', { taskId: node.task.id, targetIndex: idx - 1 });
+      announceMove(node.task.name, idx - 1, props.nodes.length);
+      return;
+    }
+
+    if (event.key === 'ArrowDown' && idx < props.nodes.length - 1) {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('reorder', { taskId: node.task.id, targetIndex: idx + 1 });
+      announceMove(node.task.name, idx + 1, props.nodes.length);
+      return;
+    }
+    return;
+  }
+
+  // Ctrl/Cmd + ] and Ctrl/Cmd + [ indent / promote (avoids browser Alt+Arrow history navigation)
+  if ((event.ctrlKey || event.metaKey) && event.key === ']') {
+    if (idx > 0 && props.depth < MAX_TASK_DEPTH) {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('reparent', {
+        taskId: node.task.id,
+        newParentTaskId: props.nodes[idx - 1]!.task.id,
+      });
+    }
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key === '[') {
+    if (props.depth > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('reparent', {
+        taskId: node.task.id,
+        newParentTaskId: props.parentParentTaskId ?? null,
+      });
+    }
+    return;
+  }
+
+  // Expand / collapse branches with Left / Right arrow keys
+  if (!event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    if (event.key === 'ArrowLeft' && node.children.length > 0 && !props.collapsedTaskIds.has(node.task.id)) {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('toggleCollapse', node.task.id);
+      return;
+    }
+    if (event.key === 'ArrowRight' && node.children.length > 0 && props.collapsedTaskIds.has(node.task.id)) {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('toggleCollapse', node.task.id);
+      return;
+    }
+    if (event.key === 'F2' || event.key === 'e') {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('startInlineRename', node.task.id);
+      return;
+    }
+  }
+
+  // Shift+Enter creates a child subtask directly from any selected/focused row
+  if (event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.metaKey) {
+    if (props.depth < MAX_TASK_DEPTH) {
+      event.preventDefault();
+      event.stopPropagation();
+      emit('openSubtaskComposer', node.task.id);
+    }
+  }
+}
+
+// Inline Title Rename Handlers
+function submitInlineTitle(
+  node: TaskTreeNode,
+  opts?: { addSubtaskAfter?: boolean; reparentTarget?: EntityId | null }
+) {
+  if (cancelInlineTitleEdit || isInlineTitleCommitting) return;
+  isInlineTitleCommitting = true;
+  const trimmed = inlineTitleDraft.value.trim();
+  emit('commitInlineRename', {
+    taskId: node.task.id,
+    name: trimmed || node.task.name,
+    addSubtaskAfter: opts?.addSubtaskAfter,
+    reparentTarget: opts?.reparentTarget,
+  });
+}
+
+function handleInlineTitleKeydown(event: KeyboardEvent, idx: number, node: TaskTreeNode) {
+  if (event.isComposing || event.keyCode === 229) return;
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    event.stopPropagation();
+    submitInlineTitle(node, {
+      addSubtaskAfter: event.shiftKey && props.depth < MAX_TASK_DEPTH,
+    });
+    return;
+  }
+
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.shiftKey) {
+      if (props.depth > 0) {
+        submitInlineTitle(node, { reparentTarget: props.parentParentTaskId ?? null });
+      }
+    } else if (idx > 0 && props.depth < MAX_TASK_DEPTH) {
+      submitInlineTitle(node, { reparentTarget: props.nodes[idx - 1]!.task.id });
+    }
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    cancelInlineTitleEdit = true;
+    emit('startInlineRename', null);
+  }
+}
+
+function handleInlineTitleBlur(node: TaskTreeNode) {
+  if (cancelInlineTitleEdit || isInlineTitleCommitting) {
+    cancelInlineTitleEdit = false;
+    return;
+  }
+  submitInlineTitle(node);
+}
+
+// Inline Subtask Composer Handlers
+function commitInlineSubtask(parentId: EntityId, keepOpen: boolean, addChildAfter = false) {
+  if (isSubtaskCommitting) return;
+  const name = inlineSubtaskDraft.value.trim();
+  if (!name) {
+    if (!keepOpen && !addChildAfter) emit('openSubtaskComposer', null);
+    return;
+  }
+  isSubtaskCommitting = true;
+  inlineSubtaskDraft.value = '';
+  if (!keepOpen && !addChildAfter) {
+    emit('openSubtaskComposer', null);
+  }
+  emit('createSubtask', { parentTaskId: parentId, name, addChildAfter });
   nextTick(() => {
-    const newIdx = props.nodes.findIndex((n) => n.task.id === node.task.id);
-    const li = itemRefs.value[newIdx >= 0 ? newIdx : targetIndex];
-    const handle = handleRefs.value[newIdx >= 0 ? newIdx : targetIndex];
-    li?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    handle?.focus({ preventScroll: true });
+    isSubtaskCommitting = false;
+    if (keepOpen && !addChildAfter) {
+      resolveSingleInput(subtaskInputRef.value)?.focus();
+    }
   });
 }
 
-function startEditTask(task: Task) {
-  editingTaskId.value = task.id;
-  editName.value = task.name;
-  editDescription.value = task.description ?? '';
-  editTargetHours.value = task.targetHours ? String(task.targetHours) : '';
+function handleSubtaskKeydown(event: KeyboardEvent, parentId: EntityId) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.isComposing || event.keyCode === 229) return;
+    const nestUnderCreated = event.shiftKey && props.depth === 0;
+    commitInlineSubtask(parentId, !nestUnderCreated, nestUnderCreated);
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    inlineSubtaskDraft.value = '';
+    emit('openSubtaskComposer', null);
+  }
 }
 
-function cancelEditTask() {
-  editingTaskId.value = null;
+function isLevel2RolledUp(node: TaskTreeNode): boolean {
+  return (
+    props.depth >= MAX_TASK_DEPTH &&
+    !node.task.externalWorkItemId &&
+    Boolean(props.inheritedAdoTask?.externalWorkItemId)
+  );
 }
 
-function submitEditTask(taskId: EntityId) {
-  if (!editName.value.trim()) return;
-  const hrs = Number(editTargetHours.value);
-  emit('saveEdit', {
-    taskId,
-    name: editName.value.trim(),
-    description: editDescription.value,
-    targetHours: Number.isFinite(hrs) && hrs > 0 ? hrs : null,
-  });
-  editingTaskId.value = null;
+function effectiveExternalUrl(node: TaskTreeNode): string | null {
+  if (node.task.externalWorkItemUrl) return node.task.externalWorkItemUrl;
+  if (isLevel2RolledUp(node)) return props.inheritedAdoTask?.externalWorkItemUrl ?? null;
+  return null;
+}
+
+function dueBadgeClass(task: Task): string {
+  if (!task.dueDate) return '';
+  const tone = classifyDueDateTone(task.dueDate, todayDateKey.value, task.status);
+  if (tone === 'overdue') return 'border-rose-500/40 bg-rose-500/10 text-rose-500';
+  if (tone === 'today') return 'border-amber-500/40 bg-amber-500/10 text-amber-500';
+  return 'border-border-hairline bg-bg-elevated text-text-muted';
+}
+
+function hasMetadataRow(node: TaskTreeNode): boolean {
+  const t = node.task;
+  return Boolean(
+    t.externalWorkItemId ||
+      isLevel2RolledUp(node) ||
+      (t.tagIds?.length ?? 0) > 0 ||
+      t.dueDate ||
+      t.description ||
+      (props.trackedSecondsByTask.get(t.id) ?? 0) > 0 ||
+      (props.unsyncedHoursByTask.get(t.id) ?? 0) > 0
+  );
 }
 </script>
 
 <template>
   <ul
     ref="listRef"
+    :role="depth === 0 ? 'tree' : 'group'"
+    :aria-multiselectable="depth === 0 ? 'true' : undefined"
     :data-task-depth="depth"
     class="divide-y divide-border-hairline border border-border-hairline bg-bg-primary"
   >
@@ -260,9 +637,13 @@ function submitEditTask(taskId: EntityId) {
       :key="node.task.id"
       :ref="(el) => setItemRef(idx, el)"
       :data-testid="`task-row-${node.task.id}`"
-      class="relative transition-colors"
+      class="group/row relative transition-colors"
       :class="[
-        draggingTaskId === node.task.id ? 'z-20 bg-bg-elevated shadow-2xl ring-1 ring-signal' : 'hover:bg-bg-hover/35',
+        draggingTaskId === node.task.id
+          ? 'z-20 bg-bg-elevated shadow-2xl ring-1 ring-signal select-none'
+          : selectedTaskIds.has(node.task.id)
+            ? 'bg-signal-soft/65 shadow-[inset_3px_0_0_var(--signal)]'
+            : 'hover:bg-bg-hover/35',
       ]"
       :style="
         draggingTaskId === node.task.id && dragOffsetY !== 0
@@ -276,260 +657,443 @@ function submitEditTask(taskId: EntityId) {
         class="pointer-events-none absolute inset-x-0 top-0 z-30 h-[2px] bg-signal"
         aria-hidden="true"
       />
-      <!-- Bottom Drop Target Signal Line (after last sibling) -->
+      <!-- Bottom Drop Target Signal Line -->
       <div
         v-if="draggingTaskId && idx === nodes.length - 1 && dropGapIndex === nodes.length && dragStartIndex !== nodes.length - 1"
         class="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-[2px] bg-signal"
         aria-hidden="true"
       />
 
-      <div
-        class="px-3.5 py-3 text-sm"
-        :class="{
-          'pl-6 sm:pl-8': depth === 1,
-          'pl-10 sm:pl-14': depth === 2,
-        }"
+      <!-- Right-Click / Menu-Key Azure DevOps-Style Context Menu Wrapper -->
+      <TasksTaskRowContextMenu
+        :task-name="node.task.name"
+        :depth="depth"
+        :selected="selectedTaskIds.has(node.task.id)"
+        :selected-count="selectedCount"
+        :can-add-subtask="depth < MAX_TASK_DEPTH"
+        :can-indent="idx > 0 && depth < MAX_TASK_DEPTH"
+        :can-outdent="depth > 0"
+        :external-url="effectiveExternalUrl(node)"
+        @prepare-context-menu="emit('prepareContextMenu', node.task.id)"
+        @open-details="emit('openDetails', node.task.id)"
+        @rename-inline="emit('startInlineRename', node.task.id)"
+        @add-subtask="emit('openSubtaskComposer', node.task.id)"
+        @duplicate="emit('duplicateTasks', node.task.id)"
+        @toggle-select="
+          emit('rowSelect', {
+            taskId: node.task.id,
+            shiftKey: false,
+            ctrlOrMetaKey: true,
+            toggleOnly: true,
+          })
+        "
+        @indent="
+          idx > 0 && depth < MAX_TASK_DEPTH
+            ? emit('reparent', {
+                taskId: node.task.id,
+                newParentTaskId: nodes[idx - 1]!.task.id,
+              })
+            : undefined
+        "
+        @outdent="
+          depth > 0
+            ? emit('reparent', {
+                taskId: node.task.id,
+                newParentTaskId: parentParentTaskId ?? null,
+              })
+            : undefined
+        "
+        @export-markdown="emit('exportMarkdown', node.task.id)"
+        @export-csv="emit('exportCsv', node.task.id)"
+        @bulk-mark-done="emit('bulkMarkStatus', 'done')"
+        @bulk-mark-todo="emit('bulkMarkStatus', 'todo')"
+        @delete="emit('deleteTask', node.task)"
+        @bulk-delete="emit('bulkDelete')"
       >
-        <div class="flex flex-wrap items-center justify-between gap-2.5">
-          <div class="flex items-center gap-2 min-w-0">
-            <!-- Dedicated Accessible Drag & Alt+Arrow Handle -->
+        <!-- Interactive Row Container -->
+        <div
+          role="treeitem"
+          :tabindex="focusedTaskId === node.task.id ? 0 : -1"
+          :data-task-focus-id="node.task.id"
+          :aria-selected="selectedTaskIds.has(node.task.id)"
+          :aria-expanded="node.children.length > 0 ? !collapsedTaskIds.has(node.task.id) : undefined"
+          :aria-level="depth + 1"
+          class="flex items-start justify-between gap-2 py-2.5 pr-2.5 sm:pr-3.5 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-signal"
+          :class="[
+            depth === 0 ? 'pl-2.5 sm:pl-3.5' : depth === 1 ? 'pl-6 sm:pl-9' : 'pl-10 sm:pl-14',
+            draggingTaskId === node.task.id ? 'cursor-grabbing' : nodes.length > 1 ? 'cursor-grab' : '',
+          ]"
+          :style="{ touchAction: draggingTaskId === node.task.id ? 'none' : 'pan-y' }"
+          @pointerdown="handleRowPointerDown($event, idx, node.task.id)"
+          @click="handleRowClick($event, node)"
+          @dblclick.stop="handleRowDoubleClick(node)"
+          @keydown="handleRowKeydown($event, idx, node)"
+        >
+          <!-- Left Expand/Collapse Chevron + Completion Checkbox + Content -->
+          <div class="flex items-start gap-2 min-w-0 flex-1">
+            <!-- Expand/Collapse Chevron -->
             <button
-              :ref="(el) => setHandleRef(idx, el)"
+              v-if="node.children.length > 0"
               type="button"
-              :data-testid="`task-drag-handle-${node.task.id}`"
-              :disabled="nodes.length <= 1"
-              style="-webkit-user-select: none; user-select: none; touch-action: none"
-              :aria-label="$t('tasks.dragHandleAria', { name: node.task.name })"
-              :title="$t('tasks.dragHandleHint')"
-              class="inline-flex h-7 w-6 shrink-0 items-center justify-center text-text-faint transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal disabled:opacity-30"
-              :class="nodes.length > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'"
-              @pointerdown="handleDragPointerDown($event, idx, node.task.id)"
-              @keydown="handleHandleKeydown($event, idx, node)"
+              data-no-row-drag
+              :data-testid="`task-collapse-btn-${node.task.id}`"
+              :aria-expanded="!collapsedTaskIds.has(node.task.id)"
+              :aria-label="
+                collapsedTaskIds.has(node.task.id)
+                  ? $t('tasks.expandTaskAria', { name: node.task.name })
+                  : $t('tasks.collapseTaskAria', { name: node.task.name })
+              "
+              class="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center text-text-muted hover:text-signal transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-signal"
+              @pointerdown.stop
+              @click.stop="emit('toggleCollapse', node.task.id)"
             >
-              <GripVertical class="h-4 w-4" aria-hidden="true" />
+              <ChevronRight
+                v-if="collapsedTaskIds.has(node.task.id)"
+                class="h-4 w-4"
+                aria-hidden="true"
+              />
+              <ChevronDown
+                v-else
+                class="h-4 w-4"
+                aria-hidden="true"
+              />
             </button>
-
-            <CornerDownRight
-              v-if="depth > 0"
-              class="h-3.5 w-3.5 shrink-0 text-text-muted"
+            <span
+              v-else-if="hasAnyExpandableHere"
+              class="mt-0.5 h-5 w-5 shrink-0"
               aria-hidden="true"
             />
 
+            <!-- Completion Status Circle -->
             <button
               type="button"
-              class="tabular-telemetry border px-2 py-0.5 text-xs font-medium uppercase shrink-0"
+              data-no-row-drag
+              :aria-label="
+                node.task.status === 'done'
+                  ? $t('tasks.markTodoAria', { name: node.task.name })
+                  : $t('tasks.markDoneAria', { name: node.task.name })
+              "
+              :aria-pressed="node.task.status === 'done'"
+              class="mt-0.5 inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
               :class="{
-                'border-border-hairline text-text-muted': node.task.status === 'todo',
-                'border-signal/40 bg-signal-soft text-signal': node.task.status === 'in_progress',
-                'border-emerald-500/40 bg-emerald-500/10 text-emerald-500': node.task.status === 'done',
+                'border-text-muted/60 hover:border-signal': node.task.status === 'todo',
+                'border-signal bg-signal-soft text-signal': node.task.status === 'in_progress',
+                'border-emerald-500 bg-emerald-500 text-white': node.task.status === 'done',
               }"
-              @click="emit('cycleStatus', { taskId: node.task.id, current: node.task.status })"
+              @pointerdown.stop
+              @click.stop="emit('toggleDone', { taskId: node.task.id, current: node.task.status })"
             >
-              {{
-                node.task.status === 'todo'
-                  ? $t('catalog.statusTodo')
-                  : node.task.status === 'in_progress'
-                    ? $t('catalog.statusInProgress')
-                    : $t('catalog.statusDone')
-              }}
+              <Check v-if="node.task.status === 'done'" class="h-3 w-3 stroke-[3]" aria-hidden="true" />
+              <span
+                v-else-if="node.task.status === 'in_progress'"
+                class="h-2 w-2 rounded-full bg-signal motion-safe:animate-pulse"
+                aria-hidden="true"
+              />
             </button>
 
-            <span class="truncate font-medium text-text-primary">
-              {{ node.task.name }}
-            </span>
+            <div class="min-w-0 flex-1">
+              <!-- Inline Title Editor -->
+              <input
+                v-if="editingTaskId === node.task.id"
+                ref="inlineTitleInputRef"
+                v-model="inlineTitleDraft"
+                type="text"
+                maxlength="200"
+                data-no-row-drag
+                :data-testid="`task-inline-title-input-${node.task.id}`"
+                :aria-label="$t('tasks.editTaskAria', { name: node.task.name })"
+                class="h-7 w-full border-b border-signal bg-bg-elevated px-1.5 text-ui font-medium text-text-primary focus:outline-none"
+                @pointerdown.stop
+                @click.stop
+                @keydown="handleInlineTitleKeydown($event, idx, node)"
+                @blur="handleInlineTitleBlur(node)"
+              />
+
+              <!-- Title Button (Opens Details or Enters Inline Edit When Already Selected) -->
+              <div v-else class="flex items-center gap-1.5 min-w-0">
+                <button
+                  type="button"
+                  :data-testid="`task-title-btn-${node.task.id}`"
+                  :title="node.task.name"
+                  class="min-w-0 max-w-full text-left text-ui font-medium leading-snug line-clamp-2 sm:truncate transition-colors hover:text-signal focus-visible:outline-none focus-visible:text-signal"
+                  :class="
+                    node.task.status === 'done'
+                      ? 'line-through text-text-muted'
+                      : 'text-text-primary'
+                  "
+                  @click.stop="handleTitleClick($event, node)"
+                >
+                  {{ node.task.name }}
+                </button>
+
+                <button
+                  v-if="node.children.length > 0 && collapsedTaskIds.has(node.task.id)"
+                  type="button"
+                  data-no-row-drag
+                  class="tabular-telemetry shrink-0 border border-border-hairline bg-bg-elevated px-1.5 py-0.5 text-xs font-medium text-text-muted hover:border-signal hover:text-signal transition-colors"
+                  @pointerdown.stop
+                  @click.stop="emit('toggleCollapse', node.task.id)"
+                >
+                  +{{ node.children.length }}
+                </button>
+              </div>
+
+              <!-- Compact Metadata Sub-Line (ADO Badge, Interactive Tags, Deadline, Desc, Tracked Hours) -->
+              <div
+                v-if="hasMetadataRow(node)"
+                class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-text-muted"
+              >
+                <template v-if="node.task.externalWorkItemId">
+                  <span data-no-row-drag @pointerdown.stop @click.stop>
+                    <AdoWorkItemTypeBadge
+                      compact
+                      :work-item-type="node.task.externalWorkItemType"
+                      :work-item-id="node.task.externalWorkItemId"
+                      :work-item-title="node.task.externalWorkItemTitle"
+                      :url="node.task.externalWorkItemUrl"
+                    />
+                  </span>
+                  <span
+                    v-if="node.task.completedWorkHours > 0"
+                    class="tabular-telemetry hidden sm:inline text-xs text-text-muted"
+                  >
+                    {{ node.task.completedWorkHours.toFixed(2) }}h
+                  </span>
+                  <span
+                    v-if="(unsyncedHoursByTask.get(node.task.id) ?? 0) > 0"
+                    class="tabular-telemetry border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-xs font-semibold text-amber-500"
+                  >
+                    +{{ (unsyncedHoursByTask.get(node.task.id) ?? 0).toFixed(2) }}h
+                  </span>
+                </template>
+
+                <span
+                  v-else-if="isLevel2RolledUp(node)"
+                  class="tabular-telemetry inline-flex items-center gap-1 border border-signal/30 bg-signal-soft/50 px-1.5 py-0.5 text-xs font-medium text-signal"
+                  :title="$t('tasks.rollsUpToAdoHint', { id: inheritedAdoTask!.externalWorkItemId, type: inheritedAdoTask!.externalWorkItemType || 'Task' })"
+                >
+                  <span>↳ ∑ #{{ inheritedAdoTask!.externalWorkItemId }}</span>
+                </span>
+
+                <!-- 1-Click Editable Inline Project-Scoped Tags (when tags attached) -->
+                <span
+                  v-if="(node.task.tagIds?.length ?? 0) > 0"
+                  data-no-row-drag
+                  @pointerdown.stop
+                  @click.stop
+                >
+                  <UiTagMultiSelect
+                    :model-value="node.task.tagIds ?? []"
+                    :tags="projectTags"
+                    :project-id="node.task.projectId"
+                    :allow-create="true"
+                    variant="row"
+                    :stop-propagation="true"
+                    :test-id="`task-row-tags-${node.task.id}`"
+                    @update:model-value="emit('updateTags', { taskId: node.task.id, tagIds: $event })"
+                  />
+                </span>
+
+                <!-- Deadline Pill -->
+                <button
+                  v-if="node.task.dueDate"
+                  type="button"
+                  data-no-row-drag
+                  :class="dueBadgeClass(node.task)"
+                  class="tabular-telemetry inline-flex items-center gap-1 border px-1.5 py-0.5 text-xs font-medium hover:border-signal transition-colors"
+                  :title="$t('tasks.deadline.label')"
+                  @pointerdown.stop
+                  @click.stop="emit('openDetails', node.task.id)"
+                >
+                  <Calendar class="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span>{{ formatDateKey(node.task.dueDate) }}</span>
+                </button>
+
+                <!-- Markdown Description Indicator -->
+                <AlignLeft
+                  v-if="node.task.description"
+                  class="h-3 w-3 shrink-0 text-text-faint"
+                  :aria-label="$t('tasks.detailModal.descriptionLabel')"
+                />
+
+                <!-- Rolled-up Tracked Telemetry -->
+                <span
+                  v-if="(trackedSecondsByTask.get(node.task.id) ?? 0) > 0"
+                  class="tabular-telemetry text-xs text-text-muted"
+                  :title="$t('tasks.trackedTotalHint')"
+                >
+                  {{ formatHMS(trackedSecondsByTask.get(node.task.id) ?? 0) }}
+                </span>
+              </div>
+            </div>
           </div>
 
-          <!-- Telemetry, ADO Linking & Actions -->
-          <div class="flex flex-wrap items-center gap-2 shrink-0 text-xs text-text-muted">
+          <!-- Right-Side Inline Action Controls: [Tag ghost] [▶ / ■ HH:MM:SS] [⋮] -->
+          <div class="flex items-center gap-0.5 shrink-0">
             <span
-              v-if="(trackedSecondsByTask.get(node.task.id) ?? 0) > 0"
-              class="tabular-telemetry border border-border-hairline bg-bg-elevated px-2 py-0.5 text-xs text-text-primary"
-              :title="$t('tasks.trackedTotalHint')"
+              v-if="(node.task.tagIds?.length ?? 0) === 0"
+              data-no-row-drag
+              @pointerdown.stop
+              @click.stop
             >
-              {{ formatHMS(trackedSecondsByTask.get(node.task.id) ?? 0) }}
+              <UiTagMultiSelect
+                :model-value="[]"
+                :tags="projectTags"
+                :project-id="node.task.projectId"
+                :allow-create="true"
+                variant="row"
+                :stop-propagation="true"
+                :test-id="`task-row-add-tag-${node.task.id}`"
+                @update:model-value="emit('updateTags', { taskId: node.task.id, tagIds: $event })"
+              />
             </span>
 
-            <span v-if="node.task.targetHours" class="tabular-telemetry text-xs text-text-muted">
-              / {{ node.task.targetHours }}h
-            </span>
-
-            <!-- Azure DevOps Read-Only Title & CompletedWork Badge -->
-            <template v-if="node.task.externalWorkItemId">
-              <a
-                v-if="node.task.externalWorkItemUrl"
-                :href="node.task.externalWorkItemUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="tabular-telemetry inline-flex items-center gap-1.5 border border-signal/40 bg-signal-soft px-2 py-0.5 text-xs font-medium text-signal hover:bg-accent hover:text-white transition-colors"
-                :title="node.task.externalWorkItemTitle || `#${node.task.externalWorkItemId}`"
-              >
-                <span>#{{ node.task.externalWorkItemId }}</span>
-                <span v-if="node.task.externalWorkItemTitle" class="hidden xl:inline max-w-[160px] truncate">
-                  {{ node.task.externalWorkItemTitle }}
-                </span>
-                <span>· {{ (node.task.completedWorkHours || 0).toFixed(2) }}h</span>
-                <ExternalLink class="h-3 w-3 shrink-0" aria-hidden="true" />
-              </a>
-              <span
-                v-else
-                class="tabular-telemetry border border-border-hairline bg-bg-elevated px-2 py-0.5 text-xs"
-              >
-                #{{ node.task.externalWorkItemId }} · {{ (node.task.completedWorkHours || 0).toFixed(2) }}h
-              </span>
-
-              <span
-                v-if="(unsyncedHoursByTask.get(node.task.id) ?? 0) > 0"
-                class="tabular-telemetry border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-500"
-              >
-                +{{ (unsyncedHoursByTask.get(node.task.id) ?? 0).toFixed(2) }}h
-              </span>
-            </template>
-
-            <AdoWorkItemPickerPopover
-              v-if="adoConnected"
-              variant="pill"
-              :work-item-id="node.task.externalWorkItemId"
-              :work-item-title="node.task.externalWorkItemTitle"
-              :org-url="adoOrgUrl"
-              :project="adoProject"
-              @select="emit('linkAdo', { task: node.task, adoItem: $event })"
-            />
-
             <button
-              v-if="adoConnected && adoEnabledForProject && !node.task.externalWorkItemId"
-              type="button"
-              class="btn-press inline-flex items-center gap-1 border border-border-hairline bg-bg-elevated px-2 py-1 text-xs font-medium text-text-muted hover:border-signal hover:text-signal transition-colors"
-              @click="emit('createAdo', node.task)"
-            >
-              <Plus class="h-3 w-3" aria-hidden="true" />
-              <span>{{ $t('tasks.createInAdo') }}</span>
-            </button>
-
-            <button
-              v-if="depth < MAX_TASK_DEPTH"
-              type="button"
-              class="btn-press border border-border-hairline bg-bg-elevated px-2.5 py-1 text-xs text-text-muted hover:border-signal hover:text-text-primary transition-colors"
-              @click="emit('prefillSubtask', node.task.id)"
-            >
-              {{ depth === 0 ? $t('catalog.addSubtask') : $t('catalog.addSubSubtask') }}
-            </button>
-
-            <span
               v-if="runningTaskId === node.task.id"
-              class="inline-flex items-center gap-1.5 border border-signal bg-signal-soft px-2.5 py-1 text-xs font-semibold text-signal"
+              type="button"
+              data-no-row-drag
+              data-testid="task-row-stop-timer"
+              :aria-label="$t('tasks.stopTimerAria', { name: node.task.name })"
+              :title="$t('tasks.stopTimerAria', { name: node.task.name })"
+              class="btn-press tabular-telemetry inline-flex h-8 shrink-0 items-center gap-1.5 border border-signal bg-signal-soft px-2.5 text-xs font-semibold text-signal hover:bg-signal hover:text-white transition-colors"
+              @mousedown.prevent
+              @pointerdown.stop
+              @click.stop="emit('stopTimer')"
             >
-              <span class="h-1.5 w-1.5 bg-signal motion-safe:animate-pulse" />
-              <span>{{ $t('catalog.runningTaskBadge') }}</span>
-            </span>
+              <Square class="h-3 w-3 fill-current" aria-hidden="true" />
+              <span>{{ formatHMS(runningElapsedSeconds) }}</span>
+            </button>
+
             <button
               v-else
               type="button"
-              class="btn-press inline-flex items-center gap-1.5 border border-signal/50 bg-signal-soft px-2.5 py-1 text-xs font-medium uppercase text-signal hover:bg-accent hover:text-white transition-colors"
-              @click="emit('startTimer', node.task.id)"
+              data-no-row-drag
+              data-testid="task-row-start-timer"
+              :aria-label="$t('tasks.startTimerAria', { name: node.task.name })"
+              :title="$t('catalog.startTaskTimer')"
+              class="row-action-ghost hover:border-signal/60 hover:text-signal"
+              @mousedown.prevent
+              @pointerdown.stop
+              @click.stop="emit('startTimer', node.task.id)"
             >
-              <Play class="h-3 w-3 fill-current" aria-hidden="true" />
-              <span>{{ $t('catalog.startTaskTimer') }}</span>
+              <Play class="h-3.5 w-3.5" aria-hidden="true" />
             </button>
 
-            <button
-              type="button"
-              class="inline-flex h-7 w-7 items-center justify-center text-text-muted hover:text-signal transition-colors"
-              :aria-label="$t('tasks.editTaskAria', { name: node.task.name })"
-              :title="$t('tasks.editTaskAria', { name: node.task.name })"
-              @click="editingTaskId === node.task.id ? cancelEditTask() : startEditTask(node.task)"
-            >
-              <Pencil class="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-
-            <button
-              type="button"
-              data-testid="catalog-task-delete-trigger"
-              class="inline-flex h-7 w-7 items-center justify-center text-text-muted hover:text-destructive transition-colors"
-              :aria-label="$t('catalog.deleteTaskAria', { name: node.task.name })"
-              :title="$t('catalog.deleteTaskAria', { name: node.task.name })"
-              @click="emit('deleteTask', node.task)"
-            >
-              <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
+            <TasksTaskRowActionsMenu
+              :task-name="node.task.name"
+              :depth="depth"
+              :selected="selectedTaskIds.has(node.task.id)"
+              :selected-count="selectedCount"
+              :can-add-subtask="depth < MAX_TASK_DEPTH"
+              :can-indent="idx > 0 && depth < MAX_TASK_DEPTH"
+              :can-outdent="depth > 0"
+              :external-url="effectiveExternalUrl(node)"
+              @open-details="emit('openDetails', node.task.id)"
+              @rename-inline="emit('startInlineRename', node.task.id)"
+              @add-subtask="emit('openSubtaskComposer', node.task.id)"
+              @duplicate="emit('duplicateTasks', node.task.id)"
+              @toggle-select="
+                emit('rowSelect', {
+                  taskId: node.task.id,
+                  shiftKey: false,
+                  ctrlOrMetaKey: true,
+                  toggleOnly: true,
+                })
+              "
+              @indent="
+                idx > 0 && depth < MAX_TASK_DEPTH
+                  ? emit('reparent', {
+                      taskId: node.task.id,
+                      newParentTaskId: nodes[idx - 1]!.task.id,
+                    })
+                  : undefined
+              "
+              @outdent="
+                depth > 0
+                  ? emit('reparent', {
+                      taskId: node.task.id,
+                      newParentTaskId: parentParentTaskId ?? null,
+                    })
+                  : undefined
+              "
+              @export-markdown="emit('exportMarkdown', node.task.id)"
+              @export-csv="emit('exportCsv', node.task.id)"
+              @bulk-mark-done="emit('bulkMarkStatus', 'done')"
+              @bulk-mark-todo="emit('bulkMarkStatus', 'todo')"
+              @delete="emit('deleteTask', node.task)"
+              @bulk-delete="emit('bulkDelete')"
+            />
           </div>
         </div>
+      </TasksTaskRowContextMenu>
 
-        <!-- Inline Task Edit Form -->
-        <form
-          v-if="editingTaskId === node.task.id"
-          class="mt-3 border border-border-hairline bg-bg-elevated p-3 space-y-2.5"
-          @submit.prevent="submitEditTask(node.task.id)"
-        >
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-12">
-            <input
-              v-model="editName"
-              type="text"
-              required
-              class="sm:col-span-9 h-9 border border-border-input bg-bg-primary px-3 text-ui text-text-primary focus:border-signal focus:outline-none"
-            />
-            <input
-              v-model="editTargetHours"
-              type="number"
-              min="0"
-              step="0.5"
-              :placeholder="$t('catalog.targetHoursPlaceholder')"
-              class="tabular-telemetry sm:col-span-3 h-9 border border-border-input bg-bg-primary px-2.5 text-ui text-text-primary focus:border-signal focus:outline-none"
-            />
-          </div>
-          <textarea
-            v-model="editDescription"
-            rows="2"
-            :placeholder="$t('catalog.taskDescriptionPlaceholder')"
-            class="w-full border border-border-input bg-bg-primary p-2.5 text-ui text-text-primary placeholder:text-text-faint focus:border-signal focus:outline-none"
-          />
-          <div class="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              class="inline-flex h-8 items-center gap-1 border border-border-hairline px-3 text-xs text-text-muted hover:text-text-primary"
-              @click="cancelEditTask"
-            >
-              <X class="h-3.5 w-3.5" aria-hidden="true" />
-              <span>{{ $t('confirm.cancelAction') }}</span>
-            </button>
-            <button
-              type="submit"
-              class="btn-press inline-flex h-8 items-center gap-1 bg-accent px-3 text-xs font-semibold uppercase text-white hover:bg-accent-hover"
-            >
-              <Check class="h-3.5 w-3.5" aria-hidden="true" />
-              <span>{{ $t('catalog.saveChanges') }}</span>
-            </button>
-          </div>
-        </form>
-
-        <!-- Rendered Basic Markdown Description -->
-        <!-- eslint-disable-next-line vue/no-v-html -->
-        <div
-          v-else-if="node.task.description"
-          class="mt-2 border-l-2 border-border-hairline pl-3 text-ui leading-relaxed text-text-muted space-y-1"
-          v-html="renderBasicMarkdown(node.task.description)"
+      <!-- Inline Subtask Composer Right Beneath Parent Task -->
+      <div
+        v-if="addingSubtaskForId === node.task.id"
+        class="flex items-center gap-2 border-t border-border-hairline bg-bg-elevated/70 py-2 pr-3.5"
+        :class="depth === 0 ? 'pl-8 sm:pl-11' : 'pl-11 sm:pl-16'"
+      >
+        <CornerDownRight class="h-3.5 w-3.5 shrink-0 text-signal" aria-hidden="true" />
+        <input
+          ref="subtaskInputRef"
+          v-model="inlineSubtaskDraft"
+          type="text"
+          maxlength="200"
+          enterkeyhint="done"
+          :data-testid="`inline-subtask-input-${node.task.id}`"
+          :placeholder="
+            depth === 0
+              ? $t('tasks.inlineSubtaskPlaceholder')
+              : $t('tasks.inlineSubSubtaskPlaceholder')
+          "
+          class="h-8 flex-1 border-b border-signal bg-transparent px-1.5 text-sm text-text-primary placeholder:text-text-faint focus:outline-none"
+          @keydown="handleSubtaskKeydown($event, node.task.id)"
+          @blur="commitInlineSubtask(node.task.id, false)"
         />
       </div>
 
-      <!-- Recursive Child Subtasks / Sub-subtasks (Strictly Same-Parent Siblings) -->
-      <div v-if="node.children.length > 0" class="border-t border-border-hairline">
+      <!-- Recursive Child Subtasks / Sub-subtasks (Collapsible) -->
+      <div
+        v-if="node.children.length > 0 && !collapsedTaskIds.has(node.task.id)"
+        class="border-t border-border-hairline"
+      >
         <TasksTaskTreeLevel
           :nodes="node.children"
           :depth="depth + 1"
+          :parent-parent-task-id="node.task.parentTaskId ?? null"
+          :inherited-ado-task="node.task.externalWorkItemId ? node.task : inheritedAdoTask"
           :running-task-id="runningTaskId"
+          :running-elapsed-seconds="runningElapsedSeconds"
           :tracked-seconds-by-task="trackedSecondsByTask"
           :unsynced-hours-by-task="unsyncedHoursByTask"
-          :ado-connected="adoConnected"
-          :ado-org-url="adoOrgUrl"
-          :ado-project="adoProject"
-          :ado-enabled-for-project="adoEnabledForProject"
+          :project-tags="projectTags"
+          :selected-task-ids="selectedTaskIds"
+          :selected-count="selectedCount"
+          :focused-task-id="focusedTaskId"
+          :multi-select-mode="multiSelectMode"
+          :collapsed-task-ids="collapsedTaskIds"
+          :editing-task-id="editingTaskId"
+          :adding-subtask-for-id="addingSubtaskForId"
           @reorder="emit('reorder', $event)"
+          @reparent="emit('reparent', $event)"
+          @create-subtask="emit('createSubtask', $event)"
+          @open-subtask-composer="emit('openSubtaskComposer', $event)"
+          @start-inline-rename="emit('startInlineRename', $event)"
+          @commit-inline-rename="emit('commitInlineRename', $event)"
+          @update-tags="emit('updateTags', $event)"
           @start-timer="emit('startTimer', $event)"
-          @cycle-status="emit('cycleStatus', $event)"
-          @prefill-subtask="emit('prefillSubtask', $event)"
+          @stop-timer="emit('stopTimer')"
+          @toggle-done="emit('toggleDone', $event)"
           @delete-task="emit('deleteTask', $event)"
-          @save-edit="emit('saveEdit', $event)"
-          @link-ado="emit('linkAdo', $event)"
-          @create-ado="emit('createAdo', $event)"
+          @bulk-delete="emit('bulkDelete')"
+          @bulk-mark-status="emit('bulkMarkStatus', $event)"
+          @duplicate-tasks="emit('duplicateTasks', $event)"
+          @export-markdown="emit('exportMarkdown', $event)"
+          @export-csv="emit('exportCsv', $event)"
+          @toggle-collapse="emit('toggleCollapse', $event)"
+          @open-details="emit('openDetails', $event)"
+          @prepare-context-menu="emit('prepareContextMenu', $event)"
+          @row-select="emit('rowSelect', $event)"
         />
       </div>
     </li>

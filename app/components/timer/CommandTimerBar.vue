@@ -58,11 +58,14 @@ const scopedTags = computed(() =>
   catalogStore.getTagsForProject(timerStore.projectId)
 );
 
-function handleProjectTaskSelect(payload: { projectId: EntityId; taskId: EntityId | null }) {
-  if (payload.projectId !== timerStore.projectId) {
-    timerStore.selectProject(payload.projectId);
+function handleProjectSelect(nextProjectId: EntityId) {
+  if (nextProjectId !== timerStore.projectId) {
+    timerStore.selectProject(nextProjectId);
   }
-  timerStore.selectTask(payload.taskId ?? undefined);
+}
+
+function handleTaskSelect(nextTaskId: EntityId | null) {
+  timerStore.selectTask(nextTaskId ?? undefined);
 }
 
 function focusDescription() {
@@ -457,14 +460,22 @@ onUnmounted(() => {
       <!-- Inline Toolbar: Borderless Project/Task, Icon Tags, Icon Billable, Digits & Action -->
       <div class="relative flex items-center justify-between md:justify-end gap-1.5 md:gap-2 shrink-0">
         <div class="flex items-center gap-0.5 sm:gap-1 min-w-0">
-          <!-- 2. Borderless Project & Task Selector -->
-          <TimerProjectTaskPopover
+          <!-- 2a. Standalone Borderless Project Selector -->
+          <TimerProjectPopover
             :project-id="timerStore.projectId"
-            :task-id="timerStore.taskId"
             variant="command"
             data-tour="timer-project"
             test-id="command-project-trigger"
-            @select="handleProjectTaskSelect"
+            @select="handleProjectSelect"
+          />
+
+          <!-- 2b. Standalone Project-Scoped Task Selector -->
+          <TimerTaskPopover
+            :project-id="timerStore.projectId"
+            :task-id="timerStore.taskId"
+            variant="command"
+            test-id="command-task-trigger"
+            @select="handleTaskSelect"
           />
 
           <!-- 3. Borderless Toggl-Style Tag Icon Popover -->
@@ -543,6 +554,7 @@ onUnmounted(() => {
                 ? 'bg-red-600 hover:bg-red-500'
                 : 'bg-accent hover:bg-accent-hover'
             "
+            @mousedown.prevent
             @click="handlePrimaryAction"
           >
             <Square v-if="timerStore.isRunning" class="h-3.5 w-3.5 fill-current" aria-hidden="true" />

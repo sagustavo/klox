@@ -1,26 +1,52 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAdoSyncCandidates,
+  classificationNodePathToIterationPath,
+  classifyIterationTimeFrame,
   computeLogUnsyncedSeconds,
   escapeWiqlLiteral,
+  getAdoWorkItemTypeVisual,
   normalizeAdoOrgUrl,
+  normalizeStoredAdoConnections,
   parseWorkItemIdInput,
+  pickDefaultCurrentIteration,
   resolveControllingAdoTask,
+  resolveEffectiveProjectAdoTarget,
+  type AdoIterationInfo,
 } from '../../app/domain/ado';
 import {
   buildTaskTree,
+  classifyDueDateTone,
+  collectBulkDeleteTaskIds,
+  computeTaskReparent,
+  computeTaskSelectionTransition,
   computeTaskSiblingReorder,
   createUnassignedProject,
+  filterTaskTree,
+  flattenVisibleTaskTree,
+  formatCompactTaskLabel,
+  isTaskBranchFullyDone,
+  isValidTaskDueDate,
+  paginateTaskRoots,
+  sanitizeTaskTagIds,
+  tasksToCsv,
+  tasksToMarkdownTable,
 } from '../../app/domain/invariants';
-import type { AdoConnectionSummary, Project, Task, TimeLog } from '../../app/domain/types';
-import { AdoCryptoError, decryptAdoSecret, encryptAdoSecret } from '../../server/utils/adoCrypto';
+import type { AdoConnectionSummary, Project, ProjectTag, Task, TimeLog } from '../../app/domain/types';
+import {
+  AdoCryptoError,
+  decryptAdoSecret,
+  decryptAdoTokenMap,
+  encryptAdoSecret,
+  encryptAdoTokenMap,
+} from '../../server/utils/adoCrypto';
 import {
   fromFirestoreFields,
   toFirestoreFields,
   toFirestoreValue,
 } from '../../server/utils/firestoreRest';
 
-describe('domain/ado security & parsing', () => {
+describe('domain/ado security, parsing, iterations & type visuals', () => {
   it('canonicalizes valid Azure DevOps organization URLs and bare org slugs', () => {
     expect(normalizeAdoOrgUrl('klox')).toEqual({
       valid: true,
@@ -81,9 +107,68 @@ describe('domain/ado security & parsing', () => {
   it('escapes WIQL literals and strips control characters', () => {
     expect(escapeWiqlLiteral("Fix O'Connor bug\n\t")).toBe("Fix O''Connor bug");
   });
+
+  it('converts ADO classification paths and selects the active Current Sprint', () => {
+    expect(classificationNodePathToIterationPath('\\Klox\\Iteration\\Sprint 4')).toBe(
+      'Klox\\Sprint 4'
+    );
+    expect(classificationNodePathToIterationPath('\\Klox\\Iteration\\Release 1\\Sprint 2')).toBe(
+      'Klox\\Release 1\\Sprint 2'
+    );
+    expect(classificationNodePathToIterationPath('\\Klox\\Iteration')).toBe('Klox');
+
+    expect(
+      classifyIterationTimeFrame('2026-11-23T00:00:00Z', '2026-11-29T00:00:00Z', '2026-11-27')
+    ).toBe('current');
+    expect(
+      classifyIterationTimeFrame('2026-11-16T00:00:00Z', '2026-11-22T00:00:00Z', '2026-11-27')
+    ).toBe('past');
+    expect(
+      classifyIterationTimeFrame('2026-11-30T00:00:00Z', '2026-12-06T00:00:00Z', '2026-11-27')
+    ).toBe('future');
+
+    const iterations: AdoIterationInfo[] = [
+      {
+        id: 9,
+        name: 'Sprint 3',
+        displayPath: 'Sprint 3',
+        iterationPath: 'Klox\\Sprint 3',
+        timeFrame: 'past',
+      },
+      {
+        id: 10,
+        name: 'Sprint 4',
+        displayPath: 'Sprint 4',
+        iterationPath: 'Klox\\Sprint 4',
+        timeFrame: 'current',
+      },
+      {
+        id: 11,
+        name: 'Sprint 5',
+        displayPath: 'Sprint 5',
+        iterationPath: 'Klox\\Sprint 5',
+        timeFrame: 'future',
+      },
+    ];
+    expect(pickDefaultCurrentIteration(iterations)?.iterationPath).toBe('Klox\\Sprint 4');
+  });
+
+  it('maps Work Item Type names to semantic icon kinds and short labels', () => {
+    expect(getAdoWorkItemTypeVisual('Product Backlog Item')).toEqual({
+      kind: 'pbi',
+      shortLabel: 'PBI',
+      fullName: 'Product Backlog Item',
+    });
+    expect(getAdoWorkItemTypeVisual('User Story').shortLabel).toBe('US');
+    expect(getAdoWorkItemTypeVisual('Bug').kind).toBe('bug');
+    expect(getAdoWorkItemTypeVisual('Task').kind).toBe('task');
+    expect(getAdoWorkItemTypeVisual('Feature').kind).toBe('feature');
+    expect(getAdoWorkItemTypeVisual('Epic').kind).toBe('epic');
+    expect(getAdoWorkItemTypeVisual('Issue').kind).toBe('issue');
+  });
 });
 
-describe('domain/invariants task priority ordering', () => {
+describe('domain/invariants task priority ordering & Tab reparenting', () => {
   const mkTask = (overrides: Partial<Task> & Pick<Task, 'id' | 'name'>): Task => ({
     userId: 'u1',
     projectId: 'p1',
@@ -140,10 +225,52 @@ describe('domain/invariants task priority ordering', () => {
       { taskId: 'root-a', sortOrder: 2048 },
     ]);
   });
+
+  it('handles Tab indent and Shift+Tab outdent reparenting while enforcing MAX_TASK_DEPTH = 2', () => {
+    const tasks: Task[] = [
+      mkTask({ id: 'root-a', name: 'PBI 72', depth: 0, sortOrder: 1024 }),
+      mkTask({ id: 'root-b', name: 'Standalone', depth: 0, sortOrder: 2048 }),
+      mkTask({ id: 'child-1', name: 'Child of Standalone', parentTaskId: 'root-b', depth: 1, sortOrder: 1024 }),
+      mkTask({ id: 'sub-a', name: 'Task 76', parentTaskId: 'root-a', depth: 1, sortOrder: 1024 }),
+      mkTask({ id: 'subsub-a', name: 'Sub-sub', parentTaskId: 'sub-a', depth: 2, sortOrder: 1024 }),
+    ];
+
+    // Indent Standalone (depth 0 with child depth 1) under PBI 72 (depth 0) -> moves root-b -> 1, child-1 -> 2
+    const indentOk = computeTaskReparent({
+      taskId: 'root-b',
+      newParentTaskId: 'root-a',
+      allTasks: tasks,
+    });
+    expect(indentOk.valid).toBe(true);
+    expect(indentOk.updates).toEqual([
+      { taskId: 'root-b', parentTaskId: 'root-a', depth: 1, sortOrder: 2048 },
+      { taskId: 'child-1', parentTaskId: 'root-b', depth: 2 },
+    ]);
+
+    // Attempting to indent Standalone under Task 76 (depth 1) would push child-1 to depth 3 -> rejected!
+    const tooDeep = computeTaskReparent({
+      taskId: 'root-b',
+      newParentTaskId: 'sub-a',
+      allTasks: tasks,
+    });
+    expect(tooDeep.valid).toBe(false);
+    expect(tooDeep.error).toBe('TASK_MAX_DEPTH_EXCEEDED');
+
+    // Outdent Sub-subtask up to root-a
+    const outdentOk = computeTaskReparent({
+      taskId: 'subsub-a',
+      newParentTaskId: 'root-a',
+      allTasks: tasks,
+    });
+    expect(outdentOk.valid).toBe(true);
+    expect(outdentOk.updates[0]?.depth).toBe(1);
+  });
 });
 
-describe('domain/ado incremental sync & hierarchy roll-up', () => {
-  const connection: AdoConnectionSummary = {
+describe('domain/ado incremental sync, PBI -> Task -> Sub-subtask roll-up & multi-connection routing', () => {
+  const connWork: AdoConnectionSummary = {
+    id: 'conn-work',
+    kloxProjectId: 'p-work',
     connected: true,
     authType: 'pat',
     orgUrl: 'https://dev.azure.com/klox',
@@ -155,72 +282,44 @@ describe('domain/ado incremental sync & hierarchy roll-up', () => {
     lastVerifiedAt: '2026-11-27T00:00:00.000Z',
   };
 
+  const connSide: AdoConnectionSummary = {
+    id: 'conn-side',
+    kloxProjectId: 'p-side',
+    connected: true,
+    authType: 'pat',
+    orgUrl: 'https://dev.azure.com/sideorg',
+    organization: 'sideorg',
+    defaultProject: 'SideProj',
+    defaultWorkItemType: 'Task',
+    tokenHint: '••••9999',
+    connectedAt: '2026-11-27T00:00:00.000Z',
+    lastVerifiedAt: '2026-11-27T00:00:00.000Z',
+  };
+
   const unassigned = createUnassignedProject('u1');
   const workProject: Project = {
     id: 'p-work',
     userId: 'u1',
-    name: 'Core Platform',
+    name: 'Klox Platform',
     color: '#3B82F6',
     isBillableDefault: true,
     createdAt: '2026-11-27T00:00:00.000Z',
   };
-
-  const tasks: Task[] = [
-    {
-      id: 't-parent',
-      userId: 'u1',
-      projectId: 'p-work',
-      depth: 0,
-      name: 'Auth Integration',
-      externalProvider: 'azure_devops',
-      externalWorkItemId: '31',
-      externalWorkItemTitle: 'ADO Sync',
-      completedWorkHours: 2,
-      status: 'in_progress',
-      createdAt: '2026-11-27T00:00:00.000Z',
-    },
-    {
-      id: 't-sub-inherit',
-      userId: 'u1',
-      projectId: 'p-work',
-      parentTaskId: 't-parent',
-      depth: 1,
-      name: 'Write tests',
-      completedWorkHours: 0,
-      status: 'todo',
-      createdAt: '2026-11-27T00:01:00.000Z',
-    },
-    {
-      id: 't-sub-own',
-      userId: 'u1',
-      projectId: 'p-work',
-      parentTaskId: 't-parent',
-      depth: 1,
-      name: 'Fix OAuth redirect',
-      externalProvider: 'azure_devops',
-      externalWorkItemId: '99',
-      completedWorkHours: 0,
-      status: 'todo',
-      createdAt: '2026-11-27T00:02:00.000Z',
-    },
-    {
-      id: 't-unplanned',
-      userId: 'u1',
-      projectId: 'p-work',
-      depth: 0,
-      name: 'Hotfix DNS cache',
-      completedWorkHours: 0,
-      status: 'todo',
-      createdAt: '2026-11-27T00:03:00.000Z',
-    },
-  ];
+  const unboundProject: Project = {
+    id: 'p-personal',
+    userId: 'u1',
+    name: 'Marathon Prep',
+    color: '#10B981',
+    isBillableDefault: false,
+    createdAt: '2026-11-27T00:00:00.000Z',
+  };
 
   const mkLog = (overrides: Partial<TimeLog> & Pick<TimeLog, 'id' | 'durationSeconds'>): TimeLog => ({
     userId: 'u1',
     description: 'Work',
     normalizedDescription: 'work',
     projectId: 'p-work',
-    projectNameSnapshot: 'Core Platform',
+    projectNameSnapshot: 'Klox Platform',
     projectColorSnapshot: '#3B82F6',
     tagIds: [],
     isBillable: true,
@@ -231,19 +330,134 @@ describe('domain/ado incremental sync & hierarchy roll-up', () => {
     ...overrides,
   });
 
-  it('resolves nearest ADO-linked ancestor without double-counting child overrides', () => {
-    expect(resolveControllingAdoTask('t-sub-inherit', tasks)?.id).toBe('t-parent');
-    expect(resolveControllingAdoTask('t-sub-own', tasks)?.id).toBe('t-sub-own');
-    expect(resolveControllingAdoTask('t-unplanned', tasks)).toBeNull();
+  it('sums manual Level-2 Sub-subtasks onto the parent ADO Task (depth 1) under a PBI (depth 0) without leaking to the PBI', () => {
+    const tasks: Task[] = [
+      {
+        id: 'k-pbi-72',
+        userId: 'u1',
+        projectId: 'p-work',
+        depth: 0,
+        name: '[UX-2.1] Brand Logo Tracking',
+        externalProvider: 'azure_devops',
+        externalWorkItemId: '72',
+        externalWorkItemTitle: '[UX-2.1] Brand Logo Tracking',
+        externalWorkItemType: 'Product Backlog Item',
+        completedWorkHours: 0,
+        status: 'in_progress',
+        createdAt: '2026-11-27T00:00:00.000Z',
+      },
+      {
+        id: 'k-task-76',
+        userId: 'u1',
+        projectId: 'p-work',
+        parentTaskId: 'k-pbi-72',
+        depth: 1,
+        name: 'Fix Logo Letter-Spacing Cascade',
+        externalProvider: 'azure_devops',
+        externalWorkItemId: '76',
+        externalWorkItemTitle: 'Fix Logo Letter-Spacing Cascade',
+        externalWorkItemType: 'Task',
+        completedWorkHours: 1.0,
+        status: 'in_progress',
+        createdAt: '2026-11-27T00:01:00.000Z',
+      },
+      {
+        id: 'k-subsub-1',
+        userId: 'u1',
+        projectId: 'p-work',
+        parentTaskId: 'k-task-76',
+        depth: 2,
+        name: 'Audit wordmark tracking tokens',
+        completedWorkHours: 0,
+        status: 'done',
+        createdAt: '2026-11-27T00:02:00.000Z',
+      },
+      {
+        id: 'k-subsub-2',
+        userId: 'u1',
+        projectId: 'p-work',
+        parentTaskId: 'k-task-76',
+        depth: 2,
+        name: 'Update SVG favicon',
+        completedWorkHours: 0,
+        status: 'todo',
+        createdAt: '2026-11-27T00:03:00.000Z',
+      },
+      {
+        id: 'k-unplanned',
+        userId: 'u1',
+        projectId: 'p-work',
+        depth: 0,
+        name: 'Emergency DNS check',
+        completedWorkHours: 0,
+        status: 'todo',
+        createdAt: '2026-11-27T00:04:00.000Z',
+      },
+    ];
+
+    expect(resolveControllingAdoTask('k-subsub-1', tasks)?.id).toBe('k-task-76');
+    expect(resolveControllingAdoTask('k-subsub-2', tasks)?.id).toBe('k-task-76');
+    expect(resolveControllingAdoTask('k-unplanned', tasks)).toBeNull();
+
+    const logs: TimeLog[] = [
+      mkLog({ id: 'l-subsub-1', taskId: 'k-subsub-1', durationSeconds: 4500 }), // 1.25h
+      mkLog({ id: 'l-subsub-2', taskId: 'k-subsub-2', durationSeconds: 2700 }), // 0.75h
+      mkLog({ id: 'l-direct', taskId: 'k-task-76', durationSeconds: 1800 }), // 0.50h
+      mkLog({ id: 'l-unplanned', taskId: 'k-unplanned', durationSeconds: 900 }), // 0.25h
+    ];
+
+    const summary = buildAdoSyncCandidates({
+      projects: [unassigned, workProject, unboundProject],
+      tasks,
+      logs,
+      connections: [connWork, connSide],
+    });
+
+    // Strictly ONE ADO item (#76, NOT PBI #72) with total 2.50h = 1.25h + 0.75h + 0.50h
+    expect(summary.readyItems).toHaveLength(1);
+    const targetItem = summary.readyItems[0]!;
+    expect(targetItem.connectionId).toBe('conn-work');
+    expect(targetItem.workItemId).toBe(76);
+    expect(targetItem.recommendedDeltaHours).toBe(2.5);
+    expect(targetItem.logs.map((e) => e.isRolledUpFromDescendant)).toEqual([true, true, false]);
+
+    // Sub-subtasks do NOT appear as unplanned tasks; only k-unplanned does
+    expect(summary.unplannedTasks).toHaveLength(1);
+    expect(summary.unplannedTasks[0]?.task.id).toBe('k-unplanned');
+  });
+
+  it('routes projects strictly to their bound ADO connection and ignores unbound projects', () => {
+    expect(
+      resolveEffectiveProjectAdoTarget(workProject, [connWork, connSide])?.connectionId
+    ).toBe('conn-work');
+    expect(resolveEffectiveProjectAdoTarget(unboundProject, [connWork, connSide])).toBeNull();
+    expect(resolveEffectiveProjectAdoTarget(unassigned, [connWork, connSide])).toBeNull();
+
+    const migrated = normalizeStoredAdoConnections({
+      adoConnection: {
+        connected: true,
+        authType: 'pat',
+        orgUrl: 'https://dev.azure.com/klox',
+        organization: 'klox',
+        defaultProject: 'Klox',
+        defaultWorkItemType: 'Task',
+        tokenHint: '••••old1',
+        connectedAt: '2026-11-27T00:00:00.000Z',
+        lastVerifiedAt: '2026-11-27T00:00:00.000Z',
+      },
+    });
+    expect(migrated).toHaveLength(1);
+    expect(migrated[0]?.id).toBe('legacy_default');
+    expect(migrated[0]?.kloxProjectId).toBe('');
   });
 
   it('computes positive incremental delta when an already-synced Activity duration grows', () => {
     const log = mkLog({
       id: 'l-edited',
-      taskId: 't-parent',
-      durationSeconds: 5400, // edited from 1h to 1.5h
+      taskId: 'k-task-76',
+      durationSeconds: 5400,
       adoSync: {
-        workItemId: 31,
+        workItemId: 76,
         orgUrl: 'https://dev.azure.com/klox',
         project: 'Klox',
         syncedSeconds: 3600,
@@ -252,55 +466,15 @@ describe('domain/ado incremental sync & hierarchy roll-up', () => {
     });
     expect(
       computeLogUnsyncedSeconds(log, {
-        workItemId: 31,
+        workItemId: 76,
         orgUrl: 'https://dev.azure.com/klox',
         project: 'Klox',
       })
     ).toBe(1800);
   });
-
-  it('builds ready sync buckets and unplanned task candidates cleanly', () => {
-    const logs: TimeLog[] = [
-      mkLog({ id: 'l1', taskId: 't-sub-inherit', durationSeconds: 3600 }), // rolls up to #31 (+1.0h)
-      mkLog({
-        id: 'l2',
-        taskId: 't-parent',
-        durationSeconds: 3600,
-        adoSync: {
-          workItemId: 31,
-          orgUrl: 'https://dev.azure.com/klox',
-          project: 'Klox',
-          syncedSeconds: 3600,
-          syncedAt: '2026-11-27T09:00:00.000Z',
-        },
-      }), // already synced -> 0 unsynced
-      mkLog({ id: 'l3', taskId: 't-sub-own', durationSeconds: 1800 }), // independent #99 (+0.5h)
-      mkLog({ id: 'l4', taskId: 't-unplanned', durationSeconds: 2700 }), // unplanned (+0.75h)
-    ];
-
-    const summary = buildAdoSyncCandidates({
-      projects: [unassigned, workProject],
-      tasks,
-      logs,
-      connection,
-    });
-
-    expect(summary.readyItems).toHaveLength(2);
-    expect(summary.readyItems[0]?.workItemId).toBe(31);
-    expect(summary.readyItems[0]?.recommendedDeltaHours).toBe(1);
-    expect(summary.readyItems[0]?.logs.map((x) => x.log.id)).toEqual(['l1']);
-
-    expect(summary.readyItems[1]?.workItemId).toBe(99);
-    expect(summary.readyItems[1]?.recommendedDeltaHours).toBe(0.5);
-
-    expect(summary.unplannedTasks).toHaveLength(1);
-    expect(summary.unplannedTasks[0]?.task.id).toBe('t-unplanned');
-    expect(summary.unplannedTasks[0]?.recommendedHours).toBe(0.75);
-    expect(summary.totalRecommendedHours).toBe(1.5);
-  });
 });
 
-describe('server/utils/adoCrypto AES-256-GCM vault', () => {
+describe('server/utils/adoCrypto AES-256-GCM multi-token vault', () => {
   const masterSecret = '0123456789abcdef0123456789abcdef';
 
   it('encrypts and decrypts PAT with uid AAD binding and rejects cross-UID or tampered payloads', () => {
@@ -330,6 +504,38 @@ describe('server/utils/adoCrypto AES-256-GCM vault', () => {
     ).toThrow();
   });
 
+  it('supports multi-connection token maps and migrates legacy v1 plaintokens cleanly', () => {
+    const mapPayload = encryptAdoTokenMap({
+      tokens: { conn_1: 'pat-one', conn_2: 'pat-two' },
+      uid: 'user-alpha',
+      masterSecret,
+      isDev: false,
+    });
+    expect(
+      decryptAdoTokenMap({ payload: mapPayload, uid: 'user-alpha', masterSecret, isDev: false })
+    ).toEqual({
+      conn_1: 'pat-one',
+      conn_2: 'pat-two',
+    });
+
+    const legacyV1Payload = encryptAdoSecret({
+      plaintext: 'legacy-single-pat',
+      uid: 'user-alpha',
+      masterSecret,
+      isDev: false,
+    });
+    expect(
+      decryptAdoTokenMap({
+        payload: legacyV1Payload,
+        uid: 'user-alpha',
+        masterSecret,
+        isDev: false,
+      })
+    ).toEqual({
+      legacy_default: 'legacy-single-pat',
+    });
+  });
+
   it('fails closed in production mode when masterSecret is missing or too short', () => {
     expect(() =>
       encryptAdoSecret({
@@ -343,7 +549,7 @@ describe('server/utils/adoCrypto AES-256-GCM vault', () => {
 });
 
 describe('server/utils/firestoreRest serialization & round-trip', () => {
-  it('encodes integers as integerValue, floats as doubleValue, skips undefined, and round-trips nested objects', () => {
+  it('encodes integers as integerValue, floats as doubleValue, skips undefined, and round-trips nested arrays/objects', () => {
     expect(toFirestoreValue(1)).toEqual({ integerValue: '1' });
     expect(toFirestoreValue(1.75)).toEqual({ doubleValue: 1.75 });
     expect(toFirestoreValue(null)).toEqual({ nullValue: null });
@@ -351,42 +557,36 @@ describe('server/utils/firestoreRest serialization & round-trip', () => {
     const payload = {
       v: 1,
       authType: 'pat',
-      salt: 'abc=',
-      iv: 'def=',
-      tag: 'ghi=',
-      ciphertext: 'jkl=',
       optionalOmitted: undefined,
-      adoConnection: {
-        connected: true,
-        authType: 'pat',
-        orgUrl: 'https://dev.azure.com/klox',
-        organization: 'klox',
-        defaultProject: 'Klox',
-        defaultWorkItemType: 'Task',
-        tokenHint: '••••1g0H',
-        connectedAt: '2026-11-27T18:00:00.000Z',
-        lastVerifiedAt: '2026-11-27T18:00:00.000Z',
-      },
-      tags: ['dev', null],
-      nullField: null,
+      adoConnections: [
+        {
+          id: 'conn_1',
+          kloxProjectId: 'p_1',
+          connected: true,
+          authType: 'pat',
+          orgUrl: 'https://dev.azure.com/klox',
+          organization: 'klox',
+          defaultProject: 'Klox',
+          defaultWorkItemType: 'Task',
+          tokenHint: '••••1g0H',
+          connectedAt: '2026-11-27T18:00:00.000Z',
+          lastVerifiedAt: '2026-11-27T18:00:00.000Z',
+        },
+      ],
+      adoConnection: null,
     };
 
     const fields = toFirestoreFields(payload);
     expect(fields.optionalOmitted).toBeUndefined();
     expect(fields.v).toEqual({ integerValue: '1' });
-    expect(fields.nullField).toEqual({ nullValue: null });
+    expect(fields.adoConnection).toEqual({ nullValue: null });
 
     const decoded = fromFirestoreFields(fields);
     expect(decoded).toEqual({
       v: 1,
       authType: 'pat',
-      salt: 'abc=',
-      iv: 'def=',
-      tag: 'ghi=',
-      ciphertext: 'jkl=',
-      adoConnection: payload.adoConnection,
-      tags: ['dev', null],
-      nullField: null,
+      adoConnections: payload.adoConnections,
+      adoConnection: null,
     });
   });
 
@@ -400,5 +600,242 @@ describe('server/utils/firestoreRest serialization & round-trip', () => {
       emptyList: [],
       emptyMap: {},
     });
+  });
+});
+
+describe('domain/invariants task scoped tags, deadlines, multi-select & bulk delete', () => {
+  const projectTags: ProjectTag[] = [
+    { id: 'tag-p1-a', userId: 'u1', projectId: 'p1', name: 'Backend', createdAt: '2026-11-27T00:00:00Z' },
+    { id: 'tag-p1-b', userId: 'u1', projectId: 'p1', name: 'Bugfix', createdAt: '2026-11-27T00:00:00Z' },
+    { id: 'tag-p2-x', userId: 'u1', projectId: 'p2', name: 'Other Project', createdAt: '2026-11-27T00:00:00Z' },
+  ];
+
+  const mkTask = (overrides: Partial<Task> & Pick<Task, 'id' | 'name'>): Task => ({
+    userId: 'u1',
+    projectId: 'p1',
+    completedWorkHours: 0,
+    status: 'todo',
+    createdAt: '2026-11-27T00:00:00.000Z',
+    ...overrides,
+  });
+
+  it('enforces project-scoped Tag ownership and validates Task deadlines cleanly', () => {
+    expect(
+      sanitizeTaskTagIds(['tag-p1-a', 'tag-p2-x', 'tag-p1-a', 'missing', 'tag-p1-b'], 'p1', projectTags)
+    ).toEqual(['tag-p1-a', 'tag-p1-b']);
+
+    expect(isValidTaskDueDate('2026-11-30')).toBe(true);
+    expect(isValidTaskDueDate('2026/11/30')).toBe(false);
+    expect(isValidTaskDueDate(null)).toBe(false);
+
+    expect(classifyDueDateTone('2026-11-25', '2026-11-27', 'todo')).toBe('overdue');
+    expect(classifyDueDateTone('2026-11-27', '2026-11-27', 'in_progress')).toBe('today');
+    expect(classifyDueDateTone('2026-12-01', '2026-11-27', 'todo')).toBe('upcoming');
+    expect(classifyDueDateTone('2026-11-25', '2026-11-27', 'done')).toBe('done');
+  });
+
+  it('supports click, Ctrl/Cmd toggle, Shift range, and Arrow/Shift+Arrow multi-selection across flattened tasks', () => {
+    const ordered = ['t1', 'sub1', 'subsub1', 't2', 't3'];
+
+    let sel = computeTaskSelectionTransition(
+      { selectedIds: [], anchorId: null, focusedId: null },
+      { type: 'plain', taskId: 'sub1' },
+      ordered
+    );
+    expect(sel).toEqual({ selectedIds: ['sub1'], anchorId: 'sub1', focusedId: 'sub1' });
+
+    sel = computeTaskSelectionTransition(sel, { type: 'range', taskId: 't2' }, ordered);
+    expect(sel.selectedIds).toEqual(['sub1', 'subsub1', 't2']);
+    expect(sel.anchorId).toBe('sub1');
+    expect(sel.focusedId).toBe('t2');
+
+    sel = computeTaskSelectionTransition(sel, { type: 'toggle', taskId: 'subsub1' }, ordered);
+    expect(sel.selectedIds).toEqual(['sub1', 't2']);
+
+    sel = computeTaskSelectionTransition(
+      { selectedIds: ['t1'], anchorId: 't1', focusedId: 't1' },
+      { type: 'arrow', direction: 'down', extendRange: true },
+      ordered
+    );
+    expect(sel).toEqual({
+      selectedIds: ['t1', 'sub1'],
+      anchorId: 't1',
+      focusedId: 'sub1',
+    });
+
+    sel = computeTaskSelectionTransition(sel, { type: 'selectAll' }, ordered);
+    expect(sel.selectedIds).toEqual(ordered);
+
+    sel = computeTaskSelectionTransition(sel, { type: 'clear' }, ordered);
+    expect(sel.selectedIds).toEqual([]);
+  });
+
+  it('deduplicates parent and child tasks when computing bulk cascade deletion targets', () => {
+    const tasks: Task[] = [
+      mkTask({ id: 'root-1', name: 'Root 1', depth: 0 }),
+      mkTask({ id: 'sub-1', name: 'Sub 1', parentTaskId: 'root-1', depth: 1 }),
+      mkTask({ id: 'subsub-1', name: 'SubSub 1', parentTaskId: 'sub-1', depth: 2 }),
+      mkTask({ id: 'root-2', name: 'Root 2', depth: 0 }),
+    ];
+
+    expect(collectBulkDeleteTaskIds(['root-1', 'sub-1', 'root-2'], tasks)).toEqual([
+      'root-1',
+      'sub-1',
+      'subsub-1',
+      'root-2',
+    ]);
+  });
+});
+
+describe('domain/invariants board filtering, completed partitioning, pagination, compact labels & export', () => {
+  const mkProject = (id: string, name: string): Project => ({
+    id,
+    userId: 'u1',
+    name,
+    color: '#3B82F6',
+    isBillableDefault: true,
+    createdAt: '2026-11-27T00:00:00Z',
+  });
+
+  const mkTag = (id: string, projectId: string, name: string): ProjectTag => ({
+    id,
+    userId: 'u1',
+    projectId,
+    name,
+    createdAt: '2026-11-27T00:00:00Z',
+  });
+
+  const mkTask = (overrides: Partial<Task> & Pick<Task, 'id' | 'name'>): Task => ({
+    userId: 'u1',
+    projectId: 'p1',
+    completedWorkHours: 0,
+    status: 'todo',
+    createdAt: '2026-11-27T00:00:00Z',
+    ...overrides,
+  });
+
+  it('keeps a task active unless the task AND all of its descendants are done', () => {
+    const tasks: Task[] = [
+      mkTask({ id: 't1', name: 'Story', depth: 0, sortOrder: 1000, status: 'done' }),
+      mkTask({ id: 't1-sub', name: 'Child still open', parentTaskId: 't1', depth: 1, sortOrder: 1000, status: 'todo' }),
+      mkTask({ id: 't2', name: 'Closed Story', depth: 0, sortOrder: 2000, status: 'done' }),
+      mkTask({ id: 't2-sub', name: 'Closed Sub', parentTaskId: 't2', depth: 1, sortOrder: 1000, status: 'done' }),
+      mkTask({ id: 't2-subsub', name: 'Closed Leaf', parentTaskId: 't2-sub', depth: 2, sortOrder: 1000, status: 'done' }),
+    ];
+
+    const roots = buildTaskTree(tasks, 'p1');
+    expect(isTaskBranchFullyDone(roots[0]!)).toBe(false);
+    expect(isTaskBranchFullyDone(roots[1]!)).toBe(true);
+  });
+
+  it('filters task trees by query, ADO ID, tags, untagged, linkFilter and auto-expands matching parents', () => {
+    const tasks: Task[] = [
+      mkTask({ id: 'r1', name: 'Auth Feature', depth: 0, sortOrder: 1000, externalWorkItemId: '31', tagIds: ['tag-1'] }),
+      mkTask({ id: 'r1-s1', name: 'JWT Middleware', parentTaskId: 'r1', depth: 1, sortOrder: 1000, externalWorkItemId: '3101', tagIds: ['tag-2'], dueDate: '2026-11-20' }),
+      mkTask({ id: 'r2', name: 'Local Cleanup', depth: 0, sortOrder: 2000 }),
+    ];
+    const roots = buildTaskTree(tasks, 'p1');
+
+    const byAdoId = filterTaskTree(roots, { query: 'AB#3101' });
+    expect(byAdoId.roots).toHaveLength(1);
+    expect(byAdoId.roots[0]!.children).toHaveLength(1);
+    expect(byAdoId.autoExpandedIds).toEqual(['r1']);
+
+    const byTag = filterTaskTree(roots, { tagIds: ['tag-2'] });
+    expect(byTag.roots).toHaveLength(1);
+    expect(byTag.roots[0]!.task.id).toBe('r1');
+    expect(byTag.autoExpandedIds).toEqual(['r1']);
+
+    const untagged = filterTaskTree(roots, { includeUntagged: true });
+    expect(untagged.roots.map((n) => n.task.id)).toEqual(['r2']);
+
+    const overdue = filterTaskTree(roots, {
+      linkFilter: 'overdue',
+      todayDateKey: '2026-11-28',
+    });
+    expect(overdue.roots).toHaveLength(1);
+    expect(overdue.roots[0]!.children[0]!.task.id).toBe('r1-s1');
+
+    const unlinked = filterTaskTree(roots, { linkFilter: 'unlinked' });
+    expect(unlinked.roots.map((n) => n.task.id)).toEqual(['r2']);
+  });
+
+  it('flattens visible nodes respecting collapsed parents and paginates root trees cleanly', () => {
+    const tasks: Task[] = [];
+    for (let i = 1; i <= 12; i++) {
+      tasks.push(mkTask({ id: `root-${i}`, name: `Root ${i}`, depth: 0, sortOrder: i * 1000 }));
+    }
+    tasks.push(
+      mkTask({ id: 'sub-1', name: 'Sub 1', parentTaskId: 'root-1', depth: 1, sortOrder: 1000 }),
+      mkTask({ id: 'sub-2', name: 'Sub 2', parentTaskId: 'root-2', depth: 1, sortOrder: 1000 })
+    );
+
+    const roots = buildTaskTree(tasks, 'p1');
+    const page1 = paginateTaskRoots(roots, 0); // default 10 per page
+    expect(page1.totalItems).toBe(12);
+    expect(page1.totalPages).toBe(2);
+    expect(page1.items).toHaveLength(10);
+    expect(page1.hasPreviousPage).toBe(false);
+    expect(page1.hasNextPage).toBe(true);
+
+    const visibleCollapsed = flattenVisibleTaskTree(page1.items, new Set(['root-1']));
+    expect(visibleCollapsed.some((n) => n.task.id === 'sub-1')).toBe(false);
+    expect(visibleCollapsed.some((n) => n.task.id === 'sub-2')).toBe(true);
+
+    const pageOut = paginateTaskRoots(roots, 99, 25);
+    expect(pageOut.pageIndex).toBe(0);
+    expect(pageOut.items).toHaveLength(12);
+  });
+
+  it('formats compact task badges cleanly (AB#Parent / Child vs concise personal task name)', () => {
+    const pbi = mkTask({ id: 'pbi', name: 'Long Feature Title That Would Bloat UI', externalWorkItemId: '31', depth: 0 });
+    const childAdo = mkTask({ id: 'ado-sub', name: 'Implement Token Guard', parentTaskId: 'pbi', externalWorkItemId: '3101', depth: 1 });
+    const localParent = mkTask({ id: 'loc-p', name: 'Study Architecture', depth: 0 });
+    const localChild = mkTask({ id: 'loc-c', name: 'Read Chapter 4', parentTaskId: 'loc-p', depth: 1 });
+    const all = [pbi, childAdo, localParent, localChild];
+
+    expect(formatCompactTaskLabel(childAdo, all)).toBe('AB#31 / 3101');
+    expect(formatCompactTaskLabel(pbi, all)).toBe('AB#31');
+    expect(formatCompactTaskLabel(localChild, all)).toBe('Read Chapter 4');
+  });
+
+  it('exports selected tasks to Markdown table and UTF-8 BOM CSV', () => {
+    const p1 = mkProject('p1', 'Klox Core');
+    const tag1 = mkTag('tag-1', 'p1', 'Sprint 12');
+    const tRoot = mkTask({
+      id: 't1',
+      name: 'Build Execution Board',
+      externalWorkItemId: '42',
+      externalWorkItemType: 'Product Backlog Item',
+      status: 'in_progress',
+      tagIds: ['tag-1'],
+      dueDate: '2026-12-01',
+      completedWorkHours: 1.5,
+      depth: 0,
+    });
+    const tChild = mkTask({
+      id: 't2',
+      name: 'Add Context Menu, Shortcuts',
+      parentTaskId: 't1',
+      status: 'done',
+      depth: 1,
+    });
+
+    const ctx = {
+      allTasks: [tRoot, tChild],
+      projects: [p1],
+      tags: [tag1],
+      trackedSecondsByTask: new Map([['t1', 5400], ['t2', 1800]]),
+    };
+
+    const md = tasksToMarkdownTable([tRoot, tChild], ctx);
+    expect(md).toContain('| AB#42 | Build Execution Board | in_progress | Sprint 12 | 2026-12-01 | 01:30:00 |');
+    expect(md).toContain('| — | ↳ Add Context Menu, Shortcuts | done | — | — | 00:30:00 |');
+
+    const csv = tasksToCsv([tRoot, tChild], ctx);
+    expect(csv.startsWith('\uFEFF')).toBe(true);
+    expect(csv).toContain('Work Item,Type,Parent,Task,Status,Project,Tags,Deadline,Tracked Duration,ADO Completed Hours');
+    expect(csv).toContain('#42,Product Backlog Item,,Build Execution Board,in_progress,Klox Core,Sprint 12,2026-12-01,01:30:00,1.5');
+    expect(csv).toContain(',,Build Execution Board,"Add Context Menu, Shortcuts",done,Klox Core,,,00:30:00,0');
   });
 });

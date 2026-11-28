@@ -11,10 +11,14 @@ import type {
   TimeLog,
 } from './types';
 
+export const LEGACY_ADO_CONNECTION_ID = 'legacy_default';
+
 export type AdoErrorCode =
   | 'AUTH_INVALID'
   | 'ADO_INVALID_ORG_URL'
   | 'ADO_INVALID_INPUT'
+  | 'ADO_PROJECT_ALREADY_BOUND'
+  | 'ADO_CONNECTION_NOT_FOUND'
   | 'ADO_NOT_CONNECTED'
   | 'ADO_AUTH_FAILED'
   | 'ADO_FORBIDDEN'
@@ -25,6 +29,47 @@ export type AdoErrorCode =
   | 'ADO_FIRESTORE_PERMISSION_DENIED'
   | 'ADO_SERVER_MISCONFIGURED'
   | 'ADO_UNAVAILABLE';
+
+export type AdoWorkItemTypeKind =
+  | 'bug'
+  | 'pbi'
+  | 'user_story'
+  | 'task'
+  | 'feature'
+  | 'epic'
+  | 'issue'
+  | 'test_case'
+  | 'other';
+
+export interface AdoWorkItemTypeVisual {
+  kind: AdoWorkItemTypeKind;
+  shortLabel: string;
+  fullName: string;
+}
+
+export type AdoIterationTimeFrame = 'past' | 'current' | 'future' | 'unscheduled';
+
+export interface AdoIterationInfo {
+  id: number;
+  name: string;
+  displayPath: string;
+  iterationPath: string;
+  startDate?: string;
+  finishDate?: string;
+  timeFrame: AdoIterationTimeFrame;
+}
+
+export interface AdoSprintWorkItemNode {
+  id: number;
+  parentId: number | null;
+  depth: 0 | 1;
+  title: string;
+  workItemType: string;
+  completedWork: number;
+  supportsCompletedWork: boolean;
+  url: string;
+  assignedToMe: boolean;
+}
 
 export interface AdoWorkItemSummary {
   id: number;
@@ -41,6 +86,7 @@ export interface AdoWorkItemTypeCapability {
 }
 
 export interface EffectiveProjectAdoTarget {
+  connectionId: EntityId;
   enabled: boolean;
   orgUrl: string;
   organization: string;
@@ -51,10 +97,14 @@ export interface EffectiveProjectAdoTarget {
 export interface AdoSyncLogContribution {
   log: TimeLog;
   unsyncedSeconds: number;
+  sourceTaskId: EntityId;
+  sourceTaskLabel: string;
+  isRolledUpFromDescendant: boolean;
 }
 
 export interface AdoSyncCandidate {
   key: string;
+  connectionId: EntityId;
   workItemId: number;
   orgUrl: string;
   project: string;
@@ -238,42 +288,190 @@ export function buildAdoWorkItemWebUrl(
   return `${base}/${encodeURIComponent(project)}/_workitems/edit/${workItemId}`;
 }
 
+export function getAdoWorkItemTypeVisual(workItemType?: string | null): AdoWorkItemTypeVisual {
+  const fullName = (workItemType ?? '').trim() || 'Work Item';
+  const normalized = fullName.toLowerCase();
+
+  if (normalized === 'bug') {
+    return { kind: 'bug', shortLabel: 'BUG', fullName };
+  }
+  if (normalized === 'product backlog item') {
+    return { kind: 'pbi', shortLabel: 'PBI', fullName };
+  }
+  if (normalized === 'user story') {
+    return { kind: 'user_story', shortLabel: 'US', fullName };
+  }
+  if (normalized === 'task') {
+    return { kind: 'task', shortLabel: 'TASK', fullName };
+  }
+  if (normalized === 'feature') {
+    return { kind: 'feature', shortLabel: 'FEAT', fullName };
+  }
+  if (normalized === 'epic') {
+    return { kind: 'epic', shortLabel: 'EPIC', fullName };
+  }
+  if (normalized === 'issue' || normalized === 'impediment') {
+    return { kind: 'issue', shortLabel: normalized === 'issue' ? 'ISSUE' : 'IMP', fullName };
+  }
+  if (normalized === 'test case') {
+    return { kind: 'test_case', shortLabel: 'TEST', fullName };
+  }
+
+  return {
+    kind: 'other',
+    shortLabel: fullName.slice(0, 8).toUpperCase(),
+    fullName,
+  };
+}
+
 /**
- * Resolves the effective Azure DevOps target for a Klox Project, combining workspace defaults
- * with optional per-Project overrides (`Project.adoConfig`).
+ * Converts an Azure DevOps Classification Node path (e.g. `\\Klox\\Iteration\\Sprint 4`)
+ * into the WIQL-ready `System.IterationPath` (`Klox\\Sprint 4`).
+ */
+export function classificationNodePathToIterationPath(rawPath: string): string {
+  const clean = rawPath.replace(/^\\+|\\+$/g, '').trim();
+  if (!clean) return '';
+  const segments = clean.split('\\').filter(Boolean);
+  if (segments.length >= 2 && segments[1]!.toLowerCase() === 'iteration') {
+    segments.splice(1, 1);
+  }
+  return segments.join('\\');
+}
+
+export function classifyIterationTimeFrame(
+  startDate?: string,
+  finishDate?: string,
+  todayDateKey?: string
+): AdoIterationTimeFrame {
+  const today = todayDateKey && /^\d{4}-\d{2}-\d{2}$/.test(todayDateKey)
+    ? todayDateKey
+    : new Date().toISOString().slice(0, 10);
+  const startKey = startDate ? startDate.slice(0, 10) : '';
+  const finishKey = finishDate ? finishDate.slice(0, 10) : '';
+  const hasStart = /^\d{4}-\d{2}-\d{2}$/.test(startKey);
+  const hasFinish = /^\d{4}-\d{2}-\d{2}$/.test(finishKey);
+
+  if (hasStart && hasFinish) {
+    if (startKey <= today && today <= finishKey) return 'current';
+    if (finishKey < today) return 'past';
+    return 'future';
+  }
+  if (hasStart) {
+    return startKey > today ? 'future' : 'current';
+  }
+  if (hasFinish) {
+    return finishKey < today ? 'past' : 'current';
+  }
+  return 'unscheduled';
+}
+
+export function pickDefaultCurrentIteration(
+  iterations: readonly AdoIterationInfo[]
+): AdoIterationInfo | null {
+  if (iterations.length === 0) return null;
+  const currents = iterations.filter((it) => it.timeFrame === 'current');
+  if (currents.length > 0) return currents[currents.length - 1] ?? null;
+  const firstFuture = iterations.find((it) => it.timeFrame === 'future');
+  if (firstFuture) return firstFuture;
+  const past = iterations.filter((it) => it.timeFrame === 'past');
+  if (past.length > 0) return past[past.length - 1] ?? null;
+  return iterations[iterations.length - 1] ?? null;
+}
+
+/**
+ * Normalizes both multi-connection `adoConnections[]` and legacy single `adoConnection`
+ * payloads into a canonical connected `AdoConnectionSummary[]` list.
+ */
+export function normalizeStoredAdoConnections(
+  raw: { adoConnections?: unknown; adoConnection?: unknown } | null | undefined
+): AdoConnectionSummary[] {
+  if (!raw) return [];
+
+  if (Array.isArray(raw.adoConnections)) {
+    const normalized = raw.adoConnections
+      .filter((item): item is Partial<AdoConnectionSummary> => Boolean(item && typeof item === 'object'))
+      .filter((item) => Boolean(item.connected && item.orgUrl && item.defaultProject))
+      .map((item, idx) => ({
+        id: String(item.id || `ado_${idx}`),
+        kloxProjectId: String(item.kloxProjectId || ''),
+        connected: Boolean(item.connected),
+        authType: item.authType === 'entra_oauth' ? 'entra_oauth' : 'pat',
+        orgUrl: String(item.orgUrl || ''),
+        organization: String(item.organization || ''),
+        defaultProject: String(item.defaultProject || ''),
+        defaultWorkItemType: String(item.defaultWorkItemType || 'Task'),
+        tokenHint: String(item.tokenHint || '••••'),
+        connectedAt: String(item.connectedAt || ''),
+        lastVerifiedAt: String(item.lastVerifiedAt || ''),
+      })) satisfies AdoConnectionSummary[];
+    if (normalized.length > 0) return normalized;
+  }
+
+  const legacy = raw.adoConnection as Partial<AdoConnectionSummary> | null | undefined;
+  if (legacy && typeof legacy === 'object' && legacy.connected && legacy.orgUrl) {
+    return [
+      {
+        id: String(legacy.id || LEGACY_ADO_CONNECTION_ID),
+        kloxProjectId: String(legacy.kloxProjectId || ''),
+        connected: true,
+        authType: legacy.authType === 'entra_oauth' ? 'entra_oauth' : 'pat',
+        orgUrl: String(legacy.orgUrl),
+        organization: String(legacy.organization || ''),
+        defaultProject: String(legacy.defaultProject || ''),
+        defaultWorkItemType: String(legacy.defaultWorkItemType || 'Task'),
+        tokenHint: String(legacy.tokenHint || '••••'),
+        connectedAt: String(legacy.connectedAt || ''),
+        lastVerifiedAt: String(legacy.lastVerifiedAt || ''),
+      },
+    ];
+  }
+
+  return [];
+}
+
+/**
+ * Resolves the effective Azure DevOps target for a Klox Project from its explicitly
+ * bound ADO connection (`conn.kloxProjectId === project.id`), with safe fallback for
+ * an unmigrated legacy single connection (`kloxProjectId === ''`).
  */
 export function resolveEffectiveProjectAdoTarget(
   project: Project | undefined,
-  connection: AdoConnectionSummary | null
+  connectionsOrSingle: readonly AdoConnectionSummary[] | AdoConnectionSummary | null | undefined
 ): EffectiveProjectAdoTarget | null {
-  if (!connection?.connected) return null;
-
-  const isUnassigned =
-    !project || project.systemKey === 'unassigned' || project.id === UNASSIGNED_PROJECT_ID;
-  const cfg = project?.adoConfig ?? null;
-
-  const enabled = cfg ? cfg.enabled : !isUnassigned;
-  if (!enabled) {
-    return {
-      enabled: false,
-      orgUrl: connection.orgUrl,
-      organization: connection.organization,
-      project: connection.defaultProject,
-      defaultWorkItemType: connection.defaultWorkItemType || 'Task',
-    };
+  if (!project || project.systemKey === 'unassigned' || project.id === UNASSIGNED_PROJECT_ID) {
+    return null;
   }
 
-  const rawOrg = cfg?.orgUrl?.trim() || connection.orgUrl;
+  const list = Array.isArray(connectionsOrSingle)
+    ? connectionsOrSingle
+    : connectionsOrSingle
+      ? [connectionsOrSingle]
+      : [];
+
+  const connectedList = list.filter((c) => Boolean(c?.connected));
+  if (connectedList.length === 0) return null;
+
+  const bound =
+    connectedList.find((c) => c.kloxProjectId === project.id) ??
+    (connectedList.length === 1 && !connectedList[0]!.kloxProjectId ? connectedList[0] : undefined);
+
+  if (!bound) return null;
+
+  const cfg = project.adoConfig ?? null;
+  const enabled = cfg ? cfg.enabled : true;
+
+  const rawOrg = cfg?.orgUrl?.trim() || bound.orgUrl;
   const norm = normalizeAdoOrgUrl(rawOrg);
-  const orgUrl = norm.valid ? norm.orgUrl : connection.orgUrl;
-  const organization = norm.valid ? norm.organization : connection.organization;
-  const targetProject = cfg?.project?.trim() || connection.defaultProject;
-  const defaultWorkItemType = cfg?.defaultWorkItemType?.trim() || connection.defaultWorkItemType || 'Task';
+  const orgUrl = norm.valid ? norm.orgUrl : bound.orgUrl;
+  const organization = norm.valid ? norm.organization : bound.organization;
+  const targetProject = cfg?.project?.trim() || bound.defaultProject;
+  const defaultWorkItemType = cfg?.defaultWorkItemType?.trim() || bound.defaultWorkItemType || 'Task';
 
   if (!targetProject) return null;
 
   return {
-    enabled: true,
+    connectionId: bound.id,
+    enabled,
     orgUrl,
     organization,
     project: targetProject,
@@ -344,11 +542,13 @@ export function buildAdoSyncCandidates(params: {
   projects: readonly Project[];
   tasks: readonly Task[];
   logs: readonly TimeLog[];
-  connection: AdoConnectionSummary | null;
+  connections?: readonly AdoConnectionSummary[];
+  connection?: AdoConnectionSummary | null;
   filterProjectId?: EntityId;
 }): AdoSyncCandidatesResult {
-  const { projects, tasks, logs, connection, filterProjectId } = params;
-  if (!connection?.connected) {
+  const { projects, tasks, logs, connections, connection, filterProjectId } = params;
+  const activeConnections = connections ?? (connection ? [connection] : []);
+  if (!activeConnections.some((c) => c?.connected)) {
     return {
       readyItems: [],
       unplannedTasks: [],
@@ -371,7 +571,7 @@ export function buildAdoSyncCandidates(params: {
     if (!leafTask) continue;
 
     const project = projectById.get(leafTask.projectId);
-    const target = resolveEffectiveProjectAdoTarget(project, connection);
+    const target = resolveEffectiveProjectAdoTarget(project, activeConnections);
     if (!target || !target.enabled) continue;
 
     const controllingTask = resolveControllingAdoTask(leafTask.id, tasks);
@@ -394,6 +594,7 @@ export function buildAdoSyncCandidates(params: {
       if (!bucket) {
         bucket = {
           key,
+          connectionId: target.connectionId,
           workItemId,
           orgUrl,
           project: adoProject,
@@ -418,7 +619,13 @@ export function buildAdoSyncCandidates(params: {
         bucket.tasks.push(controllingTask);
       }
 
-      bucket.logs.push({ log, unsyncedSeconds: unsynced });
+      bucket.logs.push({
+        log,
+        unsyncedSeconds: unsynced,
+        sourceTaskId: leafTask.id,
+        sourceTaskLabel: formatTaskHierarchyLabel(leafTask, tasks),
+        isRolledUpFromDescendant: leafTask.id !== controllingTask.id,
+      });
       bucket.unsyncedSeconds += unsynced;
       bucket.alreadySyncedSeconds +=
         log.adoSync &&

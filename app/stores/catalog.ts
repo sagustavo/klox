@@ -1,17 +1,25 @@
+import { parseWorkItemIdInput, type AdoSprintWorkItemNode } from '~/domain/ado';
 import { generateRandomId } from '~/domain/ids';
 import { tenantStorageKey } from '~/domain/auth';
 import {
+  MAX_TASK_DEPTH,
   PROJECT_COLOR_PALETTE,
+  TASK_SORT_ORDER_STEP,
   UNASSIGNED_PROJECT_ID,
   buildTaskTree,
+  collectBulkDeleteTaskIds,
   collectDescendantTaskIds,
   compareTasksByPriority,
+  computeTaskReparent,
   computeTaskSiblingReorder,
   createUnassignedProject,
   flattenTaskTree,
+  formatCompactTaskLabel,
   formatTaskHierarchyLabel,
   isValidHexColor,
+  isValidTaskDueDate,
   nextTaskSortOrder,
+  sanitizeTaskTagIds,
   tagsForProject,
   validateProjectTagRename,
   validateTaskParent,
@@ -87,6 +95,12 @@ export const useCatalogStore = defineStore('catalog', () => {
     const task = getTaskById(taskId);
     if (!task) return '';
     return formatTaskHierarchyLabel(task, tasks.value);
+  }
+
+  function getTaskCompactLabel(taskId: EntityId | null | undefined): string {
+    const task = getTaskById(taskId);
+    if (!task) return '';
+    return formatCompactTaskLabel(task, tasks.value);
   }
 
   function persistLocal() {
@@ -534,13 +548,42 @@ export const useCatalogStore = defineStore('catalog', () => {
     tagId: EntityId;
   }): Promise<void> {
     tags.value = tags.value.filter((t) => t.id !== params.tagId);
+
+    const affectedTasks: Task[] = [];
+    tasks.value = tasks.value.map((t) => {
+      if (!t.tagIds?.includes(params.tagId)) return t;
+      const nextTagIds = t.tagIds.filter((id) => id !== params.tagId);
+      const nextTask: Task = { ...t };
+      if (nextTagIds.length > 0) {
+        nextTask.tagIds = nextTagIds;
+      } else {
+        delete nextTask.tagIds;
+      }
+      affectedTasks.push(nextTask);
+      return nextTask;
+    });
+
     persistLocal();
 
     if (!params.isDemo) {
       const fb = await getFirebaseClient();
       if (fb) {
-        const { deleteDoc, doc } = await import('firebase/firestore');
-        await deleteDoc(doc(fb.db, 'users', params.uid, 'tags', params.tagId));
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        const batch = writeBatch(fb.db);
+        batch.delete(doc(fb.db, 'users', params.uid, 'tags', params.tagId));
+        for (const item of affectedTasks.slice(0, BATCH_SIZE - 1)) {
+          batch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+        }
+        await batch.commit();
+        for (let i = BATCH_SIZE - 1; i < affectedTasks.length; i += BATCH_SIZE) {
+          const chunk = affectedTasks.slice(i, i + BATCH_SIZE);
+          const extraBatch = writeBatch(fb.db);
+          for (const item of chunk) {
+            extraBatch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+          }
+          await extraBatch.commit();
+        }
       }
     }
   }
@@ -552,6 +595,8 @@ export const useCatalogStore = defineStore('catalog', () => {
     parentTaskId?: EntityId | null;
     name: string;
     description?: string;
+    tagIds?: readonly EntityId[];
+    dueDate?: string | null;
     targetHours?: number;
     externalWorkItemId?: string;
     externalWorkItemTitle?: string;
@@ -575,6 +620,8 @@ export const useCatalogStore = defineStore('catalog', () => {
     }
 
     const cleanDesc = params.description?.trim().slice(0, 4000);
+    const cleanTagIds = sanitizeTaskTagIds(params.tagIds, params.projectId, tags.value);
+    const cleanDueDate = isValidTaskDueDate(params.dueDate) ? params.dueDate.trim() : undefined;
     const normalizedParentId = params.parentTaskId ?? null;
     const siblings = tasks.value.filter(
       (t) => t.projectId === params.projectId && (t.parentTaskId ?? null) === normalizedParentId
@@ -590,6 +637,8 @@ export const useCatalogStore = defineStore('catalog', () => {
       sortOrder: nextTaskSortOrder(siblings),
       name: trimmed,
       ...(cleanDesc ? { description: cleanDesc } : {}),
+      ...(cleanTagIds.length > 0 ? { tagIds: cleanTagIds } : {}),
+      ...(cleanDueDate ? { dueDate: cleanDueDate } : {}),
       ...(params.targetHours && params.targetHours > 0 ? { targetHours: params.targetHours } : {}),
       ...(hasAdoLink
         ? {
@@ -643,6 +692,9 @@ export const useCatalogStore = defineStore('catalog', () => {
     taskId: EntityId;
     name: string;
     description?: string;
+    tagIds?: readonly EntityId[] | null;
+    dueDate?: string | null;
+    status?: TaskStatus;
     targetHours?: number | null;
     externalWorkItemId?: string | null;
     externalWorkItemTitle?: string | null;
@@ -660,12 +712,32 @@ export const useCatalogStore = defineStore('catalog', () => {
     const updated: Task = {
       ...target,
       name: params.name.trim() || target.name,
+      ...(params.status !== undefined ? { status: params.status } : {}),
     };
 
-    if (cleanDesc) {
-      updated.description = cleanDesc;
-    } else {
-      delete updated.description;
+    if (params.description !== undefined) {
+      if (cleanDesc) {
+        updated.description = cleanDesc;
+      } else {
+        delete updated.description;
+      }
+    }
+
+    if (params.tagIds !== undefined) {
+      const cleanTagIds = sanitizeTaskTagIds(params.tagIds, target.projectId, tags.value);
+      if (cleanTagIds.length > 0) {
+        updated.tagIds = cleanTagIds;
+      } else {
+        delete updated.tagIds;
+      }
+    }
+
+    if (params.dueDate !== undefined) {
+      if (isValidTaskDueDate(params.dueDate)) {
+        updated.dueDate = params.dueDate.trim();
+      } else {
+        delete updated.dueDate;
+      }
     }
 
     if (params.targetHours !== undefined) {
@@ -797,6 +869,230 @@ export const useCatalogStore = defineStore('catalog', () => {
   }
 
   /**
+   * Re-parents a Task (Tab = indent under previous sibling, Shift+Tab = outdent up a level)
+   * while keeping subtree depth <= MAX_TASK_DEPTH (2) and avoiding writing `undefined` fields.
+   */
+  async function reparentTask(params: {
+    uid: string;
+    isDemo: boolean;
+    taskId: EntityId;
+    newParentTaskId: EntityId | null;
+  }): Promise<boolean> {
+    const res = computeTaskReparent({
+      taskId: params.taskId,
+      newParentTaskId: params.newParentTaskId,
+      allTasks: tasks.value,
+    });
+    if (!res.valid || res.updates.length === 0) return false;
+
+    const updateById = new Map(res.updates.map((u) => [u.taskId, u]));
+    const changedTasks: Task[] = [];
+
+    tasks.value = tasks.value.map((t) => {
+      const u = updateById.get(t.id);
+      if (!u) return t;
+      const next: Task = {
+        ...t,
+        depth: u.depth,
+        ...(u.sortOrder !== undefined ? { sortOrder: u.sortOrder } : {}),
+      };
+      if (u.parentTaskId) {
+        next.parentTaskId = u.parentTaskId;
+      } else {
+        delete next.parentTaskId;
+      }
+      changedTasks.push(next);
+      return next;
+    });
+    persistLocal();
+
+    if (!params.isDemo && changedTasks.length > 0) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < changedTasks.length; i += BATCH_SIZE) {
+          const chunk = changedTasks.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const item of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+          }
+          await batch.commit();
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Idempotently imports or refreshes 2-level Azure DevOps Sprint items (`depth 0` -> `depth 1`)
+   * into a bound Klox Project. Defaults new task names to ADO Work Item titles while preserving
+   * custom local renames and existing Level-2 Klox Sub-subtasks.
+   */
+  async function upsertAdoSprintTasksBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    projectId: EntityId;
+    orgUrl: string;
+    adoProject: string;
+    nodes: readonly AdoSprintWorkItemNode[];
+  }): Promise<{ createdCount: number; updatedCount: number }> {
+    if (params.nodes.length === 0) {
+      return { createdCount: 0, updatedCount: 0 };
+    }
+
+    const nowIso = new Date().toISOString();
+    const existingByAdoId = new Map<number, Task>();
+    const kloxIdByAdoId = new Map<number, EntityId>();
+
+    for (const t of tasks.value) {
+      if (t.projectId !== params.projectId || t.externalProvider !== 'azure_devops') continue;
+      const parsedId = parseWorkItemIdInput(t.externalWorkItemId);
+      if (parsedId && !existingByAdoId.has(parsedId)) {
+        existingByAdoId.set(parsedId, t);
+        kloxIdByAdoId.set(parsedId, t.id);
+      }
+    }
+
+    const orderedNodes = [
+      ...params.nodes.filter((n) => n.depth === 0),
+      ...params.nodes.filter((n) => n.depth === 1),
+    ];
+
+    const workingTasks: Task[] = [...tasks.value];
+    const createdTasks: Task[] = [];
+    const updatedById = new Map<EntityId, Task>();
+
+    for (const node of orderedNodes) {
+      const cleanFullTitle = node.title.trim().slice(0, 300) || `#${node.id}`;
+      const cleanTaskName = node.title.trim().slice(0, 200) || `#${node.id}`;
+      const cleanType = node.workItemType.trim().slice(0, 80) || 'Task';
+      const parentKloxId =
+        node.depth === 1 && node.parentId ? (kloxIdByAdoId.get(node.parentId) ?? null) : null;
+      const resolvedDepth: TaskDepth = parentKloxId ? 1 : 0;
+
+      const existing = existingByAdoId.get(node.id);
+      if (!existing) {
+        const siblings = workingTasks.filter(
+          (t) =>
+            t.projectId === params.projectId &&
+            (t.parentTaskId ?? null) === (parentKloxId ?? null)
+        );
+        const created: Task = {
+          id: generateRandomId(),
+          userId: params.uid,
+          projectId: params.projectId,
+          ...(parentKloxId ? { parentTaskId: parentKloxId } : {}),
+          depth: resolvedDepth,
+          sortOrder: nextTaskSortOrder(siblings),
+          name: cleanTaskName,
+          externalProvider: 'azure_devops',
+          externalWorkItemId: String(node.id),
+          externalWorkItemTitle: cleanFullTitle,
+          externalWorkItemType: cleanType,
+          ...(node.url?.trim() ? { externalWorkItemUrl: node.url.trim().slice(0, 512) } : {}),
+          ...(params.orgUrl.trim() ? { externalOrgUrl: params.orgUrl.trim().slice(0, 200) } : {}),
+          ...(params.adoProject.trim()
+            ? { externalProject: params.adoProject.trim().slice(0, 128) }
+            : {}),
+          completedWorkHours: Number.isFinite(node.completedWork)
+            ? Math.max(0, node.completedWork)
+            : 0,
+          externalSyncedAt: nowIso,
+          status: 'todo',
+          createdAt: nowIso,
+        };
+        createdTasks.push(created);
+        workingTasks.push(created);
+        existingByAdoId.set(node.id, created);
+        kloxIdByAdoId.set(node.id, created.id);
+      } else {
+        const current = updatedById.get(existing.id) ?? existing;
+        const wasDefaultName =
+          current.name.trim() === (current.externalWorkItemTitle ?? '').trim().slice(0, 200) ||
+          current.name.trim() === `#${node.id}`;
+
+        const next: Task = {
+          ...current,
+          ...(wasDefaultName ? { name: cleanTaskName } : {}),
+          externalProvider: 'azure_devops',
+          externalWorkItemId: String(node.id),
+          externalWorkItemTitle: cleanFullTitle,
+          externalWorkItemType: cleanType,
+          ...(node.url?.trim() ? { externalWorkItemUrl: node.url.trim().slice(0, 512) } : {}),
+          ...(params.orgUrl.trim() ? { externalOrgUrl: params.orgUrl.trim().slice(0, 200) } : {}),
+          ...(params.adoProject.trim()
+            ? { externalProject: params.adoProject.trim().slice(0, 128) }
+            : {}),
+          completedWorkHours: Number.isFinite(node.completedWork)
+            ? Math.max(0, node.completedWork)
+            : current.completedWorkHours,
+          externalSyncedAt: nowIso,
+        };
+
+        // Attach to fetched parent if existing was unparented and subtree stays within MAX_TASK_DEPTH
+        if (parentKloxId && !current.parentTaskId) {
+          const reparentCheck = computeTaskReparent({
+            taskId: current.id,
+            newParentTaskId: parentKloxId,
+            allTasks: workingTasks,
+          });
+          if (reparentCheck.valid) {
+            next.parentTaskId = parentKloxId;
+            next.depth = 1;
+            const childSet = new Set(collectDescendantTaskIds(current.id, workingTasks));
+            childSet.delete(current.id);
+            for (const cid of childSet) {
+              const childItem = workingTasks.find((w) => w.id === cid);
+              if (childItem) {
+                const shifted: Task = { ...childItem, depth: 2 };
+                updatedById.set(shifted.id, shifted);
+              }
+            }
+          }
+        }
+
+        updatedById.set(next.id, next);
+        kloxIdByAdoId.set(node.id, next.id);
+      }
+    }
+
+    const updatedList = Array.from(updatedById.values());
+    const dirtyTasks = [...createdTasks, ...updatedList];
+    if (dirtyTasks.length === 0) {
+      return { createdCount: 0, updatedCount: 0 };
+    }
+
+    tasks.value = [
+      ...tasks.value.map((t) => updatedById.get(t.id) ?? t),
+      ...createdTasks,
+    ];
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < dirtyTasks.length; i += BATCH_SIZE) {
+          const chunk = dirtyTasks.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const item of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+          }
+          await batch.commit();
+        }
+      }
+    }
+
+    return {
+      createdCount: createdTasks.length,
+      updatedCount: updatedList.length,
+    };
+  }
+
+  /**
    * Batch-updates read-only Azure DevOps Title and CompletedWork snapshots on linked Klox Tasks.
    */
   async function applyTasksAdoSnapshotBatch(params: {
@@ -908,11 +1204,232 @@ export const useCatalogStore = defineStore('catalog', () => {
       const fb = await getFirebaseClient();
       if (fb) {
         const { doc, writeBatch } = await import('firebase/firestore');
-        const batch = writeBatch(fb.db);
-        for (const id of idsToDelete) {
-          batch.delete(doc(fb.db, 'users', params.uid, 'tasks', id));
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < idsToDelete.length; i += BATCH_SIZE) {
+          const chunk = idsToDelete.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const id of chunk) {
+            batch.delete(doc(fb.db, 'users', params.uid, 'tasks', id));
+          }
+          await batch.commit();
         }
-        await batch.commit();
+      }
+    }
+  }
+
+  /**
+   * Multi-select bulk delete across selected Tasks, Subtasks, and Sub-subtasks (including descendants),
+   * deduplicated and committed in 450-op Firestore `writeBatch` chunks.
+   */
+  async function deleteTasksBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    taskIds: readonly EntityId[];
+  }): Promise<number> {
+    const idsToDelete = collectBulkDeleteTaskIds(params.taskIds, tasks.value);
+    if (idsToDelete.length === 0) return 0;
+
+    const deleteSet = new Set(idsToDelete);
+    tasks.value = tasks.value.filter((t) => !deleteSet.has(t.id));
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < idsToDelete.length; i += BATCH_SIZE) {
+          const chunk = idsToDelete.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const id of chunk) {
+            batch.delete(doc(fb.db, 'users', params.uid, 'tasks', id));
+          }
+          await batch.commit();
+        }
+      }
+    }
+
+    return idsToDelete.length;
+  }
+
+  /**
+   * Duplicates one or more selected Tasks/Subtasks (and their descendant subtrees up to depth 2),
+   * placing each cloned root immediately beneath its source sibling with fresh `todo` state.
+   */
+  async function duplicateTaskSubtree(params: {
+    uid: string;
+    isDemo: boolean;
+    sourceTaskIds: readonly EntityId[];
+    targetProjectId?: EntityId;
+    targetParentTaskId?: EntityId | null;
+  }): Promise<Task[]> {
+    const uniqueSourceIds = Array.from(new Set(params.sourceTaskIds)).filter((id) =>
+      tasks.value.some((t) => t.id === id)
+    );
+    if (uniqueSourceIds.length === 0) return [];
+
+    // Filter out any selected IDs that are descendants of another selected root so subtrees aren't cloned twice
+    const selectedSet = new Set(uniqueSourceIds);
+    const byId = new Map(tasks.value.map((t) => [t.id, t]));
+    const rootSources = uniqueSourceIds
+      .filter((id) => {
+        let cur = byId.get(id);
+        const seen = new Set<EntityId>([id]);
+        while (cur?.parentTaskId && !seen.has(cur.parentTaskId)) {
+          seen.add(cur.parentTaskId);
+          if (selectedSet.has(cur.parentTaskId)) return false;
+          cur = byId.get(cur.parentTaskId);
+        }
+        return true;
+      })
+      .map((id) => byId.get(id)!)
+      .sort(compareTasksByPriority);
+
+    const nowIso = new Date().toISOString();
+    const working: Task[] = [...tasks.value];
+    const createdAll: Task[] = [];
+    const createdRoots: Task[] = [];
+
+    const cloneRecursive = (
+      source: Task,
+      destProjectId: EntityId,
+      destParentId: EntityId | null,
+      destDepth: TaskDepth,
+      explicitSortOrder: number,
+      isRootClone: boolean
+    ) => {
+      const cleanTagIds = sanitizeTaskTagIds(source.tagIds, destProjectId, tags.value);
+      const clone: Task = {
+        id: generateRandomId(),
+        userId: params.uid,
+        projectId: destProjectId,
+        ...(destParentId ? { parentTaskId: destParentId } : {}),
+        depth: destDepth,
+        sortOrder: explicitSortOrder,
+        name: source.name,
+        ...(source.description ? { description: source.description } : {}),
+        ...(cleanTagIds.length > 0 ? { tagIds: cleanTagIds } : {}),
+        ...(source.dueDate ? { dueDate: source.dueDate } : {}),
+        ...(source.targetHours && source.targetHours > 0 ? { targetHours: source.targetHours } : {}),
+        completedWorkHours: 0,
+        status: 'todo',
+        createdAt: nowIso,
+      };
+      working.push(clone);
+      createdAll.push(clone);
+      if (isRootClone) {
+        createdRoots.push(clone);
+      }
+
+      if (destDepth < MAX_TASK_DEPTH) {
+        const directChildren = tasks.value
+          .filter((t) => t.parentTaskId === source.id)
+          .sort(compareTasksByPriority);
+        directChildren.forEach((child, idx) => {
+          cloneRecursive(
+            child,
+            destProjectId,
+            clone.id,
+            (destDepth + 1) as TaskDepth,
+            (idx + 1) * TASK_SORT_ORDER_STEP,
+            false
+          );
+        });
+      }
+    };
+
+    for (const source of rootSources) {
+      const destProjectId = params.targetProjectId ?? source.projectId;
+      const destParentId =
+        params.targetParentTaskId !== undefined
+          ? params.targetParentTaskId
+          : source.projectId === destProjectId
+            ? (source.parentTaskId ?? null)
+            : null;
+
+      let destDepth: TaskDepth = 0;
+      if (destParentId) {
+        const p = working.find((t) => t.id === destParentId && t.projectId === destProjectId);
+        if (!p || (p.depth ?? 0) >= MAX_TASK_DEPTH) continue;
+        destDepth = ((p.depth ?? 0) + 1) as TaskDepth;
+      }
+
+      const siblings = working
+        .filter((t) => t.projectId === destProjectId && (t.parentTaskId ?? null) === destParentId)
+        .sort(compareTasksByPriority);
+
+      let sortOrder = nextTaskSortOrder(siblings);
+      const sourceIdx = siblings.findIndex((s) => s.id === source.id);
+      if (sourceIdx >= 0) {
+        const curOrder = siblings[sourceIdx]!.sortOrder;
+        const nextSiblingOrder = siblings[sourceIdx + 1]?.sortOrder;
+        if (typeof curOrder === 'number' && typeof nextSiblingOrder === 'number') {
+          sortOrder = (curOrder + nextSiblingOrder) / 2;
+        } else if (typeof curOrder === 'number') {
+          sortOrder = curOrder + TASK_SORT_ORDER_STEP;
+        }
+      }
+
+      cloneRecursive(source, destProjectId, destParentId, destDepth, sortOrder, true);
+    }
+
+    if (createdAll.length === 0) return [];
+
+    tasks.value = [...tasks.value, ...createdAll];
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < createdAll.length; i += BATCH_SIZE) {
+          const chunk = createdAll.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const item of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+          }
+          await batch.commit();
+        }
+      }
+    }
+
+    return createdRoots;
+  }
+
+  /**
+   * Bulk status transition for multi-selected tasks from context menus.
+   */
+  async function updateTasksStatusBatch(params: {
+    uid: string;
+    isDemo: boolean;
+    taskIds: readonly EntityId[];
+    status: TaskStatus;
+  }): Promise<void> {
+    const idSet = new Set(params.taskIds);
+    const updatedTasks: Task[] = [];
+    tasks.value = tasks.value.map((t) => {
+      if (!idSet.has(t.id) || t.status === params.status) return t;
+      const next: Task = { ...t, status: params.status };
+      updatedTasks.push(next);
+      return next;
+    });
+    if (updatedTasks.length === 0) return;
+    persistLocal();
+
+    if (!params.isDemo) {
+      const fb = await getFirebaseClient();
+      if (fb) {
+        const { doc, writeBatch } = await import('firebase/firestore');
+        const BATCH_SIZE = 450;
+        for (let i = 0; i < updatedTasks.length; i += BATCH_SIZE) {
+          const chunk = updatedTasks.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(fb.db);
+          for (const item of chunk) {
+            batch.set(doc(fb.db, 'users', params.uid, 'tasks', item.id), item);
+          }
+          await batch.commit();
+        }
       }
     }
   }
@@ -1131,6 +1648,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     tasks,
     sortedProjects,
     loading,
+    loadedUid,
     hydrate,
     reset,
     getProjectById,
@@ -1141,6 +1659,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     getTaskTreeForProject,
     getFlattenedTasksForProject,
     getTaskHierarchicalLabel,
+    getTaskCompactLabel,
     createProject,
     createProjectsBatch,
     updateProject,
@@ -1153,9 +1672,14 @@ export const useCatalogStore = defineStore('catalog', () => {
     createTasksBatch,
     updateTask,
     updateTaskStatus,
+    updateTasksStatusBatch,
+    duplicateTaskSubtree,
+    reparentTask,
     reorderTaskSiblings,
+    upsertAdoSprintTasksBatch,
     applyTasksAdoSnapshotBatch,
     deleteTask,
+    deleteTasksBatch,
     fetchAllRemoteCatalog,
     wipeAllData,
   };
