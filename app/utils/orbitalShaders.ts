@@ -121,8 +121,11 @@ void main() {
   vec3 halfVec = normalize(moonDir + v);
   float oceanSpec = pow(max(dot(n, halfVec), 0.0), 68.0) * (1.0 - landMask);
 
-  vec3 surface = mix(uOceanBase, uLandBase * (0.85 + ridgeDetail * 0.35), landMask);
-  surface += uRimPrimary * oceanSpec * (uIsDark > 0.5 ? 0.14 : 0.10);
+  vec3 surface = mix(uOceanBase, uLandBase * (0.80 + ridgeDetail * 0.55), landMask);
+  surface += uRimPrimary * oceanSpec * (uIsDark > 0.5 ? 0.28 : 0.10);
+  if (uIsDark > 0.5) {
+    surface += uRimPrimary * pow(max(1.0 - ndotv, 0.0), 4.5) * 0.14;
+  }
 
   // Overhead cloud shadow mask for authentic light diffusion / occlusion
   float cloudShade = smoothstep(0.54, 0.78, fbm4(p * 24.0 + vec3(uTime * 0.0018, 0.0, -uTime * 0.0014)));
@@ -130,7 +133,7 @@ void main() {
   if (uIsDark > 0.5) {
     // Multi-tier ISS city lights: coastal density + regional basins + highway webs + pinpoint hubs
     float coastBelt = smoothstep(0.48, 0.53, elevation) * smoothstep(0.70, 0.53, elevation);
-    float regionPop = smoothstep(0.50, 0.74, fbm4(p * 38.0 + vec3(2.3, 8.1, 4.9)));
+    float regionPop = smoothstep(0.44, 0.72, fbm4(p * 38.0 + vec3(2.3, 8.1, 4.9)));
     float popMask = clamp(coastBelt * 1.3 + landMask * 0.45, 0.0, 1.0) * regionPop;
 
     // Ridged filamentary highway arteries linking metropolitan hubs
@@ -150,10 +153,10 @@ void main() {
     );
 
     // Cloud occlusion dims lights softly; grazing atmospheric haze softens near horizon edge
-    lightEnergy *= (1.0 - cloudShade * 0.62) * smoothstep(0.03, 0.16, ndotv);
+    lightEnergy *= (1.0 - cloudShade * 0.45) * smoothstep(0.02, 0.14, ndotv);
 
     vec3 cityColor = mix(uCityGlow, uCityCore, smoothstep(0.18, 0.85, lightEnergy));
-    surface += cityColor * lightEnergy * 1.65;
+    surface += cityColor * lightEnergy * 2.15;
   } else {
     // Inverted Light Mode: clean architectural blueprint coastline & subtle cobalt metro hubs
     float regionPop = smoothstep(0.56, 0.76, vnoise3(p * 42.0));
@@ -162,16 +165,16 @@ void main() {
     surface = mix(surface, uCityCore, clamp(nodes * 1.4, 0.0, 0.65) * smoothstep(0.04, 0.18, ndotv));
   }
 
-  // Asymmetric knife-sharp inner atmospheric limb matching klox-orbit.jpg rolloff
+  // Rich blue inner atmospheric limb transition matching klox-orbit.jpg
   float upperMask = smoothstep(-0.14, 0.76, n.y);
   float shimmer = 0.94 + 0.06 * sin(n.x * 6.0 + uTime * 0.28);
 
-  float broadScatter = pow(max(1.0 - ndotv, 0.0), 22.0) * upperMask * shimmer;
-  float crispLimb = pow(max(1.0 - ndotv, 0.0), 64.0) * upperMask * shimmer;
+  float broadScatter = pow(max(1.0 - ndotv, 0.0), 12.5) * upperMask * shimmer;
+  float crispLimb = pow(max(1.0 - ndotv, 0.0), 38.0) * upperMask * shimmer;
 
   vec3 limbColor = mix(uRimPrimary, uRimCore, clamp(crispLimb * 1.45, 0.0, 1.0));
-  surface = mix(surface, uRimPrimary * 0.38 + surface * 0.62, clamp(broadScatter * 0.45, 0.0, 0.55));
-  surface += limbColor * (broadScatter * 0.48 + crispLimb * 1.25) * uRimIntensity;
+  surface = mix(surface, uRimPrimary * 0.46 + surface * 0.54, clamp(broadScatter * 0.58, 0.0, 0.68));
+  surface += limbColor * (broadScatter * 0.62 + crispLimb * 1.32) * uRimIntensity;
 
   gl_FragColor = vec4(surface, 1.0);
 }
@@ -220,15 +223,15 @@ void main() {
     fbm4(flowPos * 1.2 + vec3(8.3, 5.4, 2.9))
   );
   float clouds = fbm6(flowPos * 1.75 + swirl * 0.95);
-  float cloudMask = smoothstep(0.515, 0.77, clouds);
+  float cloudMask = smoothstep(0.49, 0.75, clouds);
 
-  // Moonlit silver-grey across disc, slight cool blue scatter only near grazing limb
-  float limbEdge = pow(max(1.0 - ndotv, 0.0), 10.0);
+  // Moonlit silver-grey across disc, slight cool blue scatter near grazing limb
+  float limbEdge = pow(max(1.0 - ndotv, 0.0), 6.5);
   float horizonMask = smoothstep(-0.1, 0.72, n.y);
   vec3 color = mix(uCloudColor, uRimPrimary * 0.75 + uCloudColor * 0.25, limbEdge * (uIsDark > 0.5 ? 0.52 : 0.22));
-  float alpha = cloudMask * mix(0.14, 0.48, limbEdge) * horizonMask * (uIsDark > 0.5 ? 0.30 : 0.48) * smoothstep(0.02, 0.10, ndotv);
+  float alpha = cloudMask * mix(0.22, 0.62, limbEdge) * horizonMask * (uIsDark > 0.5 ? 0.48 : 0.50) * smoothstep(0.015, 0.09, ndotv);
 
-  gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.52));
+  gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.58));
 }
 `;
 
@@ -260,18 +263,18 @@ void main() {
   vec3 n = normalize(vWorldNormal);
   vec3 v = normalize(vViewDir);
 
-  // For R_earth=120.0 and R_atmo=120.60, tangent grazing dot(-n, v) at the Earth limb is ~0.100.
+  // For R_earth=120.0 and R_atmo=121.25, tangent grazing dot(-n, v) at the Earth limb is ~0.143.
   float backDot = clamp(dot(-n, v), 0.0, 1.0);
-  float t = clamp(backDot / 0.100, 0.0, 1.0);
+  float t = clamp(backDot / 0.143, 0.0, 1.0);
 
-  float core = pow(t, 7.0);
-  float rayleigh = pow(t, 2.3);
+  float core = pow(t, 6.2);
+  float rayleigh = pow(t, 1.85);
   float upperMask = smoothstep(-0.12, 0.72, n.y);
   float shimmer = 0.95 + 0.05 * sin(n.x * 6.0 + uTime * 0.32);
 
-  float strength = (rayleigh * 0.60 + core * 1.18) * upperMask * shimmer * uRimIntensity * (uIsDark > 0.5 ? 1.12 : 0.58);
+  float strength = (rayleigh * 0.78 + core * 1.22) * upperMask * shimmer * uRimIntensity * (uIsDark > 0.5 ? 1.24 : 0.58);
   vec3 color = mix(uAtmoHalo, uRimCore, clamp(core * 1.15, 0.0, 1.0));
-  float alpha = clamp(strength, 0.0, uIsDark > 0.5 ? 0.86 : 0.42);
+  float alpha = clamp(strength, 0.0, uIsDark > 0.5 ? 0.92 : 0.44);
 
   gl_FragColor = vec4(color, alpha);
 }

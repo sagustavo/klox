@@ -64,7 +64,7 @@ const MOBILE_FRAME_INTERVAL_MS = 1000 / 30; // Hard-capped 30 FPS mobile power b
 const REFERENCE_ORBIT_ASPECT = 1920 / 1088;
 const EARTH_RADIUS = 120.0;
 const CLOUDS_RADIUS = 120.12;
-const ATMO_RADIUS = 120.6;
+const ATMO_RADIUS = 120.8;
 const CAP_THETA_LENGTH = Math.PI * 0.38;
 
 function applyCoverCameraOffset(cam: PerspectiveCamera, width: number, height: number) {

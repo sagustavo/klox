@@ -25,15 +25,15 @@ export interface OrbitalThemePalette {
 const DARK_PALETTE: OrbitalThemePalette = {
   isDark: true,
   spaceBg: [0.0, 0.0, 0.0], // Pure obsidian deep space
-  oceanBase: [0.002, 0.005, 0.014], // Photographic nocturnal ocean
-  landBase: [0.010, 0.016, 0.028], // Subtle dark nocturnal continent
-  planetBase: [0.002, 0.005, 0.014],
+  oceanBase: [0.012, 0.022, 0.044], // Authentic moonlit nocturnal ocean
+  landBase: [0.036, 0.046, 0.068], // Visible nocturnal continental terrain & ridges
+  planetBase: [0.012, 0.022, 0.044],
   cityCore: [1.0, 0.910, 0.680], // #FFE8AD incandescent megacity core
   cityGlow: [0.980, 0.480, 0.120], // #FA7A1F sodium-amber urban sprawl
-  cloudColor: [0.210, 0.270, 0.370], // Muted moonlit grey-silver clouds
-  rimPrimary: [0.160, 0.480, 1.0], // #297AFF Rayleigh cobalt scatter
-  rimCore: [0.840, 0.945, 1.0], // Photographic #D6F1FF Karman-line rim matching klox-orbit.jpg
-  atmoHalo: [0.140, 0.450, 0.980], // Outer Rayleigh atmospheric scatter
+  cloudColor: [0.340, 0.410, 0.520], // Visible moonlit silver-blue cloud sheets
+  rimPrimary: [0.160, 0.500, 1.0], // #2980FF Rayleigh cobalt scatter
+  rimCore: [0.850, 0.950, 1.0], // Photographic #D9F2FF Karman-line rim matching klox-orbit.jpg
+  atmoHalo: [0.140, 0.480, 1.0], // Richer outer Rayleigh atmospheric scatter
   arcColor: [0.420, 0.720, 1.0],
   craftBody: [0.160, 0.190, 0.250], // Dark metallic aerospace alloy
   craftPlume: [0.420, 0.740, 1.0],
@@ -41,7 +41,7 @@ const DARK_PALETTE: OrbitalThemePalette = {
   asteroidRim: [0.220, 0.520, 0.960], // Subtle blue Earthshine catchlight
   starColor: [0.930, 0.960, 1.0],
   starOpacity: 0.95,
-  rimIntensity: 1.22,
+  rimIntensity: 1.32,
 };
 
 const LIGHT_PALETTE: OrbitalThemePalette = {
