@@ -669,8 +669,19 @@ const syncCandidates = computed(() =>
     tasks: catalogStore.tasks,
     logs: timeLogsStore.logs,
     connections: adoStore.connections,
+    allowParentTaskTracking: Boolean(
+      prefsStore.preferences.taskTrackingPolicy?.allowParentTaskTracking
+    ),
     workItemTypesByConn: adoStore.workItemTypesByConn,
   })
+);
+
+const totalPendingAdoHours = computed(() =>
+  Math.round(
+    (syncCandidates.value.totalRecommendedHours +
+      syncCandidates.value.totalSuggestedChildHours) *
+      100
+  ) / 100
 );
 
 const unsyncedHoursByProject = computed(() => {
@@ -678,6 +689,10 @@ const unsyncedHoursByProject = computed(() => {
   for (const item of syncCandidates.value.readyItems) {
     const projId = item.primaryTask.projectId;
     map.set(projId, (map.get(projId) ?? 0) + item.recommendedDeltaHours);
+  }
+  for (const suggested of syncCandidates.value.suggestedChildTasks) {
+    const projId = suggested.parentTask.projectId;
+    map.set(projId, (map.get(projId) ?? 0) + suggested.recommendedHours);
   }
   return map;
 });
@@ -688,6 +703,12 @@ const unsyncedHoursByTask = computed(() => {
     for (const t of item.tasks) {
       map.set(t.id, (map.get(t.id) ?? 0) + item.recommendedDeltaHours);
     }
+  }
+  for (const suggested of syncCandidates.value.suggestedChildTasks) {
+    map.set(
+      suggested.parentTask.id,
+      (map.get(suggested.parentTask.id) ?? 0) + suggested.recommendedHours
+    );
   }
   return map;
 });
@@ -1482,10 +1503,10 @@ async function confirmDeleteAction() {
             <GitBranch class="h-4 w-4" aria-hidden="true" />
             <span>{{ $t('tasks.syncAdoButton') }}</span>
             <span
-              v-if="syncCandidates.totalRecommendedHours > 0"
+              v-if="totalPendingAdoHours > 0"
               class="tabular-telemetry border border-white/30 bg-white/15 px-1.5 py-0.5 text-xs"
             >
-              +{{ syncCandidates.totalRecommendedHours.toFixed(2) }}h
+              +{{ totalPendingAdoHours.toFixed(2) }}h
             </span>
           </button>
 

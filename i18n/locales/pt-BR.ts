@@ -365,7 +365,7 @@ const ptBR: LocaleMessages = {
         'Quando ativado, você pode rastrear tempo internamente no Klox em User Stories, PBIs, Epics ou Features, embora suas horas não possam ser enviadas ao Azure DevOps.',
       allowParentTrackingTitle: 'Permitir cronometrar tarefas pai que possuem subtarefas',
       allowParentTrackingDesc:
-        'Quando desativado (padrão), tarefas pai somam o Trabalho Concluído de seus filhos e o tempo deve ser registrado nas subtarefas finais.',
+        'Quando desativado (padrão), tarefas pai somam o Trabalho Concluído de seus filhos e o tempo deve ser registrado nas subtarefas finais. Quando ativado, horas registradas direto no pai sugerem criar uma nova Task filha no Azure DevOps ao revisar o envio.',
     },
   },
   app: {
@@ -1249,6 +1249,14 @@ const ptBR: LocaleMessages = {
       parentGroupBadge: 'PAI',
       toggleParentGroupAria: 'Alternar seleção das tarefas filhas de {title}',
       childItemsCount: '{count} item(ns) filho(s)',
+      suggestedChildBadge: 'NOVA TASK FILHA',
+      suggestedChildOfParent: '↳ Sugerida como filha do item pai #{id} pelas horas registradas diretamente no pai',
+      suggestedTitleLabel: 'Título da nova Task no Azure DevOps',
+      suggestedTitlePlaceholder: 'Digite o título da tarefa filha…',
+      suggestedTypeLabel: 'Tipo de Work Item',
+      createChildNowButton: 'Criar e Enviar Task',
+      creatingChild: 'Criando Task…',
+      suggestedChildTitleRequired: 'Informe um título para a nova Task filha no Azure DevOps.',
       readySection: 'WORK ITEMS VINCULADOS PRONTOS PARA ENVIO ({count})',
       emptyReady:
         'Todas as tarefas vinculadas ao Azure DevOps estão em dia, sem horas pendentes.',

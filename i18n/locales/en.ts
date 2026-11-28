@@ -362,7 +362,7 @@ const en = {
         'When enabled, you can track time internally in Klox on User Stories, PBIs, Epics, or Features even though their hours cannot be pushed to Azure DevOps.',
       allowParentTrackingTitle: 'Allow timing parent tasks directly when they have subtasks',
       allowParentTrackingDesc:
-        'When disabled (default), tasks with subtasks roll up Completed Work from their children and must be tracked on leaf subtasks.',
+        'When disabled (default), tasks with subtasks roll up Completed Work from their children and must be tracked on leaf subtasks. When enabled, direct parent hours will suggest creating a new child Task on Azure DevOps during Sync Review.',
     },
   },
   app: {
@@ -1242,6 +1242,14 @@ const en = {
       parentGroupBadge: 'PARENT',
       toggleParentGroupAria: 'Toggle selection for child tasks under {title}',
       childItemsCount: '{count} child item(s)',
+      suggestedChildBadge: 'NEW CHILD TASK',
+      suggestedChildOfParent: '↳ Suggested child under parent #{id} from direct parent tracking',
+      suggestedTitleLabel: 'New Azure DevOps Task Title',
+      suggestedTitlePlaceholder: 'Enter child task title…',
+      suggestedTypeLabel: 'Work Item Type',
+      createChildNowButton: 'Create & Push Task',
+      creatingChild: 'Creating Task…',
+      suggestedChildTitleRequired: 'Enter a title for this new Azure DevOps child task.',
       readySection: 'LINKED WORK ITEMS READY TO SYNC ({count})',
       emptyReady:
         'All linked Azure DevOps tasks are up to date with zero unsynced hours.',

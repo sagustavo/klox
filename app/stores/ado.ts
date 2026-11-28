@@ -1260,6 +1260,160 @@ export const useAdoStore = defineStore('ado', () => {
     };
   }
 
+  /**
+   * Creates a new child ADO Work Item under `parentWorkItemId`, persists a mirrored
+   * child `Task` under `parentTaskId` in Klox, and reassigns + marks the parent's tracked
+   * activities as synced against the new child Work Item.
+   */
+  async function createChildWorkItemForParentLogs(params: {
+    uid: string;
+    isDemo: boolean;
+    connectionId?: string;
+    parentTaskId: EntityId;
+    parentWorkItemId: number;
+    orgUrl?: string;
+    project?: string;
+    workItemType: string;
+    title: string;
+    initialCompletedWork: number;
+    logIds: readonly EntityId[];
+  }): Promise<{
+    ok: boolean;
+    item?: AdoWorkItemSummary & { orgUrl: string; project: string };
+    errorCode?: AdoErrorCode;
+  }> {
+    const catalogStore = useCatalogStore();
+    const timeLogsStore = useTimeLogsStore();
+    const parentTask = catalogStore.getTaskById(params.parentTaskId);
+    if (!parentTask) return { ok: false, errorCode: 'ADO_NOT_FOUND' };
+
+    const cleanTitle = params.title.trim();
+    if (!cleanTitle) return { ok: false, errorCode: 'ADO_INVALID_INPUT' };
+
+    const activeConn =
+      getConnectionById(params.connectionId) ??
+      getConnectionForProject(parentTask.projectId) ??
+      connection.value;
+    if (!activeConn?.connected) {
+      return { ok: false, errorCode: 'ADO_NOT_CONNECTED' };
+    }
+
+    const targetOrg = params.orgUrl?.trim() || activeConn.orgUrl;
+    const targetProject = params.project?.trim() || activeConn.defaultProject;
+    const nowIso = new Date().toISOString();
+
+    let createdItem: AdoWorkItemSummary;
+
+    if (params.isDemo) {
+      const maxId = demoWorkItems.value.reduce((m, w) => Math.max(m, w.id), 100);
+      const nextId = maxId + 1;
+      const demoCaps =
+        workItemTypesByConn.value[activeConn.id] ??
+        demoTypesForField(activeConn.completedWorkFieldRef);
+      const matchedCap = demoCaps.find(
+        (wt) => wt.name.toLowerCase() === params.workItemType.toLowerCase()
+      );
+      const supportsCompletedWork = matchedCap
+        ? matchedCap.supportsCompletedWork
+        : params.workItemType.toLowerCase() !== 'product backlog item' &&
+          params.workItemType.toLowerCase() !== 'user story';
+      createdItem = {
+        id: nextId,
+        title: cleanTitle,
+        workItemType: params.workItemType,
+        completedWork:
+          supportsCompletedWork && params.initialCompletedWork > 0
+            ? roundHours2(params.initialCompletedWork)
+            : 0,
+        url: buildAdoWorkItemWebUrl(targetOrg, targetProject, nextId),
+        supportsCompletedWork,
+      };
+      demoWorkItems.value = [createdItem, ...demoWorkItems.value];
+      persistDemoState(params.uid);
+    } else {
+      try {
+        const res = await fetchAuthedApi<{
+          orgUrl: string;
+          project: string;
+          item: AdoWorkItemSummary;
+        }>('/api/integrations/ado/work-items', {
+          method: 'POST',
+          body: {
+            connectionId: activeConn.id,
+            orgUrl: targetOrg,
+            project: targetProject,
+            workItemType: params.workItemType,
+            title: cleanTitle,
+            initialCompletedWork: params.initialCompletedWork,
+            parentWorkItemId: params.parentWorkItemId,
+          },
+        });
+        createdItem = res.item;
+      } catch (err) {
+        return { ok: false, errorCode: extractApiErrorCode(err) };
+      }
+    }
+
+    const targetParentTaskId =
+      (parentTask.depth ?? 0) < 2 ? parentTask.id : (parentTask.parentTaskId ?? null);
+
+    const createdKloxTask = await catalogStore.createTask({
+      uid: params.uid,
+      isDemo: params.isDemo,
+      projectId: parentTask.projectId,
+      parentTaskId: targetParentTaskId,
+      name: createdItem.title,
+      externalWorkItemId: String(createdItem.id),
+      externalWorkItemTitle: createdItem.title,
+      externalWorkItemType: createdItem.workItemType,
+      externalWorkItemUrl: createdItem.url,
+      externalOrgUrl: targetOrg,
+      externalProject: targetProject,
+      externalSupportsCompletedWork: createdItem.supportsCompletedWork,
+      completedWorkHours: createdItem.completedWork,
+      externalSyncedAt: nowIso,
+    });
+
+    if (params.logIds.length > 0 && createdItem.supportsCompletedWork) {
+      const logSet = new Set(params.logIds);
+      const syncMarks = timeLogsStore.logs
+        .filter((l) => logSet.has(l.id))
+        .map((l) => ({
+          logId: l.id,
+          reassignTaskId: createdKloxTask.id,
+          reassignTaskNameSnapshot: createdKloxTask.name,
+          adoSync: {
+            workItemId: createdItem.id,
+            orgUrl: targetOrg,
+            project: targetProject,
+            syncedSeconds: l.durationSeconds,
+            syncedAt: nowIso,
+          } satisfies TimeLogAdoSync,
+        }));
+      await timeLogsStore.markLogsAdoSyncedBatch({
+        uid: params.uid,
+        isDemo: params.isDemo,
+        items: syncMarks,
+      });
+    }
+
+    publishDomainEvent({
+      type: 'AdoWorkItemLinked',
+      at: nowIso,
+      workItemId: createdItem.id,
+      createdNew: true,
+    });
+
+    return {
+      ok: true,
+      item: {
+        ...createdItem,
+        orgUrl: targetOrg,
+        project: targetProject,
+      },
+    };
+  }
+
   async function pushApprovedHours(params: {
     uid: string;
     isDemo: boolean;
@@ -1459,6 +1613,7 @@ export const useAdoStore = defineStore('ado', () => {
     searchWorkItems,
     pullWorkItems,
     createWorkItemForTask,
+    createChildWorkItemForParentLogs,
     pushApprovedHours,
   };
 });

@@ -586,6 +586,7 @@ export async function createAdoWorkItem(params: {
   title: string;
   initialCompletedWork?: number;
   completedWorkFieldRef?: string;
+  parentWorkItemId?: number;
 }): Promise<AdoWorkItemSummary> {
   const norm = normalizeAdoOrgUrl(params.orgUrl);
   if (!norm.valid) throw createAdoError(400, 'ADO_INVALID_ORG_URL');
@@ -606,9 +607,11 @@ export async function createAdoWorkItem(params: {
   const typeMeta = types.find((t) => t.name.toLowerCase() === cleanType.toLowerCase());
   const supportsCompletedWork = typeMeta?.supportsCompletedWork ?? false;
 
-  const patchOps: Array<{ op: 'add'; path: string; value: string | number }> = [
-    { op: 'add', path: '/fields/System.Title', value: cleanTitle },
-  ];
+  const patchOps: Array<{
+    op: 'add';
+    path: string;
+    value: string | number | Record<string, unknown>;
+  }> = [{ op: 'add', path: '/fields/System.Title', value: cleanTitle }];
 
   const cleanHours = roundHours2(params.initialCompletedWork ?? 0);
   if (cleanHours > 0 && supportsCompletedWork) {
@@ -616,6 +619,46 @@ export async function createAdoWorkItem(params: {
       op: 'add',
       path: `/fields/${fieldRef}`,
       value: cleanHours,
+    });
+  }
+
+  const parentId = Number(params.parentWorkItemId);
+  if (Number.isInteger(parentId) && parentId > 0) {
+    try {
+      const parentUrl = `${norm.orgUrl}/${encodeURIComponent(params.project)}/_apis/wit/workitems/${parentId}?fields=System.IterationPath,System.AreaPath&api-version=${ADO_API_VERSION}`;
+      const parentItem = await adoFetchJson<RawAdoWorkItem>(
+        parentUrl,
+        params.pat,
+        undefined,
+        fieldRef
+      );
+      const iterationPath = parentItem.fields?.['System.IterationPath'];
+      const areaPath = parentItem.fields?.['System.AreaPath'];
+      if (typeof iterationPath === 'string' && iterationPath.trim()) {
+        patchOps.push({
+          op: 'add',
+          path: '/fields/System.IterationPath',
+          value: iterationPath.trim(),
+        });
+      }
+      if (typeof areaPath === 'string' && areaPath.trim()) {
+        patchOps.push({
+          op: 'add',
+          path: '/fields/System.AreaPath',
+          value: areaPath.trim(),
+        });
+      }
+    } catch {
+      // Best-effort Sprint/Area inheritance; parent link below still succeeds cleanly.
+    }
+
+    patchOps.push({
+      op: 'add',
+      path: '/relations/-',
+      value: {
+        rel: 'System.LinkTypes.Hierarchy-Reverse',
+        url: `${norm.orgUrl}/${encodeURIComponent(params.project)}/_apis/wit/workitems/${parentId}`,
+      },
     });
   }
 

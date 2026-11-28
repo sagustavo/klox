@@ -579,17 +579,29 @@ export const useTimeLogsStore = defineStore('timeLogs', () => {
   async function markLogsAdoSyncedBatch(params: {
     uid: string;
     isDemo: boolean;
-    items: ReadonlyArray<{ logId: EntityId; adoSync: TimeLogAdoSync }>;
+    items: ReadonlyArray<{
+      logId: EntityId;
+      adoSync: TimeLogAdoSync;
+      reassignTaskId?: EntityId;
+      reassignTaskNameSnapshot?: string;
+    }>;
   }): Promise<void> {
     if (params.items.length === 0) return;
 
-    const syncByLogId = new Map(params.items.map((item) => [item.logId, item.adoSync]));
+    const syncByLogId = new Map(params.items.map((item) => [item.logId, item]));
     const updatedList: TimeLog[] = [];
 
     logs.value = logs.value.map((l) => {
       const syncMeta = syncByLogId.get(l.id);
       if (!syncMeta) return l;
-      const updated: TimeLog = { ...l, adoSync: syncMeta };
+      const updated: TimeLog = {
+        ...l,
+        ...(syncMeta.reassignTaskId ? { taskId: syncMeta.reassignTaskId } : {}),
+        ...(syncMeta.reassignTaskNameSnapshot
+          ? { taskNameSnapshot: syncMeta.reassignTaskNameSnapshot }
+          : {}),
+        adoSync: syncMeta.adoSync,
+      };
       updatedList.push(updated);
       return updated;
     });

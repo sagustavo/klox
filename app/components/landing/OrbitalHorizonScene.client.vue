@@ -61,6 +61,26 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 
 const isMobileQuality = computed(() => props.quality === 'mobile');
 const MOBILE_FRAME_INTERVAL_MS = 1000 / 30; // Hard-capped 30 FPS mobile power budget
+const REFERENCE_ORBIT_ASPECT = 1920 / 1088;
+const EARTH_RADIUS = 120.0;
+const CLOUDS_RADIUS = 120.12;
+const ATMO_RADIUS = 120.6;
+const CAP_THETA_LENGTH = Math.PI * 0.38;
+
+function applyCoverCameraOffset(cam: PerspectiveCamera, width: number, height: number) {
+  const aspect = width / height;
+  cam.aspect = REFERENCE_ORBIT_ASPECT;
+  if (aspect >= REFERENCE_ORBIT_ASPECT) {
+    const fullW = width;
+    const fullH = width / REFERENCE_ORBIT_ASPECT;
+    cam.setViewOffset(fullW, fullH, 0, fullH - height, width, height);
+  } else {
+    const fullH = height;
+    const fullW = height * REFERENCE_ORBIT_ASPECT;
+    cam.setViewOffset(fullW, fullH, (fullW - width) * 0.5, 0, width, height);
+  }
+  cam.updateProjectionMatrix();
+}
 
 interface SatelliteRig {
   holder: Group;
@@ -363,10 +383,10 @@ function renderFrame(dtSeconds: number) {
   if (plumeMaterial) plumeMaterial.uniforms.uTime!.value = elapsedTime;
 
   if (earthMesh) {
-    earthMesh.rotation.y += dtSeconds * 0.008;
+    earthMesh.rotation.y += dtSeconds * 0.0032;
   }
   if (cloudsMesh) {
-    cloudsMesh.rotation.y += dtSeconds * 0.011;
+    cloudsMesh.rotation.y += dtSeconds * 0.0046;
   }
 
   // Update sleek distant orbital rocketship
@@ -383,7 +403,7 @@ function renderFrame(dtSeconds: number) {
   // Update 2 pinpoint sunlit satellites gliding above Earth's upper horizon
   for (const sat of satellites) {
     const cycle = (sat.phase + elapsedTime * sat.speed) % 1;
-    const theta = 1.28 + cycle * 0.58; // Sweeps smoothly across visible upper horizon arc
+    const theta = 1.44 + cycle * 0.26; // Sweeps smoothly across visible upper horizon arc
     const x = Math.cos(theta) * sat.radius;
     const y = Math.sin(theta) * sat.radius;
     sat.craft.position.set(x, y, 0);
@@ -445,7 +465,7 @@ function renderFrame(dtSeconds: number) {
   } else {
     camera.position.set(baseCameraPos.x, baseCameraPos.y, baseCameraPos.z);
   }
-  camera.lookAt(0, 0.05, -2.0);
+  camera.lookAt(0, -0.35, -2.0);
 
   renderer.render(scene, camera);
 
@@ -519,8 +539,7 @@ function handleResize(force = false) {
   if (starsMaterial) {
     starsMaterial.uniforms.uPixelRatio!.value = dpr;
   }
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
+  applyCoverCameraOffset(camera, width, height);
   renderFrame(0);
 }
 
@@ -571,19 +590,20 @@ function initScene() {
   renderer.setSize(width, height, false);
 
   scene = new Scene();
-  camera = new PerspectiveCamera(40, width / height, 0.1, 200);
+  camera = new PerspectiveCamera(40, REFERENCE_ORBIT_ASPECT, 0.1, 300);
   camera.position.set(baseCameraPos.x, baseCameraPos.y, baseCameraPos.z);
-  camera.lookAt(0, 0.05, -2.0);
+  camera.lookAt(0, -0.35, -2.0);
+  applyCoverCameraOffset(camera, width, height);
 
-  // Layer 1 & 2: True Low-Earth-Orbit Horizon (R=42.0, Karman-line R_atmo=42.65)
+  // Layer 1 & 2: True Low-Earth-Orbit Horizon (R=120.0, Karman-line R_atmo=120.60)
   const earthGroup = new Group();
-  earthGroup.position.set(0, -45.55, -4.5);
+  earthGroup.position.set(2.0, -123.44, -4.5);
   scene.add(earthGroup);
 
-  const earthSegW = mobile ? 72 : 160;
-  const earthSegH = mobile ? 48 : 120;
+  const earthSegW = mobile ? 72 : 144;
+  const earthSegH = mobile ? 40 : 72;
   const shellSegW = mobile ? 64 : 112;
-  const shellSegH = mobile ? 40 : 80;
+  const shellSegH = mobile ? 32 : 56;
 
   earthMaterial = new ShaderMaterial({
     vertexShader: ORBITAL_EARTH_VERT,
@@ -601,7 +621,10 @@ function initScene() {
       uRimIntensity: { value: palette.rimIntensity },
     },
   });
-  earthMesh = new Mesh(new SphereGeometry(42.0, earthSegW, earthSegH), earthMaterial);
+  earthMesh = new Mesh(
+    new SphereGeometry(EARTH_RADIUS, earthSegW, earthSegH, 0, Math.PI * 2, 0, CAP_THETA_LENGTH),
+    earthMaterial
+  );
   earthMesh.rotation.z = 0.16;
   earthGroup.add(earthMesh);
 
@@ -617,7 +640,10 @@ function initScene() {
       uRimPrimary: { value: toThreeColor(palette.rimPrimary) },
     },
   });
-  cloudsMesh = new Mesh(new SphereGeometry(42.1, shellSegW, shellSegH), cloudsMaterial);
+  cloudsMesh = new Mesh(
+    new SphereGeometry(CLOUDS_RADIUS, shellSegW, shellSegH, 0, Math.PI * 2, 0, CAP_THETA_LENGTH),
+    cloudsMaterial
+  );
   cloudsMesh.rotation.z = 0.12;
   earthGroup.add(cloudsMesh);
 
@@ -636,7 +662,10 @@ function initScene() {
       uRimIntensity: { value: palette.rimIntensity },
     },
   });
-  atmoMesh = new Mesh(new SphereGeometry(42.65, shellSegW, shellSegH), atmoMaterial);
+  atmoMesh = new Mesh(
+    new SphereGeometry(ATMO_RADIUS, shellSegW, shellSegH, 0, Math.PI * 2, 0, CAP_THETA_LENGTH),
+    atmoMaterial
+  );
   earthGroup.add(atmoMesh);
 
   // Layer 3: Interactive Spectral Starfield + Periodic Shooting Stars
@@ -716,8 +745,8 @@ function initScene() {
   scene.add(rocketGroup);
 
   const satConfigs = [
-    { radius: 42.9, tiltX: -0.04, tiltY: 0.06, speed: 0.028, phase: 0.15, span: 0.045 },
-    { radius: 43.3, tiltX: 0.05, tiltY: -0.05, speed: 0.021, phase: 0.62, span: 0.038 },
+    { radius: 121.1, tiltX: -0.012, tiltY: 0.025, speed: 0.028, phase: 0.15, span: 0.018 },
+    { radius: 121.65, tiltX: 0.015, tiltY: -0.02, speed: 0.021, phase: 0.62, span: 0.015 },
   ] as const;
 
   satellites = [];

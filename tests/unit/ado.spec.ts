@@ -954,6 +954,15 @@ describe('domain/ado custom field, task timer eligibility, completed work rollup
         task: storyParent,
         allTasks: all,
         workItemTypes: types,
+        policy: { allowParentTaskTracking: true, allowNonCompletedWorkTracking: false },
+      })
+    ).toEqual({ allowed: true, reason: null });
+
+    expect(
+      evaluateTaskTimerEligibility({
+        task: storyParent,
+        allTasks: all,
+        workItemTypes: types,
         policy: { allowParentTaskTracking: true, allowNonCompletedWorkTracking: true },
       })
     ).toEqual({ allowed: true, reason: null });
@@ -1172,5 +1181,106 @@ describe('domain/ado custom field, task timer eligibility, completed work rollup
       commonTagIds: ['t1'],
       partialTagIds: ['t2', 't3'],
     });
+  });
+
+  it('suggests creating child ADO Tasks under parent work items when allowParentTaskTracking is enabled', () => {
+    const project = mkProj('p1', 'Core API');
+    const conn: AdoConnectionSummary = {
+      id: 'conn-1',
+      organization: 'klox',
+      orgUrl: 'https://dev.azure.com/klox',
+      defaultProject: 'Core',
+      kloxProjectId: 'p1',
+      connected: true,
+      defaultWorkItemType: 'Task',
+      connectedAt: '2026-11-27T00:00:00.000Z',
+    };
+
+    const story = mkItem({
+      id: 'story-1',
+      name: 'Implement Checkout Flow',
+      depth: 0,
+      externalWorkItemId: '70',
+      externalWorkItemType: 'User Story',
+      externalOrgUrl: conn.orgUrl,
+      externalProject: conn.defaultProject,
+      externalSupportsCompletedWork: false,
+    });
+    const existingChild = mkItem({
+      id: 'child-1',
+      parentTaskId: 'story-1',
+      name: 'Backend Payment Webhook',
+      depth: 1,
+      externalWorkItemId: '71',
+      externalWorkItemType: 'Task',
+      externalOrgUrl: conn.orgUrl,
+      externalProject: conn.defaultProject,
+      externalSupportsCompletedWork: true,
+    });
+
+    const parentDirectLog = mkTimeLog({
+      id: 'log-parent',
+      taskId: 'story-1',
+      description: 'Architecture alignment & pairing',
+      durationSeconds: 5400, // 1.5h
+    });
+    const childLog = mkTimeLog({
+      id: 'log-child',
+      taskId: 'child-1',
+      description: 'Webhook signature check',
+      durationSeconds: 3600, // 1.0h
+    });
+
+    const typesByConn = {
+      'conn-1': [
+        { name: 'User Story', supportsCompletedWork: false },
+        { name: 'Task', supportsCompletedWork: true },
+      ],
+    };
+
+    // With allowParentTaskTracking disabled: direct parent hours do NOT suggest child Task
+    const withoutFlag = buildAdoSyncCandidates({
+      projects: [project],
+      tasks: [story, existingChild],
+      logs: [parentDirectLog, childLog],
+      connections: [conn],
+      allowParentTaskTracking: false,
+      workItemTypesByConn: typesByConn,
+    });
+    expect(withoutFlag.readyItems.map((r) => r.workItemId)).toEqual([71]);
+    expect(withoutFlag.suggestedChildTasks).toHaveLength(0);
+
+    // With allowParentTaskTracking enabled: parent hours produce a suggested child Task under #70
+    const withFlag = buildAdoSyncCandidates({
+      projects: [project],
+      tasks: [story, existingChild],
+      logs: [parentDirectLog, childLog],
+      connections: [conn],
+      allowParentTaskTracking: true,
+      workItemTypesByConn: typesByConn,
+    });
+    expect(withFlag.readyItems.map((r) => r.workItemId)).toEqual([71]);
+    expect(withFlag.suggestedChildTasks).toHaveLength(1);
+    expect(withFlag.suggestedChildTasks[0]).toMatchObject({
+      parentTask: expect.objectContaining({ id: 'story-1' }),
+      parentWorkItemId: 70,
+      defaultWorkItemType: 'Task',
+      suggestedTitle: 'Architecture alignment & pairing',
+      recommendedHours: 1.5,
+      unsyncedSeconds: 5400,
+    });
+    expect(withFlag.totalRecommendedHours).toBe(1);
+    expect(withFlag.totalSuggestedChildHours).toBe(1.5);
+
+    const groups = groupAdoSyncCandidatesByParent(
+      withFlag.readyItems,
+      [story, existingChild],
+      withFlag.suggestedChildTasks
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.isParentContainer).toBe(true);
+    expect(groups[0]!.items.map((i) => i.workItemId)).toEqual([71]);
+    expect(groups[0]!.suggestedChildren).toHaveLength(1);
+    expect(groups[0]!.totalRecommendedDeltaHours).toBe(2.5);
   });
 });

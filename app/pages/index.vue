@@ -116,7 +116,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         :class="webglTakeover ? 'opacity-0' : 'opacity-100'"
       />
       <div
-        class="bg-void-fade absolute inset-0 transition-opacity duration-1000 ease-out"
+        class="bg-void-fade absolute inset-0 transition-opacity duration-1000 ease-out dark:hidden"
         :class="webglTakeover ? 'opacity-0' : 'opacity-100'"
         aria-hidden="true"
       />
@@ -128,12 +128,11 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         />
       </ClientOnly>
       <div
-        class="bg-hero-webgl-scrim pointer-events-none absolute inset-0 transition-opacity duration-1000 ease-out"
-        :class="webglTakeover ? 'opacity-100' : 'opacity-0'"
+        class="bg-hero-webgl-scrim pointer-events-none absolute inset-0"
         aria-hidden="true"
       />
 
-      <div class="relative mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 py-16 sm:px-6 sm:py-24">
+      <div class="relative mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 py-16 sm:px-6 sm:py-20 lg:pt-12 lg:pb-28">
         <p class="label-eyebrow animate-rise text-text-muted">
           <BrandMissionClock :paused="motionPaused" />
           <span class="mx-3 text-text-faint">//</span>
@@ -151,7 +150,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
         />
 
         <p
-          class="hero-copy-shadow animate-rise mt-8 max-w-xl text-base leading-relaxed text-text-primary/85 sm:text-lg"
+          class="hero-copy-shadow animate-rise mt-8 max-w-xl text-base leading-relaxed text-text-primary/90 sm:text-lg"
           style="animation-delay: 240ms"
         >
           {{ $t('landing.heroSubtitle') }}
@@ -173,7 +172,7 @@ const faqKeys = ['q1', 'q2', 'q3', 'q4', 'q5'] as const;
 
           <a
             href="#features"
-            class="label-eyebrow hero-copy-shadow inline-flex h-12 items-center px-3 text-text-primary/75 transition-colors hover:text-text-primary"
+            class="label-eyebrow hero-copy-shadow inline-flex h-12 items-center px-3 text-text-primary/80 transition-colors hover:text-text-primary"
           >
             {{ $t('landing.hero.ctaSpecs') }} ↓
           </a>

@@ -167,11 +167,32 @@ export interface UnplannedAdoTaskCandidate {
   recommendedHours: number;
 }
 
+export interface SuggestedChildAdoTaskCandidate {
+  key: string;
+  connectionId: string;
+  parentTask: Task;
+  parentWorkItemId: number;
+  parentWorkItemType?: string;
+  parentWorkItemTitle?: string;
+  parentWorkItemUrl?: string;
+  orgUrl: string;
+  project: string;
+  defaultWorkItemType: string;
+  projectName: string;
+  projectColor: string;
+  suggestedTitle: string;
+  logs: TimeLog[];
+  unsyncedSeconds: number;
+  recommendedHours: number;
+}
+
 export interface AdoSyncCandidatesResult {
   readyItems: AdoSyncCandidate[];
   unplannedTasks: UnplannedAdoTaskCandidate[];
+  suggestedChildTasks: SuggestedChildAdoTaskCandidate[];
   totalUnsyncedSeconds: number;
   totalRecommendedHours: number;
+  totalSuggestedChildHours: number;
 }
 
 const ORG_SLUG_REGEX = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/;
@@ -599,8 +620,12 @@ export function evaluateTaskTimerEligibility(params: {
     (t) => t.projectId === params.task.projectId && t.parentTaskId === params.task.id
   );
 
-  if (hasChildren && !policy.allowParentTaskTracking) {
-    return { allowed: false, reason: 'PARENT_HAS_SUBTASKS' };
+  if (hasChildren) {
+    if (!policy.allowParentTaskTracking) {
+      return { allowed: false, reason: 'PARENT_HAS_SUBTASKS' };
+    }
+    // When parent tracking is explicitly allowed, direct parent hours route to child Task creation on ADO sync.
+    return { allowed: true, reason: null };
   }
 
   const isAdoLinked =
@@ -771,6 +796,7 @@ export function buildAdoSyncCandidates(params: {
   connections?: readonly AdoConnectionSummary[];
   connection?: AdoConnectionSummary | null;
   filterProjectId?: EntityId;
+  allowParentTaskTracking?: boolean;
   workItemTypesByConn?:
     | ReadonlyMap<EntityId, readonly AdoWorkItemTypeCapability[]>
     | Partial<Record<EntityId, readonly AdoWorkItemTypeCapability[]>>;
@@ -782,6 +808,7 @@ export function buildAdoSyncCandidates(params: {
     connections,
     connection,
     filterProjectId,
+    allowParentTaskTracking = false,
     workItemTypesByConn,
   } = params;
   const activeConnections = connections ?? (connection ? [connection] : []);
@@ -789,16 +816,33 @@ export function buildAdoSyncCandidates(params: {
     return {
       readyItems: [],
       unplannedTasks: [],
+      suggestedChildTasks: [],
       totalUnsyncedSeconds: 0,
       totalRecommendedHours: 0,
+      totalSuggestedChildHours: 0,
     };
   }
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
+  const parentIdsWithSubtasks = new Set<EntityId>();
+  const parentIdsWithAdoChildren = new Set<EntityId>();
+  for (const t of tasks) {
+    if (!t.parentTaskId) continue;
+    const parent = taskById.get(t.parentTaskId);
+    if (!parent || parent.projectId !== t.projectId) continue;
+    parentIdsWithSubtasks.add(parent.id);
+    if (
+      t.externalProvider === 'azure_devops' &&
+      parseWorkItemIdInput(t.externalWorkItemId) !== null
+    ) {
+      parentIdsWithAdoChildren.add(parent.id);
+    }
+  }
 
   const readyByKey = new Map<string, AdoSyncCandidate>();
   const unplannedByTaskId = new Map<EntityId, UnplannedAdoTaskCandidate>();
+  const suggestedChildByKey = new Map<string, SuggestedChildAdoTaskCandidate>();
 
   for (const log of logs) {
     if (!log.taskId || log.durationSeconds <= 0) continue;
@@ -817,7 +861,7 @@ export function buildAdoSyncCandidates(params: {
       const workItemId = parseWorkItemIdInput(controllingTask.externalWorkItemId);
       if (!workItemId) continue;
 
-      const connTypes =
+      const connTypes: readonly AdoWorkItemTypeCapability[] | undefined =
         workItemTypesByConn instanceof Map
           ? workItemTypesByConn.get(target.connectionId)
           : (
@@ -825,16 +869,18 @@ export function buildAdoSyncCandidates(params: {
                 | Partial<Record<EntityId, readonly AdoWorkItemTypeCapability[]>>
                 | undefined
             )?.[target.connectionId];
-      if (
-        !resolveTaskSupportsCompletedWork(
-          controllingTask,
-          connTypes,
-          target.completedWorkFieldRef
-        )
-      ) {
-        // Non-CompletedWork items (e.g. PBI, User Story) can never be pushed to Azure DevOps
-        continue;
-      }
+
+      const supportsCompletedWork = resolveTaskSupportsCompletedWork(
+        controllingTask,
+        connTypes,
+        target.completedWorkFieldRef
+      );
+
+      const isDirectParentTracked =
+        allowParentTaskTracking &&
+        leafTask.id === controllingTask.id &&
+        parentIdsWithSubtasks.has(controllingTask.id) &&
+        (parentIdsWithAdoChildren.has(controllingTask.id) || !supportsCompletedWork);
 
       const orgUrl = controllingTask.externalOrgUrl?.trim() || target.orgUrl;
       const adoProject = controllingTask.externalProject?.trim() || target.project;
@@ -844,6 +890,49 @@ export function buildAdoSyncCandidates(params: {
         project: adoProject,
       });
       if (unsynced <= 0) continue;
+
+      if (isDirectParentTracked) {
+        const sKey = `child-suggestion::${controllingTask.id}::${workItemId}`;
+        let sBucket = suggestedChildByKey.get(sKey);
+        if (!sBucket) {
+          const preferredTaskType =
+            connTypes?.find((wt) => wt.name.toLowerCase() === 'task' && wt.supportsCompletedWork)
+              ?.name ??
+            connTypes?.find((wt) => wt.supportsCompletedWork)?.name ??
+            target.defaultWorkItemType ??
+            'Task';
+
+          sBucket = {
+            key: sKey,
+            connectionId: target.connectionId,
+            parentTask: controllingTask,
+            parentWorkItemId: workItemId,
+            parentWorkItemType: controllingTask.externalWorkItemType,
+            parentWorkItemTitle: controllingTask.externalWorkItemTitle ?? controllingTask.name,
+            parentWorkItemUrl:
+              controllingTask.externalWorkItemUrl ||
+              buildAdoWorkItemWebUrl(orgUrl, adoProject, workItemId),
+            orgUrl,
+            project: adoProject,
+            defaultWorkItemType: preferredTaskType,
+            projectName: project?.name ?? log.projectNameSnapshot,
+            projectColor: project?.color ?? log.projectColorSnapshot,
+            suggestedTitle: controllingTask.name,
+            logs: [],
+            unsyncedSeconds: 0,
+            recommendedHours: 0,
+          };
+          suggestedChildByKey.set(sKey, sBucket);
+        }
+        sBucket.logs.push(log);
+        sBucket.unsyncedSeconds += unsynced;
+        continue;
+      }
+
+      if (!supportsCompletedWork) {
+        // Non-CompletedWork items (e.g. PBI, User Story) can never be pushed directly to Azure DevOps
+        continue;
+      }
 
       const key = `${orgUrl.toLowerCase()}::${adoProject.toLowerCase()}::${workItemId}`;
       let bucket = readyByKey.get(key);
@@ -924,13 +1013,37 @@ export function buildAdoSyncCandidates(params: {
     }))
     .sort((a, b) => b.totalSeconds - a.totalSeconds);
 
+  const suggestedChildTasks = Array.from(suggestedChildByKey.values())
+    .map((bucket) => {
+      const parentTitleLower = bucket.parentTask.name.trim().toLowerCase();
+      const sortedLogs = [...bucket.logs].sort((a, b) => b.startTime.localeCompare(a.startTime));
+      const descriptive = sortedLogs.find((l) => {
+        const desc = l.description.trim();
+        return desc.length > 0 && desc.toLowerCase() !== parentTitleLower;
+      });
+      return {
+        ...bucket,
+        logs: sortedLogs,
+        suggestedTitle: descriptive?.description.trim() || bucket.parentTask.name,
+        recommendedHours: secondsToHours2(bucket.unsyncedSeconds),
+      };
+    })
+    .filter((bucket) => bucket.unsyncedSeconds > 0)
+    .sort((a, b) => b.unsyncedSeconds - a.unsyncedSeconds || a.parentWorkItemId - b.parentWorkItemId);
+
   const totalUnsyncedSeconds = readyItems.reduce((sum, item) => sum + item.unsyncedSeconds, 0);
+  const totalSuggestedChildSeconds = suggestedChildTasks.reduce(
+    (sum, item) => sum + item.unsyncedSeconds,
+    0
+  );
 
   return {
     readyItems,
     unplannedTasks,
+    suggestedChildTasks,
     totalUnsyncedSeconds,
     totalRecommendedHours: secondsToHours2(totalUnsyncedSeconds),
+    totalSuggestedChildHours: secondsToHours2(totalSuggestedChildSeconds),
   };
 }
 
@@ -941,18 +1054,21 @@ export interface AdoSyncParentGroup {
   projectName: string;
   projectColor: string;
   items: AdoSyncCandidate[];
+  suggestedChildren: SuggestedChildAdoTaskCandidate[];
   totalCachedCompletedWork: number;
   totalUnsyncedSeconds: number;
   totalRecommendedDeltaHours: number;
 }
 
 /**
- * Organizes flat pushable `AdoSyncCandidate` items into a 2-level hierarchy keyed by each
- * item's root ancestor `Task` (e.g., PBI -> child Tasks), keeping root items without parents standalone.
+ * Organizes flat pushable `AdoSyncCandidate` items and suggested new child ADO Tasks into a
+ * 2-level hierarchy keyed by each item's root ancestor `Task` (e.g., PBI -> child Tasks),
+ * keeping standalone root items ungrouped.
  */
 export function groupAdoSyncCandidatesByParent(
   readyItems: readonly AdoSyncCandidate[],
-  allTasks: readonly Task[]
+  allTasks: readonly Task[],
+  suggestedChildTasks: readonly SuggestedChildAdoTaskCandidate[] = []
 ): AdoSyncParentGroup[] {
   const taskById = new Map(allTasks.map((t) => [t.id, t]));
   const groups = new Map<string, AdoSyncParentGroup>();
@@ -981,6 +1097,7 @@ export function groupAdoSyncCandidatesByParent(
         projectName: item.projectName,
         projectColor: item.projectColor,
         items: [],
+        suggestedChildren: [],
         totalCachedCompletedWork: 0,
         totalUnsyncedSeconds: 0,
         totalRecommendedDeltaHours: 0,
@@ -994,12 +1111,38 @@ export function groupAdoSyncCandidatesByParent(
     group.totalUnsyncedSeconds += item.unsyncedSeconds;
   }
 
+  for (const suggested of suggestedChildTasks) {
+    const rootAncestor = findRootAncestor(suggested.parentTask) ?? suggested.parentTask;
+    const key = `parent:${rootAncestor.id}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        isParentContainer: true,
+        parentTask: rootAncestor,
+        projectName: suggested.projectName,
+        projectColor: suggested.projectColor,
+        items: [],
+        suggestedChildren: [],
+        totalCachedCompletedWork: 0,
+        totalUnsyncedSeconds: 0,
+        totalRecommendedDeltaHours: 0,
+      };
+      groups.set(key, group);
+    }
+    group.suggestedChildren.push(suggested);
+    group.totalUnsyncedSeconds += suggested.unsyncedSeconds;
+  }
+
   return Array.from(groups.values())
     .map((group) => ({
       ...group,
       items: [...group.items].sort(
         (a, b) =>
           compareTasksByPriority(a.primaryTask, b.primaryTask) || a.workItemId - b.workItemId
+      ),
+      suggestedChildren: [...group.suggestedChildren].sort(
+        (a, b) => b.unsyncedSeconds - a.unsyncedSeconds
       ),
       totalRecommendedDeltaHours: secondsToHours2(group.totalUnsyncedSeconds),
     }))

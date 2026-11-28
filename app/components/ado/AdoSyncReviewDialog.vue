@@ -69,7 +69,19 @@ interface ItemDraft {
   expandedLogs: boolean;
 }
 
+interface SuggestedChildDraft {
+  selected: boolean;
+  title: string;
+  workItemType: string;
+  deltaHours: number;
+  expandedLogs: boolean;
+  creating: boolean;
+  error: AdoErrorCode | null;
+}
+
 const drafts = ref<Record<string, ItemDraft>>({});
+const suggestedDrafts = ref<Record<string, SuggestedChildDraft>>({});
+const submittingSync = ref(false);
 const collapsedGroupKeys = ref<Set<string>>(new Set());
 const pulledMap = ref<Record<string, AdoWorkItemSummary & { orgUrl: string; project: string }>>({});
 const pulling = ref(false);
@@ -99,6 +111,21 @@ const inlineCreateTypeOptions = computed<UiSelectOption<string>[]>(() => {
   }));
 });
 
+function getChildTypeOptionsForConn(connectionId: string): UiSelectOption<string>[] {
+  const raw = adoStore.workItemTypesByConn[connectionId] ?? adoStore.workItemTypes;
+  const supported = raw.filter((wt) => wt.supportsCompletedWork);
+  const list =
+    supported.length > 0
+      ? supported
+      : raw.length > 0
+        ? raw
+        : [
+            { name: 'Task', supportsCompletedWork: true },
+            { name: 'Bug', supportsCompletedWork: true },
+          ];
+  return list.map((wt) => ({ value: wt.name, label: wt.name }));
+}
+
 const candidates = computed(() =>
   buildAdoSyncCandidates({
     projects: catalogStore.projects,
@@ -106,12 +133,19 @@ const candidates = computed(() =>
     logs: timeLogsStore.logs,
     connections: adoStore.connections,
     filterProjectId: props.filterProjectId,
+    allowParentTaskTracking: Boolean(
+      prefsStore.preferences.taskTrackingPolicy?.allowParentTaskTracking
+    ),
     workItemTypesByConn: adoStore.workItemTypesByConn,
   })
 );
 
 const readyGroups = computed<AdoSyncParentGroup[]>(() =>
-  groupAdoSyncCandidatesByParent(candidates.value.readyItems, catalogStore.tasks)
+  groupAdoSyncCandidatesByParent(
+    candidates.value.readyItems,
+    catalogStore.tasks,
+    candidates.value.suggestedChildTasks
+  )
 );
 
 const hasParentGroups = computed(() =>
@@ -178,21 +212,31 @@ function isItemSupported(item: AdoSyncCandidate): boolean {
 }
 
 function getGroupSelectionState(group: AdoSyncParentGroup): 'none' | 'some' | 'all' {
-  const selectable = group.items.filter((item) => isItemSupported(item));
-  if (selectable.length === 0) return 'none';
-  const checkedCount = selectable.filter((item) => drafts.value[item.key]?.selected).length;
+  const selectableReady = group.items.filter((item) => isItemSupported(item));
+  const totalSelectable = selectableReady.length + group.suggestedChildren.length;
+  if (totalSelectable === 0) return 'none';
+  const checkedReady = selectableReady.filter((item) => drafts.value[item.key]?.selected).length;
+  const checkedSuggested = group.suggestedChildren.filter(
+    (s) => suggestedDrafts.value[s.key]?.selected
+  ).length;
+  const checkedCount = checkedReady + checkedSuggested;
   if (checkedCount === 0) return 'none';
-  if (checkedCount === selectable.length) return 'all';
+  if (checkedCount === totalSelectable) return 'all';
   return 'some';
 }
 
 function toggleGroupSelection(group: AdoSyncParentGroup) {
-  const selectable = group.items.filter((item) => isItemSupported(item));
-  if (selectable.length === 0) return;
+  const selectableReady = group.items.filter((item) => isItemSupported(item));
+  if (selectableReady.length === 0 && group.suggestedChildren.length === 0) return;
   const shouldSelect = getGroupSelectionState(group) !== 'all';
-  for (const item of selectable) {
+  for (const item of selectableReady) {
     if (drafts.value[item.key]) {
       drafts.value[item.key]!.selected = shouldSelect;
+    }
+  }
+  for (const s of group.suggestedChildren) {
+    if (suggestedDrafts.value[s.key]) {
+      suggestedDrafts.value[s.key]!.selected = shouldSelect;
     }
   }
 }
@@ -203,6 +247,12 @@ function getGroupDraftDeltaHours(group: AdoSyncParentGroup): number {
     const draft = drafts.value[item.key];
     if (draft?.selected && isItemSupported(item)) {
       sum += Number(draft.deltaHours) || 0;
+    }
+  }
+  for (const s of group.suggestedChildren) {
+    const sDraft = suggestedDrafts.value[s.key];
+    if (sDraft?.selected) {
+      sum += Number(sDraft.deltaHours) || 0;
     }
   }
   return roundHours2(sum);
@@ -227,6 +277,24 @@ function initializeDrafts() {
     };
   }
   drafts.value = next;
+
+  const nextSuggested: Record<string, SuggestedChildDraft> = {};
+  for (const s of candidates.value.suggestedChildTasks) {
+    const existing = suggestedDrafts.value[s.key];
+    nextSuggested[s.key] = {
+      selected: existing?.selected ?? true,
+      title: existing ? existing.title : s.suggestedTitle,
+      workItemType: existing?.workItemType || s.defaultWorkItemType,
+      deltaHours:
+        existing && Number.isFinite(existing.deltaHours)
+          ? existing.deltaHours
+          : s.recommendedHours,
+      expandedLogs: existing?.expandedLogs ?? false,
+      creating: existing?.creating ?? false,
+      error: existing?.error ?? null,
+    };
+  }
+  suggestedDrafts.value = nextSuggested;
 }
 
 async function refreshLiveFromAdo() {
@@ -299,7 +367,10 @@ watch(
 );
 
 watch(
-  () => candidates.value.readyItems.length,
+  [
+    () => candidates.value.readyItems.length,
+    () => candidates.value.suggestedChildTasks.length,
+  ],
   () => {
     if (props.open) initializeDrafts();
   }
@@ -322,9 +393,87 @@ const selectedApprovals = computed(() => {
     }));
 });
 
-const totalApprovedHours = computed(() =>
-  roundHours2(selectedApprovals.value.reduce((sum, a) => sum + a.approvedDeltaHours, 0))
+const selectedSuggestedCreations = computed(() =>
+  candidates.value.suggestedChildTasks
+    .filter((s) => {
+      const d = suggestedDrafts.value[s.key];
+      return Boolean(d?.selected && d.deltaHours > 0);
+    })
+    .map((s) => {
+      const d = suggestedDrafts.value[s.key]!;
+      return {
+        candidate: s,
+        title: d.title.trim(),
+        workItemType: d.workItemType || s.defaultWorkItemType,
+        deltaHours: roundHours2(d.deltaHours),
+      };
+    })
 );
+
+const hasInvalidSelectedSuggestedTitle = computed(() =>
+  selectedSuggestedCreations.value.some((entry) => !entry.title)
+);
+
+const totalSelectedCount = computed(
+  () => selectedApprovals.value.length + selectedSuggestedCreations.value.length
+);
+
+const totalApprovedHours = computed(() =>
+  roundHours2(
+    selectedApprovals.value.reduce((sum, a) => sum + a.approvedDeltaHours, 0) +
+      selectedSuggestedCreations.value.reduce((sum, s) => sum + s.deltaHours, 0)
+  )
+);
+
+async function submitSingleSuggestedChild(key: string) {
+  if (!authStore.user || submittingSync.value) return;
+  const candidate = candidates.value.suggestedChildTasks.find((s) => s.key === key);
+  const draft = suggestedDrafts.value[key];
+  if (!candidate || !draft || draft.creating) return;
+  const title = draft.title.trim();
+  if (!title) {
+    draft.error = 'ADO_INVALID_INPUT';
+    return;
+  }
+
+  draft.creating = true;
+  draft.error = null;
+  try {
+    const res = await adoStore.createChildWorkItemForParentLogs({
+      uid: authStore.user.uid,
+      isDemo: authStore.isDemoMode,
+      connectionId: candidate.connectionId,
+      parentTaskId: candidate.parentTask.id,
+      parentWorkItemId: candidate.parentWorkItemId,
+      orgUrl: candidate.orgUrl,
+      project: candidate.project,
+      workItemType: draft.workItemType || candidate.defaultWorkItemType,
+      title,
+      initialCompletedWork: roundHours2(draft.deltaHours),
+      logIds: candidate.logs.map((l) => l.id),
+    });
+    if (!res.ok || !res.item) {
+      draft.error = res.errorCode ?? 'ADO_UNAVAILABLE';
+      return;
+    }
+    pushResults.value = [
+      ...pushResults.value,
+      {
+        workItemId: res.item.id,
+        orgUrl: res.item.orgUrl,
+        project: res.item.project,
+        ok: true,
+        title: res.item.title,
+        workItemType: res.item.workItemType,
+        previousCompletedWork: 0,
+        newCompletedWork: res.item.completedWork,
+        url: res.item.url,
+      },
+    ];
+  } finally {
+    draft.creating = false;
+  }
+}
 
 function startInlineCreate(u: UnplannedAdoTaskCandidate) {
   inlineCreateTaskId.value = u.task.id;
@@ -387,18 +536,69 @@ async function handleLinkExistingUnplanned(
 }
 
 async function handleApproveAndPush() {
-  if (!authStore.user || selectedApprovals.value.length === 0 || adoStore.syncing) return;
-  pushError.value = null;
-  const res = await adoStore.pushApprovedHours({
-    uid: authStore.user.uid,
-    isDemo: authStore.isDemoMode,
-    approvals: selectedApprovals.value,
-  });
-  if (res.errorCode) {
-    pushError.value = res.errorCode;
+  if (
+    !authStore.user ||
+    totalSelectedCount.value === 0 ||
+    hasInvalidSelectedSuggestedTitle.value ||
+    adoStore.syncing ||
+    submittingSync.value
+  ) {
     return;
   }
-  pushResults.value = res.results;
+  submittingSync.value = true;
+  pushError.value = null;
+  const combinedResults: AdoPushExecutionResult[] = [];
+  try {
+    if (selectedApprovals.value.length > 0) {
+      const res = await adoStore.pushApprovedHours({
+        uid: authStore.user.uid,
+        isDemo: authStore.isDemoMode,
+        approvals: selectedApprovals.value,
+      });
+      if (res.errorCode) {
+        pushError.value = res.errorCode;
+      } else {
+        combinedResults.push(...res.results);
+      }
+    }
+
+    for (const sEntry of selectedSuggestedCreations.value) {
+      const cRes = await adoStore.createChildWorkItemForParentLogs({
+        uid: authStore.user.uid,
+        isDemo: authStore.isDemoMode,
+        connectionId: sEntry.candidate.connectionId,
+        parentTaskId: sEntry.candidate.parentTask.id,
+        parentWorkItemId: sEntry.candidate.parentWorkItemId,
+        orgUrl: sEntry.candidate.orgUrl,
+        project: sEntry.candidate.project,
+        workItemType: sEntry.workItemType,
+        title: sEntry.title,
+        initialCompletedWork: sEntry.deltaHours,
+        logIds: sEntry.candidate.logs.map((l) => l.id),
+      });
+      if (cRes.ok && cRes.item) {
+        combinedResults.push({
+          workItemId: cRes.item.id,
+          orgUrl: cRes.item.orgUrl,
+          project: cRes.item.project,
+          ok: true,
+          title: cRes.item.title,
+          workItemType: cRes.item.workItemType,
+          previousCompletedWork: 0,
+          newCompletedWork: cRes.item.completedWork,
+          url: cRes.item.url,
+        });
+      } else if (cRes.errorCode && !pushError.value) {
+        pushError.value = cRes.errorCode;
+      }
+    }
+
+    if (combinedResults.length > 0) {
+      pushResults.value = combinedResults;
+    }
+  } finally {
+    submittingSync.value = false;
+  }
 }
 </script>
 
@@ -495,7 +695,11 @@ async function handleApproveAndPush() {
           <section class="space-y-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h2 class="label-eyebrow text-signal">
-                {{ $t('ado.reviewModal.readySection', { count: candidates.readyItems.length }) }}
+                {{
+                  $t('ado.reviewModal.readySection', {
+                    count: candidates.readyItems.length + candidates.suggestedChildTasks.length,
+                  })
+                }}
               </h2>
               <div class="flex items-center gap-2">
                 <span v-if="pulling" class="inline-flex items-center gap-1.5 text-xs text-text-muted">
@@ -523,7 +727,7 @@ async function handleApproveAndPush() {
             </div>
 
             <div
-              v-if="candidates.readyItems.length === 0"
+              v-if="candidates.readyItems.length === 0 && candidates.suggestedChildTasks.length === 0"
               class="border border-border-hairline bg-bg-primary p-5 text-center text-ui text-text-muted"
             >
               {{ $t('ado.reviewModal.emptyReady') }}
@@ -599,7 +803,17 @@ async function handleApproveAndPush() {
                 <!-- Parent Rollup Summary -->
                 <div class="tabular-telemetry flex flex-wrap items-center gap-2 text-xs">
                   <span class="border border-border-hairline bg-bg-primary px-2 py-0.5 text-text-muted">
-                    {{ $t('ado.reviewModal.childItemsCount', { count: group.items.length }) }}
+                    {{
+                      $t('ado.reviewModal.childItemsCount', {
+                        count: group.items.length + group.suggestedChildren.length,
+                      })
+                    }}
+                  </span>
+                  <span
+                    v-if="group.suggestedChildren.length > 0"
+                    class="border border-signal/40 bg-signal-soft px-2 py-0.5 font-semibold text-signal"
+                  >
+                    +{{ group.suggestedChildren.length }} {{ $t('ado.reviewModal.suggestedChildBadge') }}
                   </span>
                   <span class="font-semibold text-signal">
                     +{{ getGroupDraftDeltaHours(group).toFixed(2) }}h
@@ -780,6 +994,194 @@ async function handleApproveAndPush() {
                     </ul>
                   </div>
                 </div>
+
+                <!-- Suggested New Child Tasks (Generated from Direct Parent Tracking) -->
+                <div
+                  v-for="s in group.suggestedChildren"
+                  :key="s.key"
+                  data-testid="ado-sync-suggested-child"
+                  class="border border-dashed border-signal/60 bg-signal-soft/20 p-4 space-y-3"
+                >
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="flex min-w-0 flex-1 items-start gap-3">
+                      <input
+                        v-if="suggestedDrafts[s.key]"
+                        v-model="suggestedDrafts[s.key]!.selected"
+                        type="checkbox"
+                        :aria-label="$t('ado.reviewModal.suggestedTitleLabel')"
+                        class="mt-1 h-4 w-4 shrink-0 accent-accent cursor-pointer"
+                      />
+
+                      <div class="min-w-0 flex-1 space-y-2.5">
+                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                          <span class="border border-signal/50 bg-signal-soft px-2 py-0.5 font-semibold uppercase tracking-wider text-signal">
+                            {{ $t('ado.reviewModal.suggestedChildBadge') }}
+                          </span>
+                          <span class="tabular-telemetry text-text-muted">
+                            {{ $t('ado.reviewModal.suggestedChildOfParent', { id: s.parentWorkItemId }) }}
+                          </span>
+                        </div>
+
+                        <div
+                          v-if="suggestedDrafts[s.key]"
+                          class="grid grid-cols-1 gap-2 sm:grid-cols-12"
+                        >
+                          <div class="sm:col-span-8">
+                            <label
+                              :for="`suggested-title-${s.key}`"
+                              class="mb-1 block text-xs text-text-muted"
+                            >
+                              {{ $t('ado.reviewModal.suggestedTitleLabel') }}
+                            </label>
+                            <input
+                              :id="`suggested-title-${s.key}`"
+                              v-model="suggestedDrafts[s.key]!.title"
+                              type="text"
+                              maxlength="200"
+                              data-testid="ado-suggested-child-title"
+                              :placeholder="$t('ado.reviewModal.suggestedTitlePlaceholder')"
+                              class="h-9 w-full border bg-bg-primary px-3 text-ui text-text-primary focus:outline-none"
+                              :class="
+                                suggestedDrafts[s.key]!.selected && !suggestedDrafts[s.key]!.title.trim()
+                                  ? 'border-destructive focus:border-destructive'
+                                  : 'border-border-input focus:border-signal'
+                              "
+                            />
+                            <p
+                              v-if="suggestedDrafts[s.key]!.selected && !suggestedDrafts[s.key]!.title.trim()"
+                              class="mt-1 text-xs text-destructive"
+                            >
+                              {{ $t('ado.reviewModal.suggestedChildTitleRequired') }}
+                            </p>
+                          </div>
+
+                          <div class="sm:col-span-4">
+                            <label class="mb-1 block text-xs text-text-muted">
+                              {{ $t('ado.reviewModal.suggestedTypeLabel') }}
+                            </label>
+                            <UiSelect
+                              v-model="suggestedDrafts[s.key]!.workItemType"
+                              :options="getChildTypeOptionsForConn(s.connectionId)"
+                              size="sm"
+                              test-id="ado-suggested-child-type"
+                              :aria-label="$t('ado.reviewModal.suggestedTypeLabel')"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Initial Hours Box + Quick Create CTA -->
+                    <div v-if="suggestedDrafts[s.key]" class="flex flex-col items-end gap-2 shrink-0">
+                      <div class="flex flex-wrap items-center gap-2 border border-border-hairline bg-bg-elevated px-3 py-2">
+                        <div class="text-right">
+                          <div class="text-xs text-text-muted">{{ $t('ado.reviewModal.currentAdoLabel') }}</div>
+                          <div class="tabular-telemetry text-sm font-semibold text-text-primary">
+                            0.00h
+                          </div>
+                        </div>
+
+                        <span class="text-text-muted">+</span>
+
+                        <div>
+                          <label
+                            :for="`suggested-delta-${s.key}`"
+                            class="block text-xs text-text-muted"
+                          >
+                            {{ $t('ado.reviewModal.deltaLabel') }}
+                          </label>
+                          <input
+                            :id="`suggested-delta-${s.key}`"
+                            v-model.number="suggestedDrafts[s.key]!.deltaHours"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="tabular-telemetry h-8 w-20 border border-border-input bg-bg-primary px-2 text-sm font-semibold text-signal focus:border-signal focus:outline-none"
+                          />
+                        </div>
+
+                        <span class="text-text-muted">=</span>
+
+                        <div class="text-right">
+                          <div class="text-xs text-text-muted">{{ $t('ado.reviewModal.newTotalLabel') }}</div>
+                          <div class="tabular-telemetry text-sm font-semibold text-emerald-500">
+                            {{ roundHours2(suggestedDrafts[s.key]!.deltaHours || 0).toFixed(2) }}h
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        :disabled="suggestedDrafts[s.key]!.creating || !suggestedDrafts[s.key]!.title.trim() || submittingSync"
+                        data-testid="ado-suggested-child-create-now"
+                        class="btn-press inline-flex h-8 items-center gap-1.5 border border-signal/50 bg-bg-primary px-2.5 text-xs font-medium text-signal hover:bg-accent hover:text-white transition-colors disabled:opacity-45"
+                        @click="submitSingleSuggestedChild(s.key)"
+                      >
+                        <Loader2
+                          v-if="suggestedDrafts[s.key]!.creating"
+                          class="h-3.5 w-3.5 animate-spin"
+                          aria-hidden="true"
+                        />
+                        <Plus v-else class="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>
+                          {{
+                            suggestedDrafts[s.key]!.creating
+                              ? $t('ado.reviewModal.creatingChild')
+                              : $t('ado.reviewModal.createChildNowButton')
+                          }}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <p v-if="suggestedDrafts[s.key]?.error" class="text-xs text-destructive">
+                    {{ $t(`ado.errors.${suggestedDrafts[s.key]!.error}`) }}
+                  </p>
+
+                  <!-- Contributing Parent Activities -->
+                  <div v-if="suggestedDrafts[s.key]">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-signal transition-colors"
+                      @click="suggestedDrafts[s.key]!.expandedLogs = !suggestedDrafts[s.key]!.expandedLogs"
+                    >
+                      <ChevronDown
+                        class="h-3.5 w-3.5 transition-transform"
+                        :class="suggestedDrafts[s.key]!.expandedLogs ? 'rotate-0' : '-rotate-90'"
+                        aria-hidden="true"
+                      />
+                      <span class="tabular-telemetry">
+                        {{
+                          $t('ado.reviewModal.contributingActivities', {
+                            count: s.logs.length,
+                            duration: formatHMS(s.unsyncedSeconds),
+                          })
+                        }}
+                      </span>
+                    </button>
+
+                    <ul
+                      v-if="suggestedDrafts[s.key]!.expandedLogs"
+                      class="mt-2 divide-y divide-border-subtle border border-border-hairline bg-bg-elevated"
+                    >
+                      <li
+                        v-for="log in s.logs"
+                        :key="log.id"
+                        class="flex items-center justify-between gap-2 px-3 py-2 text-xs"
+                      >
+                        <div class="flex flex-wrap items-center gap-2 min-w-0">
+                          <span class="tabular-telemetry text-text-muted shrink-0">
+                            {{ formatDateKey(log.dateKey) }}
+                          </span>
+                          <span class="truncate text-text-primary">{{ log.description }}</span>
+                        </div>
+                        <span class="tabular-telemetry shrink-0 font-medium text-signal">
+                          +{{ formatHMS(log.durationSeconds) }}
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -890,7 +1292,7 @@ async function handleApproveAndPush() {
           <div class="tabular-telemetry text-ui text-text-muted">
             {{
               $t('ado.reviewModal.footerSummary', {
-                count: selectedApprovals.length,
+                count: totalSelectedCount,
                 hours: totalApprovedHours.toFixed(2),
               })
             }}
@@ -910,11 +1312,11 @@ async function handleApproveAndPush() {
             <button
               type="button"
               data-testid="ado-approve-push-btn"
-              :disabled="selectedApprovals.length === 0 || adoStore.syncing"
+              :disabled="totalSelectedCount === 0 || hasInvalidSelectedSuggestedTitle || adoStore.syncing || submittingSync"
               class="btn-press inline-flex h-9 items-center gap-2 bg-accent px-4 text-xs font-semibold uppercase tracking-wider text-white hover:bg-accent-hover transition-colors disabled:opacity-45"
               @click="handleApproveAndPush"
             >
-              <Loader2 v-if="adoStore.syncing" class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              <Loader2 v-if="adoStore.syncing || submittingSync" class="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
               <Check v-else class="h-3.5 w-3.5" aria-hidden="true" />
               <span>{{ $t('ado.reviewModal.approveButton') }}</span>
             </button>

@@ -113,7 +113,7 @@ html.dark {
   );
   --gradient-signal: linear-gradient(90deg, transparent, var(--signal), transparent);
   --shadow-signal: 0 0 60px -10px oklch(0.72 0.16 245 / 50%);
-  --hero-copy-shadow: 0 1px 18px oklch(0 0 0 / 0.85);
+  --hero-copy-shadow: 0 1px 16px oklch(0 0 0 / 0.92), 0 0 28px oklch(0 0 0 / 0.72);
 
   --scrollbar-track: #000000;
   --scrollbar-thumb: #5A5A64;
@@ -353,17 +353,17 @@ html.dark {
   .bg-hero-webgl-scrim {
     background-image:
       radial-gradient(
-        ellipse 58% 66% at 24% 48%,
-        oklch(var(--bg-primary-ch) / 0.82) 0%,
-        oklch(var(--bg-primary-ch) / 0.48) 52%,
-        transparent 80%
+        ellipse 56% 58% at 24% 52%,
+        oklch(var(--bg-primary-ch) / 0.88) 0%,
+        oklch(var(--bg-primary-ch) / 0.62) 48%,
+        transparent 82%
       ),
       linear-gradient(
         180deg,
-        oklch(var(--bg-primary-ch) / 0.30) 0%,
-        transparent 20%,
-        transparent 74%,
-        oklch(var(--bg-primary-ch) / 0.95) 100%
+        oklch(var(--bg-primary-ch) / 0.22) 0%,
+        transparent 24%,
+        oklch(var(--bg-primary-ch) / 0.36) 68%,
+        oklch(var(--bg-primary-ch) / 0.96) 100%
       );
   }
 

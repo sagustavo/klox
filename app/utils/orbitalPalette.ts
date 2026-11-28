@@ -32,7 +32,7 @@ const DARK_PALETTE: OrbitalThemePalette = {
   cityGlow: [0.980, 0.480, 0.120], // #FA7A1F sodium-amber urban sprawl
   cloudColor: [0.210, 0.270, 0.370], // Muted moonlit grey-silver clouds
   rimPrimary: [0.160, 0.480, 1.0], // #297AFF Rayleigh cobalt scatter
-  rimCore: [0.760, 0.900, 1.0], // Luminous ice-cyan Karman-line rim (avoids whiteout clipping)
+  rimCore: [0.840, 0.945, 1.0], // Photographic #D6F1FF Karman-line rim matching klox-orbit.jpg
   atmoHalo: [0.140, 0.450, 0.980], // Outer Rayleigh atmospheric scatter
   arcColor: [0.420, 0.720, 1.0],
   craftBody: [0.160, 0.190, 0.250], // Dark metallic aerospace alloy
@@ -41,7 +41,7 @@ const DARK_PALETTE: OrbitalThemePalette = {
   asteroidRim: [0.220, 0.520, 0.960], // Subtle blue Earthshine catchlight
   starColor: [0.930, 0.960, 1.0],
   starOpacity: 0.95,
-  rimIntensity: 1.15,
+  rimIntensity: 1.22,
 };
 
 const LIGHT_PALETTE: OrbitalThemePalette = {

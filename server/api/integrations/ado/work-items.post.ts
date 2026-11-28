@@ -12,6 +12,7 @@ interface CreateWorkItemBody {
   workItemType?: string;
   title: string;
   initialCompletedWork?: number;
+  parentWorkItemId?: number;
 }
 
 export default defineEventHandler(async (event) => {
@@ -35,6 +36,7 @@ export default defineEventHandler(async (event) => {
     title: body?.title ?? '',
     initialCompletedWork: body?.initialCompletedWork,
     completedWorkFieldRef: connection.completedWorkFieldRef,
+    parentWorkItemId: body?.parentWorkItemId,
   });
 
   return {
